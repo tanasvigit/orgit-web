@@ -1,0 +1,101 @@
+import api from './api';
+import { Task, TaskType, TaskCategory, TaskFrequency } from '../../../shared/src/types';
+
+export interface CreateTaskRequest {
+  title: string;
+  description?: string;
+  taskType: TaskType;
+  startDate?: string;
+  targetDate?: string;
+  dueDate?: string;
+  frequency?: TaskFrequency;
+  specificWeekday?: number;
+  category?: TaskCategory;
+  assignedUserIds: string[];
+  complianceId?: string;
+}
+
+export const taskService = {
+  createTask: async (data: any) => {
+    // Mobile format: task_type, assignee_ids, start_date, target_date, due_date, recurrence_type, auto_escalate
+    // Note: api baseURL already includes /api, so use /tasks not /api/tasks
+    const response = await api.post('/tasks', data);
+    // Backend returns: { success: true, data: task } or { task: ... }
+    return response.data.success ? response.data.data : response.data.task || response.data;
+  },
+
+  getTasks: async (filters?: {
+    status?: string;
+    category?: string;
+    type?: string; // Mobile uses 'type', not 'taskType'
+    priority?: string;
+  }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.category) params.append('category', filters.category);
+    if (filters?.type) params.append('type', filters.type); // Mobile uses 'type'
+    if (filters?.priority) params.append('priority', filters.priority);
+
+    // Note: api baseURL already includes /api, so use /tasks not /api/tasks
+    const response = await api.get(`/tasks?${params.toString()}`);
+    // Backend returns: { tasks: [...] } or { data: [...] }
+    return response.data.tasks || response.data.data || [];
+  },
+
+  getTask: async (taskId: string) => {
+    // Note: api baseURL already includes /api, so use /tasks not /api/tasks
+    const response = await api.get(`/tasks/${taskId}`);
+    // Backend returns: { task: {...} } - extract the task object
+    return response.data.task || response.data;
+  },
+
+  getTaskAssignments: async (taskId: string) => {
+    const response = await api.get(`/tasks/${taskId}/assignments`);
+    return response.data;
+  },
+
+  acceptTask: async (taskId: string) => {
+    // Note: api baseURL already includes /api, so use /tasks not /api/tasks
+    const response = await api.post(`/tasks/${taskId}/accept`);
+    return response.data;
+  },
+
+  rejectTask: async (taskId: string, reason: string) => {
+    // Mobile uses 'reason', not 'rejectionReason'
+    // Note: api baseURL already includes /api, so use /tasks not /api/tasks
+    const response = await api.post(`/tasks/${taskId}/reject`, { reason });
+    return response.data;
+  },
+
+  completeTask: async (taskId: string) => {
+    const response = await api.post(`/tasks/${taskId}/complete`);
+    return response.data;
+  },
+
+  updateTask: async (taskId: string, updates: Partial<CreateTaskRequest>) => {
+    const response = await api.put(`/tasks/${taskId}`, updates);
+    return response.data;
+  },
+
+  getMentionableTasks: async () => {
+    const response = await api.get('/tasks/mentionable');
+    return response.data;
+  },
+
+  // Compliance linking
+  linkComplianceToTask: async (taskId: string, complianceId: string) => {
+    const response = await api.post(`/tasks/${taskId}/compliance`, { complianceId });
+    return response.data;
+  },
+
+  unlinkComplianceFromTask: async (taskId: string, complianceId: string) => {
+    const response = await api.delete(`/tasks/${taskId}/compliance/${complianceId}`);
+    return response.data;
+  },
+
+  getTaskCompliances: async (taskId: string) => {
+    const response = await api.get(`/tasks/${taskId}/compliance`);
+    return response.data;
+  },
+};
+

@@ -1,0 +1,1388 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from 'react-query';
+import { format } from 'date-fns';
+import { messageService } from '../../services/messageService';
+import { conversationService } from '../../services/conversationService';
+import { waitForSocketConnection, joinConversationRoom, leaveConversationRoom, onSocketEvent, offSocketEvent, sendMessageViaSocket, getSocket } from '../../services/socketService';
+import { useAuth } from '../../context/AuthContext';
+import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
+import { AdminLayout } from '../../components/admin/AdminLayout';
+import { ConversationList } from '../../components/messaging/ConversationList';
+import { ReplyMessage } from '../../components/messaging/ReplyMessage';
+import { MessageReactions } from '../../components/messaging/MessageReactions';
+import { MessageActionSheet } from '../../components/messaging/MessageActionSheet';
+import { EmojiPicker } from '../../components/messaging/EmojiPicker';
+import { ImageMessage } from '../../components/messaging/ImageMessage';
+import { VideoMessage } from '../../components/messaging/VideoMessage';
+import { DocumentMessage } from '../../components/messaging/DocumentMessage';
+import { LocationMessage } from '../../components/messaging/LocationMessage';
+import { VoiceMessage } from '../../components/messaging/VoiceMessage';
+import { TaskGroupDetailsModal } from '../../components/messaging/TaskGroupDetailsModal';
+import { NewChatModal } from '../../components/messaging/NewChatModal';
+
+export const TaskGroupChatConversation: React.FC = () => {
+  const { conversationId } = useParams<{ conversationId: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
+  const [message, setMessage] = useState('');
+  const [messages, setMessages] = useState<any[]>([]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const socketRef = useRef<any>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasMarkedAsReadRef = useRef<boolean>(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [loading, setLoading] = useState(true);
+  
+  // Mobile ChatScreen features state
+  const [replyingTo, setReplyingTo] = useState<any>(null);
+  const [editingMessage, setEditingMessage] = useState<any>(null);
+  const [selectedMessage, setSelectedMessage] = useState<any>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [typing, setTyping] = useState(false);
+  const [conversationFilter, setConversationFilter] = useState<'All' | 'Direct' | 'Task Groups'>('All');
+  const [conversationSearchQuery, setConversationSearchQuery] = useState('');
+  const [showMessageSearch, setShowMessageSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [showTaskGroupDetails, setShowTaskGroupDetails] = useState(false);
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
+
+  // Fetch conversation details
+  const { data: conversationData } = useQuery(
+    ['conversation', conversationId],
+    () => conversationService.getConversationDetails(conversationId!),
+    { enabled: !!conversationId }
+  );
+
+  // Normalize message function (matching mobile)
+  const normalizeMessage = (msg: any) => {
+    if (!msg) return null;
+    
+    return {
+      id: msg.id,
+      conversation_id: msg.conversation_id || msg.conversationId,
+      sender_id: msg.sender_id || msg.senderId,
+      receiver_id: msg.receiver_id || msg.receiverId,
+      group_id: msg.group_id || msg.groupId,
+      message_type: msg.message_type || msg.messageType || 'text',
+      content: msg.content,
+      media_url: msg.media_url || msg.mediaUrl,
+      media_thumbnail: msg.media_thumbnail || msg.mediaThumbnail,
+      file_name: msg.file_name || msg.fileName,
+      file_size: msg.file_size || msg.fileSize,
+      mime_type: msg.mime_type || msg.mimeType,
+      duration: msg.duration,
+      sender_name: msg.sender_name || msg.senderName,
+      sender_photo: msg.sender_photo || msg.senderPhoto,
+      reply_to_message_id: msg.reply_to_message_id || msg.replyToMessageId,
+      reply_to: msg.reply_to || msg.replyTo,
+      edited_at: msg.edited_at || msg.editedAt,
+      deleted_at: msg.deleted_at || msg.deletedAt,
+      deleted_for_all: msg.deleted_for_all || msg.deletedForEveryone || false,
+      status: msg.status || 'sent',
+      reactions: msg.reactions || [],
+      starred: msg.starred || false,
+      created_at: msg.created_at || msg.createdAt,
+      updated_at: msg.updated_at || msg.updatedAt,
+    };
+  };
+
+  // Load messages function (matching DirectChatConversation)
+  const loadMessages = async () => {
+    if (!conversationId) return;
+    
+    try {
+      setLoading(true);
+      const data = await messageService.getMessagesByConversationId(conversationId, 50, 0);
+      console.log('TaskGroupChat: Loaded messages from API:', data);
+      
+      // Handle different response formats
+      let rawMessages: any[] = [];
+      if (Array.isArray(data)) {
+        rawMessages = data;
+      } else if (data && typeof data === 'object') {
+        rawMessages = data.messages || data.data || [];
+      }
+      
+      // Normalize messages to ensure consistent field names
+      const normalizedMessages = rawMessages.map((msg: any) => normalizeMessage(msg)).filter((msg: any) => msg !== null);
+      console.log('TaskGroupChat: Normalized messages:', normalizedMessages.length);
+      
+      // Remove any temp messages when loading from API
+      const currentUserId = user?.id || user?.userId;
+      const messagesWithoutTemp = normalizedMessages.filter((msg: any) => {
+        if (!msg.id?.startsWith('temp_')) return true;
+        // Remove temp messages from current user - they should have real messages now
+        if (msg.sender_id === currentUserId || msg.senderId === currentUserId) {
+          return false;
+        }
+        return true;
+      });
+      
+      // Sort messages by created_at to ensure correct chronological order
+      messagesWithoutTemp.sort((a: any, b: any) => {
+        const timeA = new Date(a.created_at || 0).getTime();
+        const timeB = new Date(b.created_at || 0).getTime();
+        return timeA - timeB;
+      });
+      
+      console.log('TaskGroupChat: Final messages count:', messagesWithoutTemp.length);
+      setMessages(messagesWithoutTemp);
+      setHasMoreMessages(messagesWithoutTemp.length >= 50);
+      setTimeout(() => scrollToBottom(), 100);
+    } catch (error) {
+      console.error('TaskGroupChat: Error loading messages:', error);
+      setMessages([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load messages when conversationId changes
+  useEffect(() => {
+    if (conversationId) {
+      loadMessages();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
+
+  // Mark messages as read
+  const markAsReadMutation = useMutation(
+    () => messageService.markMessagesAsReadByConversationId(conversationId!),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['conversations']);
+      }
+    }
+  );
+
+  // Send message mutation
+  const sendMessageMutation = useMutation(
+    (data: { content: string; replyToMessageId?: string }) => messageService.sendMessage({
+      conversationId: conversationId!,
+      messageType: 'text',
+      content: data.content,
+      replyToMessageId: data.replyToMessageId,
+    }),
+    {
+      onSuccess: () => {
+        loadMessages();
+      }
+    }
+  );
+
+  // Setup socket and join conversation room
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token || !conversationId) return;
+
+    let isMounted = true;
+
+    const setupSocket = async () => {
+      try {
+        const socket = await waitForSocketConnection();
+        if (!isMounted) return;
+
+        await joinConversationRoom(conversationId);
+
+        const handleNewMessage = (newMsg: any) => {
+          if (newMsg.conversation_id !== conversationId) return;
+          
+          const currentUserId = user?.id || user?.userId;
+          const isMyMessage = newMsg.sender_id === currentUserId || newMsg.senderId === currentUserId;
+          
+          const normalizedMessage = normalizeMessage(newMsg);
+          if (!normalizedMessage) return;
+
+          setMessages((prev) => {
+            // Check if message already exists by ID (real message from database)
+            const existingIndex = prev.findIndex(msg => msg.id === normalizedMessage.id);
+            if (existingIndex !== -1) {
+              // Update existing message
+              const updated = [...prev];
+              updated[existingIndex] = normalizedMessage;
+              return updated.sort((a, b) => {
+                const timeA = new Date(a.created_at || 0).getTime();
+                const timeB = new Date(b.created_at || 0).getTime();
+                return timeA - timeB;
+              });
+            }
+            
+            // Check for temp message replacement (optimistic message should be replaced)
+            if (isMyMessage) {
+              const currentUserId = user?.id || user?.userId;
+              // For our own messages, ALWAYS remove ALL temp messages from this user and add real message
+              // This prevents duplicates - we never want both temp and real messages for our own messages
+              const allTempMessagesFromUser = prev.filter(msg => {
+                if (!msg.id?.startsWith('temp_')) return false;
+                return (msg.sender_id === currentUserId || msg.senderId === currentUserId);
+              });
+              
+              // Remove all temp messages from this user and the real message if it already exists
+              const tempIds = allTempMessagesFromUser.map(m => m.id);
+              const updated = prev
+                .filter(msg => !tempIds.includes(msg.id))
+                .filter(msg => msg.id !== normalizedMessage.id);
+              
+              // Always add the real message
+              updated.push(normalizedMessage);
+              
+              return updated.sort((a, b) => {
+                const timeA = new Date(a.created_at || 0).getTime();
+                const timeB = new Date(b.created_at || 0).getTime();
+                return timeA - timeB;
+              });
+            }
+            
+            // For other users' messages, add new message (only if it doesn't exist)
+            if (!prev.some(msg => msg.id === normalizedMessage.id)) {
+              const updated = [...prev, normalizedMessage].sort((a, b) => {
+                const timeA = new Date(a.created_at || 0).getTime();
+                const timeB = new Date(b.created_at || 0).getTime();
+                return timeA - timeB;
+              });
+              return updated;
+            }
+            
+            return prev;
+          });
+          
+          setTimeout(() => scrollToBottom(), 50);
+          
+          if (!isMyMessage) {
+            setTimeout(async () => {
+              try {
+                // Mark all unread messages in conversation as read
+                await markAsReadMutation.mutateAsync();
+                // Emit read receipt for this conversation
+                socket.emit('message_read', {
+                  conversationId,
+                });
+                console.log('✅ Marked messages as read when new message arrived');
+              } catch (err) {
+                console.error('Mark as read error:', err);
+              }
+            }, 300);
+          }
+        };
+
+        const handleMessageStatusUpdate = (update: any) => {
+          console.log('📊 Message status update received in TaskGroup:', update);
+          if (update.conversationId && update.conversationId !== conversationId) return;
+          
+          setMessages((prev) => {
+            let hasChanges = false;
+            const updated = prev.map(msg => {
+              if (msg.id === update.messageId) {
+                if (msg.status !== update.status) {
+                  console.log('✅ Updating message status by ID:', {
+                    messageId: msg.id,
+                    oldStatus: msg.status,
+                    newStatus: update.status,
+                  });
+                  hasChanges = true;
+                  return { ...msg, status: update.status };
+                }
+                return msg;
+              }
+              const currentUserId = user?.id || user?.userId;
+              const msgSenderId = msg.sender_id || msg.senderId;
+              if (update.status === 'read' && 
+                  update.conversationId === conversationId &&
+                  msgSenderId === currentUserId && 
+                  msg.status !== 'read') {
+                console.log('✅ Bulk updating message to read:', msg.id);
+                hasChanges = true;
+                return { ...msg, status: 'read' };
+              }
+              if (update.status === 'delivered' && 
+                  msgSenderId === currentUserId && 
+                  msg.status === 'sent') {
+                console.log('✅ Bulk updating message to delivered:', msg.id);
+                hasChanges = true;
+                return { ...msg, status: 'delivered' };
+              }
+              return msg;
+            });
+            // Force re-render by creating new array reference if changes were made
+            return hasChanges ? [...updated] : prev;
+          });
+        };
+
+        const handleConversationMessagesRead = (data: any) => {
+          console.log('📖 Conversation messages read event in TaskGroup:', data);
+          if (data.conversationId !== conversationId) return;
+          
+          setMessages((prev) => {
+            let hasChanges = false;
+            const updated = prev.map((msg) => {
+              const currentUserId = user?.id || user?.userId;
+              const msgSenderId = msg.sender_id || msg.senderId;
+              if (msgSenderId === currentUserId && (msg.status === 'delivered' || msg.status === 'sent')) {
+                if (msg.status !== 'read') {
+                  console.log('✅ Marking message as read:', msg.id);
+                  hasChanges = true;
+                  return { ...msg, status: 'read' };
+                }
+              }
+              return msg;
+            });
+            // Force re-render by creating new array reference if changes were made
+            return hasChanges ? [...updated] : prev;
+          });
+        };
+
+        const handleMessageEdited = (editedMsg: any) => {
+          if (editedMsg.conversation_id !== conversationId) return;
+          
+          setMessages((prev) =>
+            prev.map(msg =>
+              msg.id === editedMsg.id ? { ...msg, ...normalizeMessage(editedMsg) } : msg
+            )
+          );
+        };
+
+        const handleMessageDeleted = (deletedMsg: any) => {
+          if (deletedMsg.conversation_id !== conversationId) return;
+          
+          setMessages((prev) =>
+            prev.filter(msg => msg.id !== deletedMsg.id)
+          );
+        };
+
+        const handleTyping = (data: any) => {
+          const currentUserId = user?.id || user?.userId;
+          if (data.conversationId === conversationId && data.userId !== currentUserId) {
+            setIsTyping(data.isTyping);
+            if (typingTimeoutRef.current) {
+              clearTimeout(typingTimeoutRef.current);
+            }
+            if (data.isTyping) {
+              typingTimeoutRef.current = setTimeout(() => {
+                setIsTyping(false);
+              }, 3000);
+            }
+          }
+        };
+
+        const handleMessageReactionAdded = (data: any) => {
+          setMessages((prev) =>
+            prev.map((msg) => {
+              if (msg.id === data.messageId) {
+                const reactions = msg.reactions || [];
+                const currentUserId = user?.id || user?.userId;
+                if (!reactions.find((r: any) => (r.user_id || r.userId) === currentUserId && r.reaction === data.reaction)) {
+                  return {
+                    ...msg,
+                    reactions: [...reactions, { user_id: data.userId, reaction: data.reaction }],
+                  };
+                }
+              }
+              return msg;
+            })
+          );
+        };
+
+        const handleMessageReactionRemoved = (data: any) => {
+          setMessages((prev) =>
+            prev.map((msg) => {
+              if (msg.id === data.messageId) {
+                return {
+                  ...msg,
+                  reactions: (msg.reactions || []).filter(
+                    (r: any) => !((r.user_id || r.userId) === data.userId && r.reaction === data.reaction)
+                  ),
+                };
+              }
+              return msg;
+            })
+          );
+        };
+
+        const handleConversationUpdated = (updatedConv: any) => {
+          if (updatedConv.id === conversationId) {
+            queryClient.setQueryData(['conversation', conversationId], (oldData: any) => ({
+              ...oldData,
+              data: { ...oldData.data, ...updatedConv }
+            }));
+          }
+        };
+
+        onSocketEvent('new_message', handleNewMessage);
+        onSocketEvent('message_status_update', handleMessageStatusUpdate);
+        onSocketEvent('conversation_messages_read', handleConversationMessagesRead);
+        onSocketEvent('message_edited', handleMessageEdited);
+        onSocketEvent('message_deleted', handleMessageDeleted);
+        onSocketEvent('typing', handleTyping);
+        onSocketEvent('message_reaction_added', handleMessageReactionAdded);
+        onSocketEvent('message_reaction_removed', handleMessageReactionRemoved);
+        onSocketEvent('conversation_updated', handleConversationUpdated);
+
+        socketRef.current = socket;
+
+        return () => {
+          if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current);
+          }
+          leaveConversationRoom(conversationId);
+          offSocketEvent('new_message', handleNewMessage);
+          offSocketEvent('message_status_update', handleMessageStatusUpdate);
+          offSocketEvent('conversation_messages_read', handleConversationMessagesRead);
+          offSocketEvent('message_edited', handleMessageEdited);
+          offSocketEvent('message_deleted', handleMessageDeleted);
+          offSocketEvent('typing', handleTyping);
+          offSocketEvent('message_reaction_added', handleMessageReactionAdded);
+          offSocketEvent('message_reaction_removed', handleMessageReactionRemoved);
+          offSocketEvent('conversation_updated', handleConversationUpdated);
+        };
+      } catch (error) {
+        console.error('Socket setup error:', error);
+      }
+    };
+
+    setupSocket();
+
+    return () => {
+      isMounted = false;
+      if (conversationId) {
+        leaveConversationRoom(conversationId);
+      }
+    };
+  }, [conversationId, user, queryClient]);
+
+  // Mark messages as read when conversation is opened (only once per conversation)
+  useEffect(() => {
+    if (conversationId && messages.length > 0 && !hasMarkedAsReadRef.current) {
+      const markAsRead = async () => {
+        try {
+          // Call API endpoint
+          await markAsReadMutation.mutateAsync();
+          
+          // Also emit socket event to ensure backend processes it correctly
+          const socket = await waitForSocketConnection();
+          socket.emit('message_read', {
+            conversationId,
+          });
+          
+          hasMarkedAsReadRef.current = true;
+        } catch (error) {
+          console.error('Error marking messages as read:', error);
+        }
+      };
+      
+      markAsRead();
+    }
+    
+    // Reset flag when conversation changes
+    return () => {
+      hasMarkedAsReadRef.current = false;
+    };
+  }, [conversationId, messages.length]);
+
+  // CRITICAL FIX: Periodically mark messages as read while chat is open and user is viewing
+  // This ensures read receipts update in real-time for the sender
+  useEffect(() => {
+    if (!conversationId || messages.length === 0) return;
+
+    // Check for unread messages from other users
+    const checkAndMarkAsRead = async () => {
+      const currentUserId = user?.id || user?.userId;
+      const unreadMessages = messages.filter((msg: any) => {
+        const msgSenderId = msg.sender_id || msg.senderId;
+        return msgSenderId !== currentUserId && msg.status !== 'read' && !msg.deleted_at;
+      });
+
+      if (unreadMessages.length > 0) {
+        console.log('📖 Found unread messages while chat is open, marking as read:', unreadMessages.length);
+        try {
+          // Mark messages as read via API
+          await markAsReadMutation.mutateAsync();
+          
+          // Also emit socket event to ensure backend processes it and emits status updates
+          const socket = await waitForSocketConnection();
+          socket.emit('message_read', {
+            conversationId,
+          });
+          
+          console.log('✅ Marked messages as read and emitted socket event');
+        } catch (error) {
+          console.error('Error marking messages as read periodically:', error);
+        }
+      }
+    };
+
+    // Check immediately
+    checkAndMarkAsRead();
+
+    // Then check every 2 seconds while chat is open
+    const interval = setInterval(checkAndMarkAsRead, 2000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [conversationId, messages, user?.id, user?.userId]);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  // Format time helper
+  const formatTime = (timestamp?: string) => {
+    if (!timestamp) return '';
+    try {
+      return format(new Date(timestamp), 'h:mm a');
+    } catch {
+      return '';
+    }
+  };
+
+  // Format date helper
+  const formatDate = (timestamp?: string) => {
+    if (!timestamp) return '';
+    try {
+      const date = new Date(timestamp);
+      const today = new Date();
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      if (date.toDateString() === today.toDateString()) {
+        return 'Today';
+      } else if (date.toDateString() === yesterday.toDateString()) {
+        return 'Yesterday';
+      } else {
+        return format(date, 'MMM d, yyyy');
+      }
+    } catch {
+      return '';
+    }
+  };
+
+  // Should show date separator
+  const shouldShowDateSeparator = (currentMessage: any, previousMessage: any) => {
+    if (!previousMessage) return true;
+    try {
+      const currentDate = new Date(currentMessage.created_at).toDateString();
+      const previousDate = new Date(previousMessage.created_at).toDateString();
+      return currentDate !== previousDate;
+    } catch {
+      return false;
+    }
+  };
+
+  // Handle typing (with debouncing)
+  const handleTyping = async (text: string) => {
+    setMessage(text);
+
+    try {
+      const socket = await waitForSocketConnection();
+      const currentUserId = user?.id || user?.userId;
+      
+      if (!typing && text.length > 0) {
+        setTyping(true);
+        socket.emit('typing', { 
+          conversationId, 
+          isTyping: true,
+          userId: currentUserId,
+        });
+      }
+
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+
+      typingTimeoutRef.current = setTimeout(async () => {
+        try {
+          const stopSocket = await waitForSocketConnection();
+          setTyping(false);
+          stopSocket.emit('typing', { 
+            conversationId, 
+            isTyping: false,
+            userId: currentUserId,
+          });
+        } catch (error) {
+          console.error('Error stopping typing:', error);
+          setTyping(false);
+        }
+      }, 2000);
+    } catch (error) {
+      console.error('Typing indicator error:', error);
+    }
+  };
+
+  // Handle send message
+  const handleSend = async () => {
+    if ((!message.trim() && !replyingTo && !editingMessage) || !conversationId) return;
+
+    try {
+      const socket = await waitForSocketConnection();
+      
+      if (editingMessage) {
+        await messageService.editMessage(editingMessage.id, message.trim());
+        socket.emit('send_message', {
+          conversationId,
+          content: message.trim(),
+          messageType: 'text',
+          isEdit: true,
+          messageId: editingMessage.id,
+        });
+        setEditingMessage(null);
+        setMessage('');
+      } else {
+        const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const currentUserId = user?.id || user?.userId;
+        const tempMessage = normalizeMessage({
+          id: tempId,
+          conversation_id: conversationId,
+          sender_id: currentUserId,
+          content: message.trim(),
+          message_type: 'text',
+          status: 'sent',
+          created_at: new Date().toISOString(),
+          sender_name: user?.name || 'You',
+          reply_to_message_id: replyingTo?.id || null,
+          reply_to: replyingTo ? {
+            id: replyingTo.id,
+            sender_id: replyingTo.sender_id,
+            content: replyingTo.content,
+            message_type: replyingTo.message_type,
+            sender_name: replyingTo.sender_name,
+          } : null,
+        });
+        
+        if (tempMessage) {
+          setMessages((prev) => [...prev, tempMessage]);
+          setMessage('');
+          setReplyingTo(null);
+          setTimeout(() => scrollToBottom(), 100);
+        }
+        
+        // Send via socket only (socket handler will insert to database and emit new_message)
+        // Do NOT call sendMessageMutation here as it causes duplicate messages
+        socket.emit('send_message', {
+          conversationId,
+          text: message.trim(),
+          content: message.trim(),
+          messageType: 'text',
+          replyToMessageId: replyingTo?.id || null,
+        });
+      }
+      
+      setIsTyping(false);
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+    } catch (error) {
+      console.error('Send message error:', error);
+    }
+  };
+
+  // Handle long press (right-click or context menu)
+  const handleMessageContextMenu = (e: React.MouseEvent, msg: any) => {
+    e.preventDefault();
+    setSelectedMessage(msg);
+  };
+
+  // Handle reaction
+  const handleReaction = async (emoji: string) => {
+    if (!selectedMessage) return;
+    
+    const currentUserId = user?.id || user?.userId;
+    const existingReaction = selectedMessage.reactions?.find(
+      (r: any) => (r.user_id || r.userId) === currentUserId && r.reaction === emoji
+    );
+
+    try {
+      const socket = await waitForSocketConnection();
+      if (existingReaction) {
+        await messageService.removeReaction(selectedMessage.id, emoji);
+        socket.emit('remove_reaction', {
+          messageId: selectedMessage.id,
+          conversationId,
+          reaction: emoji,
+        });
+      } else {
+        await messageService.addReaction(selectedMessage.id, emoji);
+        socket.emit('message_reaction', {
+          messageId: selectedMessage.id,
+          conversationId,
+          reaction: emoji,
+        });
+      }
+      setSelectedMessage(null);
+      setShowEmojiPicker(false);
+    } catch (error) {
+      console.error('Reaction error:', error);
+    }
+  };
+
+  // Handle reply
+  const handleReply = () => {
+    if (selectedMessage) {
+      setReplyingTo(selectedMessage);
+      setSelectedMessage(null);
+    }
+  };
+
+  // Handle edit
+  const handleEdit = () => {
+    const currentUserId = user?.id || user?.userId;
+    const msgSenderId = selectedMessage?.sender_id || selectedMessage?.senderId;
+    if (selectedMessage && msgSenderId === currentUserId) {
+      setEditingMessage(selectedMessage);
+      setMessage(selectedMessage.content || '');
+      setSelectedMessage(null);
+    }
+  };
+
+  // Handle delete
+  const handleDelete = async (deleteForEveryone: boolean) => {
+    if (!selectedMessage) return;
+
+    try {
+      await messageService.deleteMessage(selectedMessage.id, deleteForEveryone);
+      if (deleteForEveryone) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === selectedMessage.id
+              ? { ...msg, deleted_at: new Date().toISOString(), deleted_for_all: true }
+              : msg
+          )
+        );
+      } else {
+        setMessages((prev) => prev.filter((msg) => msg.id !== selectedMessage.id));
+      }
+      setSelectedMessage(null);
+    } catch (error) {
+      console.error('Delete error:', error);
+    }
+  };
+
+  // Handle star
+  const handleStar = async () => {
+    if (!selectedMessage) return;
+    
+    try {
+      if (selectedMessage.starred) {
+        await messageService.unstarMessage(selectedMessage.id);
+      } else {
+        await messageService.starMessage(selectedMessage.id);
+      }
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === selectedMessage.id
+            ? { ...msg, starred: !msg.starred }
+            : msg
+        )
+      );
+      setSelectedMessage(null);
+    } catch (error) {
+      console.error('Star error:', error);
+    }
+  };
+
+  // Handle copy
+  const handleCopy = () => {
+    if (selectedMessage?.content) {
+      navigator.clipboard.writeText(selectedMessage.content);
+      setSelectedMessage(null);
+    }
+  };
+
+  // Handle forward
+  const handleForward = () => {
+    setSelectedMessage(null);
+  };
+
+  const loadMoreMessages = async () => {
+    if (isLoadingMore || !hasMoreMessages || !conversationId) return;
+
+    setIsLoadingMore(true);
+    try {
+      const offset = messages.length;
+      const response = await messageService.getMessagesByConversationId(conversationId, 50, offset);
+      const rawMessages = response.messages || response.data || [];
+      const newMessages = rawMessages.map((msg: any) => normalizeMessage(msg)).filter((msg: any) => msg !== null);
+      
+      if (newMessages.length > 0) {
+        setMessages((prev) => {
+          const combined = [...newMessages.reverse(), ...prev];
+          const unique = combined.filter((msg, index, self) =>
+            index === self.findIndex(m => m.id === msg.id)
+          );
+          return unique.sort((a, b) => {
+            const timeA = new Date(a.created_at || 0).getTime();
+            const timeB = new Date(b.created_at || 0).getTime();
+            return timeA - timeB;
+          });
+        });
+        setHasMoreMessages(newMessages.length >= 50);
+      } else {
+        setHasMoreMessages(false);
+      }
+    } catch (error) {
+      console.error('Load more messages error:', error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  // Fetch conversations list for sidebar
+  const { data: conversations = [] } = useQuery(
+    'conversations',
+    () => conversationService.getConversations(),
+    {
+      refetchInterval: 30000, // Refetch every 30 seconds
+    }
+  );
+
+  // Get conversation name and photo
+  const conversationName = conversationData?.name || conversationData?.data?.name || 'Task Group';
+  const conversationPhoto = conversationData?.photoUrl || conversationData?.data?.photoUrl || conversationData?.group_photo || '';
+  const groupMembers = conversationData?.otherMembers || conversationData?.data?.otherMembers || conversationData?.other_members || [];
+  const taskId = conversationData?.taskId || conversationData?.data?.taskId || conversationData?.task_id;
+
+  // Render message component
+  const renderMessage = (msg: any, index: number) => {
+    const messageSenderId = msg.sender_id || msg.senderId;
+    const currentUserId = user?.id || user?.userId;
+    const isMyMessage = messageSenderId === currentUserId;
+    const previousMessage = index > 0 ? messages[index - 1] : null;
+    const showDateSeparator = shouldShowDateSeparator(msg, previousMessage);
+    const messageStatus = msg.status || 'sent';
+    const messageType = msg.message_type || 'text';
+    const senderName = msg.sender_name || msg.senderName || 'Unknown';
+
+    // Status icon and color
+    let statusIcon = null;
+    let statusColor = '#6B7280';
+    if (isMyMessage) {
+      if (messageStatus === 'read') {
+        statusIcon = '✓✓';
+        statusColor = '#7C3AED';
+      } else if (messageStatus === 'delivered') {
+        statusIcon = '✓✓';
+        statusColor = '#6B7280';
+      } else {
+        statusIcon = '✓';
+        statusColor = '#6B7280';
+      }
+    }
+
+    // Deleted message
+    if (msg.deleted_at && msg.deleted_for_all) {
+      return (
+        <div key={msg.id} className="w-full">
+          {showDateSeparator && (
+            <div className="flex justify-center py-2">
+              <span className="bg-gray-200/70 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs font-medium px-3 py-1 rounded-full">
+                {formatDate(msg.created_at)}
+              </span>
+            </div>
+          )}
+          <div className="flex justify-center py-2">
+            <p className="text-gray-400 dark:text-gray-500 text-sm italic">This message was deleted</p>
+          </div>
+        </div>
+      );
+    }
+
+    // System messages
+    if (messageType === 'system' || msg.type === 'system') {
+      return (
+        <div key={msg.id} className="w-full">
+          {showDateSeparator && (
+            <div className="flex justify-center py-2">
+              <span className="bg-gray-200/70 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs font-medium px-3 py-1 rounded-full">
+                {formatDate(msg.created_at)}
+              </span>
+            </div>
+          )}
+          <div className="flex justify-center w-full">
+            <div className="bg-gray-200 dark:bg-gray-800 rounded-full px-4 py-1.5 flex items-center gap-2">
+              <span className="material-symbols-outlined text-gray-500 text-base">smart_toy</span>
+              <p className="text-gray-600 dark:text-gray-400 text-xs font-medium">{msg.content}</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div key={msg.id} className="w-full">
+        {showDateSeparator && (
+          <div className="flex justify-center py-2">
+            <span className="bg-gray-200/70 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs font-medium px-3 py-1 rounded-full">
+              {formatDate(msg.created_at)}
+            </span>
+          </div>
+        )}
+        
+        <div className={`flex items-end gap-3 group ${isMyMessage ? 'justify-end' : ''}`}>
+          {!isMyMessage && (
+            <div 
+              className="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-8 shrink-0 mb-1 shadow-sm bg-primary/20 flex items-center justify-center"
+            >
+              {msg.sender_photo ? (
+                <img
+                  src={msg.sender_photo}
+                  alt={senderName}
+                  className="w-full h-full rounded-full object-cover"
+                />
+              ) : (
+                <span className="text-primary text-xs font-semibold">
+                  {senderName.charAt(0).toUpperCase()}
+                </span>
+              )}
+            </div>
+          )}
+          
+          <div 
+            className={`flex flex-col gap-1 ${isMyMessage ? 'items-end' : 'items-start'} max-w-[80%]`}
+            onContextMenu={(e) => handleMessageContextMenu(e, msg)}
+          >
+            {/* Sender name for group chats */}
+            {!isMyMessage && (
+              <span className="text-xs text-gray-600 dark:text-gray-300 font-semibold px-1 mb-0.5">
+                {senderName}
+              </span>
+            )}
+
+            {/* Reply Preview */}
+            {msg.reply_to && (
+              <div className="border-l-4 border-primary/50 pl-2 ml-2 mb-1">
+                <p className="text-xs font-semibold text-primary">
+                  {msg.reply_to.sender_name || 'Unknown'}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                  {msg.reply_to.content || `Sent a ${msg.reply_to.message_type}`}
+                </p>
+              </div>
+            )}
+
+            {/* Message content based on type */}
+            {messageType === 'image' && msg.media_url && (
+              <ImageMessage 
+                mediaUrl={msg.media_url} 
+                mediaThumbnail={msg.media_thumbnail}
+                isMyMessage={isMyMessage}
+              />
+            )}
+
+            {messageType === 'video' && msg.media_url && (
+              <VideoMessage 
+                mediaUrl={msg.media_url} 
+                mediaThumbnail={msg.media_thumbnail}
+                isMyMessage={isMyMessage}
+              />
+            )}
+
+            {messageType === 'document' && (
+              <DocumentMessage 
+                fileName={msg.file_name}
+                fileSize={msg.file_size}
+                mediaUrl={msg.media_url}
+                isMyMessage={isMyMessage}
+              />
+            )}
+
+            {messageType === 'location' && (
+              <LocationMessage 
+                latitude={msg.latitude}
+                longitude={msg.longitude}
+                locationName={msg.location_name}
+                isMyMessage={isMyMessage}
+              />
+            )}
+
+            {messageType === 'voice' || messageType === 'voice_note' ? (
+              <VoiceMessage 
+                mediaUrl={msg.media_url}
+                duration={msg.duration}
+                isMyMessage={isMyMessage}
+              />
+            ) : messageType === 'text' && msg.content && (
+              <div className={`relative px-4 py-3 rounded-2xl shadow-md border ${isMyMessage ? 'bg-[#EDE9FE] text-[#1F2937] rounded-br-none shadow-primary/30 border-[#A78BFA]' : 'bg-[#F9FAFB] dark:bg-gray-800 text-[#1F2937] dark:text-gray-100 rounded-bl-none border-[#E5E7EB] dark:border-gray-700 shadow-sm'}`}>
+                {msg.edited_at && (
+                  <span className={`text-[10px] mr-2 italic ${isMyMessage ? 'text-[#6B7280]' : 'text-[#6B7280] dark:text-gray-400'}`}>Edited</span>
+                )}
+                <p className={`text-[15px] font-normal leading-relaxed break-words ${isMyMessage ? 'text-[#1F2937]' : 'text-[#1F2937] dark:text-gray-100'}`}>{msg.content}</p>
+                <div className={`flex items-center justify-end gap-1.5 mt-2 ${isMyMessage ? '' : 'absolute bottom-1 right-3'}`}>
+                  <span className={`text-[11px] ${isMyMessage ? 'text-[#6B7280]' : 'text-[#6B7280] dark:text-gray-400'}`}>
+                    {formatTime(msg.created_at)}
+                  </span>
+                  {isMyMessage && statusIcon && (
+                    <span 
+                      className="material-icons-round text-[16px] font-semibold leading-none" 
+                      style={{ color: statusColor }}
+                    >
+                      {statusIcon === '✓✓' ? 'done_all' : 'done'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Reactions */}
+            {msg.reactions && msg.reactions.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {msg.reactions.map((reaction: any, idx: number) => (
+                  <span key={idx} className="text-sm">
+                    {reaction.reaction}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Conversation list content for sidebar
+  const conversationListContent = (
+    <ConversationList
+      conversations={conversations}
+      currentConversationId={conversationId}
+      filter={conversationFilter}
+      searchQuery={conversationSearchQuery}
+      onFilterChange={setConversationFilter}
+      onSearchChange={setConversationSearchQuery}
+      onCreateNew={() => setShowNewChatModal(true)}
+      hideHeader={!isAdmin}
+    />
+  );
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim() || !conversationId) return;
+    try {
+      const response = await messageService.searchMessagesInConversation(conversationId, searchQuery);
+      const results = response.messages || response.data || response || [];
+      setSearchResults(results.map((msg: any) => normalizeMessage(msg)).filter((msg: any) => msg !== null));
+    } catch (error) {
+      console.error('Search error:', error);
+      setSearchResults([]);
+    }
+  };
+
+  const mainContent = (
+    <div className="flex-1 flex flex-col bg-[#F9FAFB] dark:bg-surface-dark relative overflow-hidden h-full">
+      {/* Header */}
+      <header className="h-20 border-b border-border-light dark:border-border-dark flex items-center justify-between px-6 bg-white/50 dark:bg-surface-dark/50 backdrop-blur-sm z-10">
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <div 
+              className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-800 to-primary flex items-center justify-center text-white shadow-md"
+            >
+              {conversationPhoto ? (
+                <img src={conversationPhoto} alt={conversationName} className="w-full h-full rounded-xl object-cover" />
+              ) : (
+                <span className="material-icons-outlined opacity-50 text-xl">folder</span>
+              )}
+            </div>
+            <div className="absolute -bottom-1 -right-1 bg-white dark:bg-surface-dark p-0.5 rounded-full">
+              <div className="w-4 h-4 bg-primary text-white rounded-full flex items-center justify-center">
+                <span className="material-icons-round text-[8px]">assignment</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <button
+              onClick={() => setShowTaskGroupDetails(true)}
+              className="text-left hover:opacity-80 transition-opacity"
+            >
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2 cursor-pointer">
+                {conversationName}
+                <span className="bg-accent-pink dark:bg-red-900/30 text-accent-text dark:text-red-300 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">Task Group</span>
+              </h2>
+            </button>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {isTyping ? (
+                <span className="flex items-center gap-1">
+                  <span>typing</span>
+                  <span className="flex gap-0.5">
+                    <span className="animate-bounce">.</span>
+                    <span className="animate-bounce" style={{ animationDelay: '0.1s' }}>.</span>
+                    <span className="animate-bounce" style={{ animationDelay: '0.2s' }}>.</span>
+                  </span>
+                </span>
+              ) : (
+                `${groupMembers.length} ${groupMembers.length === 1 ? 'member' : 'members'}`
+              )}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-4 text-gray-400">
+          {taskId && (
+            <button
+              onClick={() => navigate(isAdmin ? `/admin/tasks/${taskId}` : `/tasks/${taskId}`)}
+              className="hover:text-primary transition flex items-center gap-2 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 rounded-lg"
+              title="View Task"
+            >
+              <span className="material-icons-outlined text-sm">assignment</span>
+              <span className="text-sm font-medium">View Task</span>
+            </button>
+          )}
+          <button 
+            onClick={() => setShowMessageSearch(!showMessageSearch)}
+            className="hover:text-primary transition"
+            title="Search messages"
+          >
+            <span className="material-icons-outlined">search</span>
+          </button>
+          <button className="hover:text-primary transition">
+            <span className="material-icons-outlined">push_pin</span>
+          </button>
+          <button className="hover:text-primary transition">
+            <span className="material-icons-outlined">more_vert</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Message Search */}
+      {showMessageSearch && (
+        <div className="px-4 py-2 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Search messages..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSearch();
+                }
+              }}
+              className="flex-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <button
+              onClick={handleSearch}
+              className="bg-primary hover:bg-primary-dark text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+            >
+              Search
+            </button>
+            <button
+              onClick={() => {
+                setShowMessageSearch(false);
+                setSearchQuery('');
+                setSearchResults([]);
+              }}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          </div>
+          {searchResults.length > 0 && (
+            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              Found {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Messages */}
+      <main className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#F9FAFB] dark:bg-[#18181b]">
+        {hasMoreMessages && (
+          <div className="flex justify-center py-2">
+            <button
+              onClick={loadMoreMessages}
+              disabled={isLoadingMore}
+              className="bg-gray-200/70 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs font-medium px-3 py-1 rounded-full shadow-sm hover:bg-gray-300 dark:hover:bg-gray-700 disabled:opacity-50"
+            >
+              {isLoadingMore ? 'Loading...' : 'Load older messages'}
+            </button>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-gray-400 text-sm">Loading messages...</p>
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-gray-400 text-sm">No messages yet. Start the conversation!</p>
+          </div>
+        ) : (
+          messages.map((msg, index) => renderMessage(msg, index))
+        )}
+        <div ref={messagesEndRef} />
+      </main>
+
+      {/* Reply Bar */}
+      {replyingTo && (
+        <div className="bg-gray-100 dark:bg-gray-800 border-l-4 border-primary px-4 py-2 flex items-center justify-between">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-primary mb-0.5">
+              Replying to {replyingTo.sender_name || 'Unknown'}
+            </p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+              {replyingTo.content || `Sent a ${replyingTo.message_type}`}
+            </p>
+          </div>
+          <button
+            onClick={() => setReplyingTo(null)}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1"
+          >
+            <span className="material-symbols-outlined text-sm">close</span>
+          </button>
+        </div>
+      )}
+
+      {/* Edit Bar */}
+      {editingMessage && (
+        <div className="bg-primary/10 dark:bg-primary/20 border-l-4 border-primary px-4 py-2 flex items-center justify-between">
+          <span className="text-sm font-medium text-primary">Editing message</span>
+          <button
+            onClick={() => {
+              setEditingMessage(null);
+              setMessage('');
+            }}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1"
+          >
+            <span className="material-symbols-outlined text-sm">close</span>
+          </button>
+        </div>
+      )}
+
+      {/* Footer */}
+      <div className="p-4 bg-surface-light dark:bg-surface-dark border-t border-border-light dark:border-border-dark">
+        <div className="flex items-end gap-2 max-w-5xl mx-auto">
+          <button 
+            className="p-3 text-gray-400 hover:text-primary transition rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 relative"
+            title="Attach file"
+          >
+            <span className="material-icons-outlined">add_circle</span>
+          </button>
+          <div className="flex-1 bg-gray-100 dark:bg-background-dark rounded-2xl flex items-center p-2">
+            <textarea
+              className="w-full bg-transparent border-none focus:ring-0 text-gray-900 dark:text-gray-100 resize-none max-h-32 placeholder-gray-400 py-2 px-3"
+              placeholder={editingMessage ? "Edit message..." : "Type a message..."}
+              rows={1}
+              value={message}
+              onChange={(e) => handleTyping(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+            />
+            <button 
+              className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
+              onClick={() => setShowEmojiPicker(true)}
+            >
+              <span className="material-icons-outlined">sentiment_satisfied</span>
+            </button>
+            <button 
+              className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
+              title="Voice note"
+            >
+              <span className="material-icons-outlined">mic</span>
+            </button>
+          </div>
+          <button 
+            onClick={handleSend} 
+            disabled={(!message.trim() && !replyingTo && !editingMessage) || sendMessageMutation.isLoading}
+            className="p-3 bg-primary hover:bg-primary-dark text-white rounded-full shadow-lg transition transform active:scale-95 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="material-icons-round">
+              {message.trim() || replyingTo || editingMessage ? 'send' : 'mic'}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* Message Action Sheet */}
+      <MessageActionSheet
+        visible={!!selectedMessage}
+        isMyMessage={(selectedMessage?.sender_id || selectedMessage?.senderId) === (user?.id || user?.userId)}
+        isGroup={true}
+        isStarred={selectedMessage?.starred || false}
+        onReply={handleReply}
+        onCopy={handleCopy}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onStar={handleStar}
+        onReact={() => setShowEmojiPicker(true)}
+        onForward={handleForward}
+        onClose={() => setSelectedMessage(null)}
+      />
+
+      {/* Emoji Picker */}
+      <EmojiPicker
+        visible={showEmojiPicker}
+        onSelect={handleReaction}
+        onClose={() => setShowEmojiPicker(false)}
+      />
+    </div>
+  );
+
+  // Wrap in appropriate layout matching DirectChatConversation structure
+  if (isAdmin) {
+    return (
+      <AdminLayout hideSearch>
+        <div className="flex h-full">
+          <div className="w-80 md:w-96 bg-background-light dark:bg-background-dark flex flex-col border-r border-border-light dark:border-border-dark relative">
+            {conversationListContent}
+          </div>
+          <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden">
+            {mainContent}
+          </div>
+        </div>
+
+        {/* Task Group Details Modal */}
+        <TaskGroupDetailsModal
+          visible={showTaskGroupDetails}
+          onClose={() => setShowTaskGroupDetails(false)}
+          taskId={taskId}
+          conversationId={conversationId}
+          conversationData={conversationData}
+        />
+
+        {/* New Chat Modal */}
+        <NewChatModal
+          visible={showNewChatModal}
+          onClose={() => setShowNewChatModal(false)}
+        />
+      </AdminLayout>
+    );
+  }
+
+  // Employee route - use EmployeeLayout with conversation list
+  return (
+    <EmployeeLayout
+      showConversationList
+      conversationListContent={conversationListContent}
+      hideSearch
+    >
+      {mainContent}
+
+      {/* Task Group Details Modal */}
+      <TaskGroupDetailsModal
+        visible={showTaskGroupDetails}
+        onClose={() => setShowTaskGroupDetails(false)}
+        taskId={taskId}
+        conversationId={conversationId}
+        conversationData={conversationData}
+      />
+
+      {/* New Chat Modal */}
+      <NewChatModal
+        visible={showNewChatModal}
+        onClose={() => setShowNewChatModal(false)}
+      />
+    </EmployeeLayout>
+  );
+};
