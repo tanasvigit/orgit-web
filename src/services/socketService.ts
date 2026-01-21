@@ -5,7 +5,6 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000';
 let socket: Socket | null = null;
 let connectionPromise: Promise<Socket> | null = null;
 let connectionState: 'connecting' | 'connected' | 'disconnected' | 'error' = 'disconnected';
-let reconnectAttempts = 0;
 
 // Socket event types
 export interface SocketMessage {
@@ -45,6 +44,9 @@ export const initSocket = async (token: string): Promise<Socket> => {
     throw new Error('No token available');
   }
 
+  // Log token info for debugging (first 10 chars only for security)
+  console.log('🔌 Initializing socket connection with token:', token.substring(0, 10) + '...');
+
   // Disconnect existing socket if any
   if (socket) {
     socket.disconnect();
@@ -72,17 +74,57 @@ export const initSocket = async (token: string): Promise<Socket> => {
   socket.on('connect', () => {
     console.log('✅ Socket connected successfully');
     connectionState = 'connected';
-    reconnectAttempts = 0;
     // The waitForSocketConnection promise will resolve via the 'connect' event listener
   });
 
-  socket.on('connect_error', (error) => {
+  socket.on('connect_error', (error: any) => {
     console.error('❌ Socket connection error:', error.message);
     console.error('❌ Socket error details:', {
-      type: error.type,
-      description: error.description,
-      context: error.context,
+      type: error.type || 'unknown',
+      description: error.description || error.message,
+      context: error.context || 'no context',
+      data: error.data || 'no data',
+      error: error,
     });
+    
+    // Log the actual error object for debugging
+    if (error.data) {
+      console.error('❌ Error data:', error.data);
+    }
+    
+    // Check if token was sent correctly
+    if (socket) {
+      const authData = socket.auth as any;
+      const authToken = authData?.token;
+      console.log('🔍 Token check:', {
+        hasToken: !!authToken,
+        tokenLength: authToken?.length || 0,
+        tokenPreview: authToken ? authToken.substring(0, 20) + '...' : 'no token',
+      });
+    }
+    
+    // If it's a server error, it might be authentication-related
+    // But "server error" can also be a generic error, so be more specific
+    if (error.message && (
+        error.message.toLowerCase().includes('authentication error') ||
+        error.message.toLowerCase().includes('unauthorized') ||
+        error.message.toLowerCase().includes('401') ||
+        error.message.toLowerCase().includes('403') ||
+        (error.message.toLowerCase().includes('server error') && error.type === 'TransportError')
+      )) {
+      console.error('🚫 Server authentication error detected. Stopping reconnection attempts.');
+      console.error('💡 Possible causes: Invalid/expired token, token format issue, or server authentication failure.');
+      console.error('💡 Try logging out and logging back in to get a fresh token.');
+      connectionState = 'error';
+      // Disable reconnection for server/auth errors
+      if (socket) {
+        socket.disconnect();
+      }
+      socket = null;
+      connectionPromise = null;
+      return;
+    }
+    
     connectionState = 'error';
     // Don't reject immediately - let reconnection handle it
     // The waitForSocketConnection promise will reject via timeout if connection fails
@@ -100,15 +142,29 @@ export const initSocket = async (token: string): Promise<Socket> => {
   socket.on('reconnect', (attemptNumber) => {
     console.log(`✅ Socket reconnected after ${attemptNumber} attempts`);
     connectionState = 'connected';
-    reconnectAttempts = 0;
   });
 
   socket.on('reconnect_attempt', (attemptNumber) => {
     console.log(`🔄 Socket reconnection attempt ${attemptNumber}...`);
   });
 
-  socket.on('reconnect_error', (error) => {
+  socket.on('reconnect_error', (error: any) => {
     console.error('❌ Socket reconnection error:', error.message);
+    
+    // If it's a server error, stop reconnection attempts
+    if (error.message && (error.message.includes('server error') || 
+        error.message.includes('unauthorized') || 
+        error.message.includes('authentication') ||
+        error.message.includes('401') ||
+        error.message.includes('403'))) {
+      console.error('🚫 Server authentication error during reconnection. Stopping reconnection attempts.');
+      if (socket) {
+        socket.disconnect();
+      }
+      socket = null;
+      connectionPromise = null;
+      connectionState = 'error';
+    }
   });
 
   socket.on('reconnect_failed', () => {
@@ -180,7 +236,7 @@ export const waitForSocketConnection = (timeout = 30000): Promise<Socket> => {
     }
 
     // Create new connection promise
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: number;
     let resolved = false;
 
     const promise = new Promise<Socket>((innerResolve, innerReject) => {
@@ -190,8 +246,8 @@ export const waitForSocketConnection = (timeout = 30000): Promise<Socket> => {
           resolved = true;
           connectionPromise = null;
           // Don't reject - socket might still be connecting
-          // Instead, check if socket exists and is connecting
-          if (socket && socket.connecting) {
+          // Check if socket exists and connection state
+          if (socket && !socket.connected && connectionState === 'connecting') {
             console.log('⏳ Socket still connecting, waiting a bit more...');
             // Wait a bit more
             setTimeout(() => {
@@ -215,12 +271,36 @@ export const waitForSocketConnection = (timeout = 30000): Promise<Socket> => {
           socket?.off('connect', onConnect);
           socket?.off('connect_error', onError);
           connectionPromise = null;
-          innerResolve(socket!);
+          if (socket) {
+            innerResolve(socket);
+          } else {
+            innerReject(new Error('Socket is null'));
+          }
         }
       };
 
       // Listen for connection error (but don't reject immediately - let reconnection handle it)
       const onError = (error: any) => {
+        // If it's a server/auth error, reject immediately
+        // Be more specific - "server error" alone might not be auth-related
+        if (error.message && (
+            error.message.toLowerCase().includes('authentication error') ||
+            error.message.toLowerCase().includes('unauthorized') ||
+            error.message.toLowerCase().includes('401') ||
+            error.message.toLowerCase().includes('403') ||
+            (error.message.toLowerCase().includes('server error') && error.type === 'TransportError')
+          )) {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timeoutId);
+            socket?.off('connect', onConnect);
+            socket?.off('connect_error', onError);
+            connectionPromise = null;
+            innerReject(new Error(`Socket authentication failed: ${error.message}`));
+          }
+          return;
+        }
+        
         // Only reject if it's a permanent error (not transport-related)
         if (error.message && !error.message.includes('transport') && !error.message.includes('websocket')) {
           if (!resolved) {
@@ -237,8 +317,12 @@ export const waitForSocketConnection = (timeout = 30000): Promise<Socket> => {
         }
       };
 
-      socket.once('connect', onConnect);
-      socket.once('connect_error', onError);
+      if (socket) {
+        socket.once('connect', onConnect);
+        socket.once('connect_error', onError);
+      } else {
+        innerReject(new Error('Socket is null'));
+      }
     });
 
     connectionPromise = promise;
@@ -294,7 +378,6 @@ export const disconnectSocket = (): void => {
     socket = null;
     connectionPromise = null;
     connectionState = 'disconnected';
-    reconnectAttempts = 0;
   }
 };
 

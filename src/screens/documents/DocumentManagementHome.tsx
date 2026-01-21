@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { documentInstanceService } from '../../services/documentInstanceService';
 import { documentTemplateService } from '../../services/documentTemplateService';
+import { getDocuments as getLocalDocuments, deleteDocument as deleteLocalDocument } from '../../services/localDocumentService';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/shared';
 import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
@@ -21,12 +22,31 @@ export const DocumentManagementHome: React.FC = () => {
   });
   const [selectedDocument, setSelectedDocument] = useState<any | null>(null);
   const [showAssignTaskModal, setShowAssignTaskModal] = useState(false);
+  const [localDocuments, setLocalDocuments] = useState<any[]>([]);
+  const [showLocalOnly, setShowLocalOnly] = useState(false);
 
   const { data, isLoading } = useQuery(
     ['documentInstances', filters],
     () => documentInstanceService.list(filters),
-    { keepPreviousData: true }
+    { keepPreviousData: true, enabled: !showLocalOnly }
   );
+
+  // Load local documents
+  useEffect(() => {
+    const loadLocalDocs = async () => {
+      try {
+        const localDocs = await getLocalDocuments({
+          status: filters.status || undefined,
+          search: filters.search || undefined,
+        });
+        setLocalDocuments(localDocs);
+      } catch (error) {
+        console.error('Error loading local documents:', error);
+        setLocalDocuments([]);
+      }
+    };
+    loadLocalDocs();
+  }, [filters.status, filters.search, showLocalOnly]);
 
   const { data: templatesData } = useQuery(
     'activeTemplates',
@@ -73,25 +93,40 @@ export const DocumentManagementHome: React.FC = () => {
     }
   );
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, isLocal: boolean = false) => {
     if (window.confirm('Are you sure you want to delete this document?')) {
-      deleteMutation.mutate(id);
+      if (isLocal) {
+        try {
+          await deleteLocalDocument(id);
+          setLocalDocuments(prev => prev.filter(doc => doc.id !== id));
+          alert('Document deleted successfully!');
+        } catch (error) {
+          alert('Failed to delete local document');
+        }
+      } else {
+        deleteMutation.mutate(id);
+      }
     }
   };
 
-  const handleDownload = async (id: string) => {
+  const handleDownload = async (id: string, isLocal: boolean = false) => {
     try {
-      const blob = await documentInstanceService.download(id);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `document-${id}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      }, 100);
+      if (isLocal) {
+        const { downloadDocument } = await import('../../services/localDocumentService');
+        await downloadDocument(id);
+      } else {
+        const blob = await documentInstanceService.download(id);
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `document-${id}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        }, 100);
+      }
     } catch (error) {
       alert('Failed to download document');
     }
@@ -125,6 +160,28 @@ export const DocumentManagementHome: React.FC = () => {
 
       {/* Filters */}
       <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6 shadow-sm">
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setShowLocalOnly(false)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              !showLocalOnly
+                ? 'bg-primary text-white'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+            }`}
+          >
+            All Documents
+          </button>
+          <button
+            onClick={() => setShowLocalOnly(true)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              showLocalOnly
+                ? 'bg-primary text-white'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+            }`}
+          >
+            Local Documents
+          </button>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Search</label>
@@ -176,7 +233,90 @@ export const DocumentManagementHome: React.FC = () => {
       </div>
 
       {/* Documents Table */}
-      {isLoading ? (
+      {showLocalOnly ? (
+        localDocuments.length === 0 ? (
+          <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 p-12 text-center">
+            <span className="material-symbols-outlined text-6xl text-gray-300 dark:text-gray-600 mb-4">description</span>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">No local documents found</p>
+            <Button onClick={() => navigate('/documents/create')}>
+              Upload Your First Document
+            </Button>
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                    Title
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                    File Name
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                    Uploaded
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {localDocuments.map((instance: any) => (
+                  <tr key={instance.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-bold text-gray-900 dark:text-white">{instance.title}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-600 dark:text-gray-400">{instance.originalName}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="px-3 py-1 text-[10px] font-bold uppercase rounded-full bg-gray-100 dark:bg-gray-600 text-gray-800 dark:text-gray-300">
+                        {instance.status || 'draft'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-medium">
+                      {new Date(instance.uploadedAt).toLocaleDateString('en-IN', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric'
+                      })}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => navigate(`/documents/${instance.id}?local=true`)}
+                          className="p-2 text-gray-400 dark:text-gray-500 hover:text-primary hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
+                          title="View Document"
+                        >
+                          <span className="material-symbols-outlined">visibility</span>
+                        </button>
+                        <button
+                          onClick={() => handleDownload(instance.id, true)}
+                          className="p-2 text-gray-400 dark:text-gray-500 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-all"
+                          title="Download"
+                        >
+                          <span className="material-symbols-outlined">download</span>
+                        </button>
+                        <button
+                          onClick={() => handleDelete(instance.id, true)}
+                          className="p-2 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                          title="Delete"
+                        >
+                          <span className="material-symbols-outlined">delete</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : isLoading ? (
         <div className="text-center py-12">
           <p className="text-gray-500 dark:text-gray-400">Loading documents...</p>
         </div>
@@ -278,7 +418,7 @@ export const DocumentManagementHome: React.FC = () => {
                         </button>
                       )}
                       <button
-                        onClick={() => handleDownload(instance.id)}
+                        onClick={() => handleDownload(instance.id, false)}
                         className="p-2 text-gray-400 dark:text-gray-500 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-all"
                         title="Download PDF"
                       >
@@ -292,7 +432,7 @@ export const DocumentManagementHome: React.FC = () => {
                         <span className="material-symbols-outlined">assignment</span>
                       </button>
                       <button
-                        onClick={() => handleDelete(instance.id)}
+                        onClick={() => handleDelete(instance.id, false)}
                         className="p-2 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
                         title="Delete"
                       >

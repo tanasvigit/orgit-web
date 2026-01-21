@@ -6,6 +6,7 @@ import { EmployeeLayout } from '../../../components/employee/EmployeeLayout';
 import { useAuth } from '../../../context/AuthContext';
 import { documentInstanceService } from '../../../services/documentInstanceService';
 import { documentTemplateService } from '../../../services/documentTemplateService';
+import { getDocumentById as getLocalDocumentById, getDocumentBlobUrl, downloadDocument as downloadLocalDocument, viewDocument as viewLocalDocument } from '../../../services/localDocumentService';
 import { Button } from '../../../components/shared';
 import { DocumentBuilderProvider, useDocumentBuilder } from '../../../components/document-builder/DocumentBuilderProvider';
 import { DocumentBuilderContent } from '../../../components/document-builder/DocumentBuilderLayout';
@@ -89,16 +90,37 @@ export const DocumentViewer: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const isEditMode = searchParams.get('edit') === 'true';
+  const isLocal = searchParams.get('local') === 'true';
   const queryClient = useQueryClient();
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
+  const [localDocument, setLocalDocument] = useState<any | null>(null);
   const isAdmin = user?.role === 'admin';
 
   const { data: instance, isLoading } = useQuery(
     ['documentInstance', id],
     () => documentInstanceService.getById(id!),
-    { enabled: !!id }
+    { enabled: !!id && !isLocal }
   );
+
+  // Load local document
+  React.useEffect(() => {
+    if (isLocal && id) {
+      const loadLocal = async () => {
+        try {
+          const doc = await getLocalDocumentById(id);
+          setLocalDocument(doc);
+          if (doc) {
+            const url = await getDocumentBlobUrl(id);
+            setBlobUrl(url);
+          }
+        } catch (error) {
+          console.error('Error loading local document:', error);
+        }
+      };
+      loadLocal();
+    }
+  }, [isLocal, id]);
 
   const { data: template } = useQuery(
     ['template', instance?.templateId],
@@ -108,7 +130,7 @@ export const DocumentViewer: React.FC = () => {
 
   // Robust PDF loading via Blob
   useEffect(() => {
-    if (id && !isEditMode && instance) {
+    if (id && !isEditMode && !isLocal && instance) {
       setIsPdfLoading(true);
       documentInstanceService.download(id)
         .then(blob => {
@@ -126,7 +148,7 @@ export const DocumentViewer: React.FC = () => {
         window.URL.revokeObjectURL(blobUrl);
       }
     };
-  }, [id, isEditMode, instance?.id, instance?.updatedAt]);
+  }, [id, isEditMode, isLocal, instance?.id, instance?.updatedAt]);
 
   const updateStatusMutation = useMutation(
     (newStatus: 'draft' | 'final') => {
@@ -157,40 +179,56 @@ export const DocumentViewer: React.FC = () => {
   );
 
   const handleDownload = async () => {
-    let url = blobUrl;
-    let shouldRevoke = false;
-
     try {
-      if (!url) {
-        const blob = await documentInstanceService.download(id!);
-        url = window.URL.createObjectURL(blob);
-        shouldRevoke = true;
+      if (isLocal) {
+        await downloadLocalDocument(id!);
+      } else {
+        let url = blobUrl;
+        let shouldRevoke = false;
+
+        if (!url) {
+          const blob = await documentInstanceService.download(id!);
+          url = window.URL.createObjectURL(blob);
+          shouldRevoke = true;
+        }
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${instance?.title || 'document'}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+
+        setTimeout(() => {
+          if (shouldRevoke && url) window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        }, 150);
       }
-
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${instance?.title || 'document'}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-
-      setTimeout(() => {
-        if (shouldRevoke && url) window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      }, 150);
     } catch (error) {
       alert('Failed to download document');
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (window.confirm('Are you sure you want to delete this document?')) {
-      deleteMutation.mutate();
+      if (isLocal) {
+        try {
+          const { deleteDocument } = await import('../../../services/localDocumentService');
+          await deleteDocument(id!);
+          navigate(isAdmin ? '/admin/documents' : '/documents');
+        } catch (error) {
+          alert('Failed to delete local document');
+        }
+      } else {
+        deleteMutation.mutate();
+      }
     }
   };
 
   const Layout = isAdmin ? AdminLayout : EmployeeLayout;
 
-  if (isLoading) {
+  const currentInstance = isLocal ? localDocument : instance;
+
+  if ((isLoading && !isLocal) || (isLocal && !localDocument && !isEditMode)) {
     return (
       <Layout>
         <div className="p-6 md:p-8">
@@ -202,7 +240,7 @@ export const DocumentViewer: React.FC = () => {
     );
   }
 
-  if (!instance) {
+  if (!currentInstance) {
     return (
       <Layout>
         <div className="p-6 md:p-8">
@@ -217,7 +255,7 @@ export const DocumentViewer: React.FC = () => {
     );
   }
 
-  if (isEditMode && instance.status === 'draft') {
+  if (isEditMode && !isLocal && currentInstance.status === 'draft') {
     return (
       <DocumentBuilderProvider>
         <DocumentEditorIntegration
@@ -239,25 +277,40 @@ export const DocumentViewer: React.FC = () => {
               <span className="material-symbols-outlined">arrow_back</span>
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">{instance.title}</h1>
+              <h1 className="text-2xl font-bold text-slate-900">{currentInstance.title}</h1>
               <div className="flex items-center gap-3 mt-1">
-                <p className="text-slate-600 font-medium">{template?.name || 'Loading template...'}</p>
-                <span className="text-slate-400">•</span>
+                {!isLocal && (
+                  <>
+                    <p className="text-slate-600 font-medium">{template?.name || 'Loading template...'}</p>
+                    <span className="text-slate-400">•</span>
+                  </>
+                )}
+                {isLocal && (
+                  <>
+                    <p className="text-slate-600 font-medium text-sm">{currentInstance.originalName}</p>
+                    <span className="text-slate-400">•</span>
+                  </>
+                )}
                 <span
-                  className={`px-3 py-1 text-[10px] font-bold uppercase rounded-full ${instance.status === 'final'
+                  className={`px-3 py-1 text-[10px] font-bold uppercase rounded-full ${currentInstance.status === 'final'
                     ? 'bg-green-100 text-green-800'
-                    : instance.status === 'draft'
+                    : currentInstance.status === 'draft'
                       ? 'bg-amber-100 text-amber-800'
                       : 'bg-slate-100 text-slate-800'
                     }`}
                 >
-                  {instance.status}
+                  {currentInstance.status || 'draft'}
                 </span>
+                {isLocal && (
+                  <span className="px-2 py-1 text-[10px] font-bold uppercase rounded-full bg-blue-100 text-blue-800">
+                    Local
+                  </span>
+                )}
               </div>
             </div>
           </div>
           <div className="flex gap-3 flex-wrap">
-            {instance.status === 'draft' && (
+            {!isLocal && currentInstance.status === 'draft' && (
               <>
                 <Button
                   variant="outline"
@@ -279,6 +332,15 @@ export const DocumentViewer: React.FC = () => {
                   {updateStatusMutation.isLoading ? 'Updating...' : 'Mark as Final'}
                 </Button>
               </>
+            )}
+            {isLocal && (
+              <Button
+                variant="outline"
+                onClick={() => viewLocalDocument(id!)}
+              >
+                <span className="material-symbols-outlined mr-2">open_in_new</span>
+                Open in New Tab
+              </Button>
             )}
             <Button variant="outline" onClick={handleDownload}>
               <span className="material-symbols-outlined mr-2">download</span>
