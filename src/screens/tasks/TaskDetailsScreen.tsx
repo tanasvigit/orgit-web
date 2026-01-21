@@ -69,8 +69,30 @@ export const TaskDetailsScreen: React.FC = () => {
       onSuccess: () => {
         queryClient.invalidateQueries(['task', taskId]);
         queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
         setShowRejectModal(false);
         setRejectionReason('');
+      }
+    }
+  );
+
+  // Update task status mutation
+  const updateStatusMutation = useMutation(
+    (status: string) => taskService.updateTaskStatus(taskId!, status),
+    {
+      onSuccess: (data) => {
+        console.log('Task status updated successfully:', data);
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+      },
+      onError: (error: any) => {
+        console.error('Failed to update task status:', error);
+        console.error('Error response:', error.response);
+        const errorMessage = error.response?.data?.error || error.message || 'Failed to update task status';
+        alert(errorMessage);
       }
     }
   );
@@ -298,12 +320,36 @@ export const TaskDetailsScreen: React.FC = () => {
                 </span>
               )}
             </div>
-            {isOverdue && (
-              <div className="flex items-center gap-2 text-red-600 dark:text-red-400 text-sm font-semibold">
-                <span className="material-symbols-outlined text-base">warning</span>
-                Overdue
+            <div className="flex items-center gap-3">
+              {isOverdue && (
+                <div className="flex items-center gap-2 text-red-600 dark:text-red-400 text-sm font-semibold">
+                  <span className="material-symbols-outlined text-base">warning</span>
+                  Overdue
+                </div>
+              )}
+              {/* Status Change Dropdown */}
+              <div className="relative">
+                <select
+                  value={displayTask.status || 'pending'}
+                  onChange={(e) => {
+                    const newStatus = e.target.value;
+                    if (newStatus !== displayTask.status) {
+                      updateStatusMutation.mutate(newStatus);
+                    }
+                  }}
+                  disabled={updateStatusMutation.isLoading}
+                  className="appearance-none bg-white dark:bg-slate-700 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500 dark:text-gray-400">
+                  <span className="material-symbols-outlined text-base">arrow_drop_down</span>
+                </span>
               </div>
-            )}
+            </div>
           </div>
           <h2 className="text-2xl md:text-3xl font-bold leading-tight text-gray-900 dark:text-white mb-3">{displayTask.title}</h2>
           <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">

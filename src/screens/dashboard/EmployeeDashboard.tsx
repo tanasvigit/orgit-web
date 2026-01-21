@@ -12,37 +12,89 @@ export const EmployeeDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [taskView, setTaskView] = useState<TaskView>('self');
-  const [expandedDM, setExpandedDM] = useState(false);
-  const [expandedCM, setExpandedCM] = useState(false);
+  // Independent expand/collapse state for D.M. and C.M. sections in Self Tasks and Assigned Tasks
+  const [expandedDM, setExpandedDM] = useState({ self: false, assigned: false });
+  const [expandedCM, setExpandedCM] = useState({ self: false, assigned: false });
 
   const { data: dashboardData, isLoading } = useQuery(
     ['dashboard', taskView],
     () => dashboardService.getDashboard(3),
-    { refetchInterval: 30000 } // Refetch every 30 seconds
+    { 
+      refetchInterval: 30000, // Refetch every 30 seconds
+      onSuccess: (data) => {
+        // Debug logging
+        console.log('[Dashboard Frontend] Received data:', data);
+        console.log('[Dashboard Frontend] Self tasks:', data?.data?.selfTasks);
+        console.log('[Dashboard Frontend] Assigned tasks:', data?.data?.assignedTasks);
+      }
+    }
   );
 
-  const { data: statistics } = useQuery('dashboard-statistics', () =>
-    dashboardService.getStatistics()
+  const { data: statistics } = useQuery(
+    ['dashboard-statistics', taskView],
+    () => dashboardService.getStatistics(),
+    {
+      refetchInterval: 30000, // Refetch every 30 seconds
+      onSuccess: (data) => {
+        // Debug logging
+        console.log('[Dashboard Statistics] Received data:', data);
+        console.log('[Dashboard Statistics] Statistics:', data?.data);
+      }
+    }
   );
 
   const getStatusCount = (status: 'overdue' | 'duesoon' | 'inprogress' | 'completed') => {
+    if (!statistics?.data) {
+      console.log('[Dashboard] No statistics data available');
+      return 0;
+    }
+    const prefix = taskView === 'self' ? 'selfTasks' : 'assignedTasks';
+    // Map status to correct key format matching backend response
+    const statusKeyMap: Record<string, string> = {
+      overdue: 'Overdue',
+      duesoon: 'DueSoon',
+      inprogress: 'InProgress',
+      completed: 'Completed',
+    };
+    const statusKey = statusKeyMap[status] || status.charAt(0).toUpperCase() + status.slice(1);
+    const key = `${prefix}${statusKey}`;
+    const value = statistics.data[key] || 0;
+    console.log(`[Dashboard] ${key}:`, value);
+    return value;
+  };
+
+  const getTotalCount = () => {
     if (!statistics?.data) return 0;
     const prefix = taskView === 'self' ? 'selfTasks' : 'assignedTasks';
-    return statistics.data[`${prefix}${status.charAt(0).toUpperCase() + status.slice(1)}`] || 0;
+    const total = (
+      (statistics.data[`${prefix}Overdue`] || 0) +
+      (statistics.data[`${prefix}DueSoon`] || 0) +
+      (statistics.data[`${prefix}InProgress`] || 0) +
+      (statistics.data[`${prefix}Completed`] || 0)
+    );
+    console.log(`[Dashboard] Total ${prefix}:`, total);
+    return total;
   };
 
   const renderTaskSection = (
-    tasks: any[]
+    tasks: any[],
+    statusCategory: 'overdue' | 'dueSoon' | 'inProgress' | 'completed'
   ) => {
     if (tasks.length === 0) return null;
+
+    // Map backend status categories to frontend status values
+    const statusMap: Record<string, 'overdue' | 'duesoon' | 'inprogress' | 'completed'> = {
+      overdue: 'overdue',
+      dueSoon: 'duesoon',
+      inProgress: 'inprogress',
+      completed: 'completed',
+    };
+
+    const status = statusMap[statusCategory] || 'inprogress';
 
     return (
       <>
         {tasks.map((task) => {
-          const status = task.status === 'overdue' ? 'overdue' :
-            task.status === 'completed' ? 'completed' :
-              task.daysUntilDue !== null && task.daysUntilDue <= 3 ? 'duesoon' : 'inprogress';
-
           return (
             <TaskCard
               key={task.id}
@@ -50,7 +102,7 @@ export const EmployeeDashboard: React.FC = () => {
               title={task.title}
               description={task.description}
               status={status}
-              dueDate={task.dueDate}
+              dueDate={task.due_date || task.dueDate}
               category={task.category}
               onClick={() => navigate(`/tasks/${task.id}`)}
             />
@@ -100,7 +152,21 @@ export const EmployeeDashboard: React.FC = () => {
         {/* Overview Statistics */}
         <div>
           <h3 className="text-text-main dark:text-white text-xl font-bold mb-6">Overview</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6">
+            {/* Total Tasks Card */}
+            <div className="bg-white dark:bg-background-dark-subtle p-6 rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-primary/30 hover:shadow-md transition-all">
+              <div className="mb-3 p-3 rounded-full bg-primary/10 text-primary">
+                <span className="material-symbols-outlined text-2xl">task</span>
+              </div>
+              <span className="text-4xl font-bold text-primary mb-2">
+                {getTotalCount()}
+              </span>
+              <span className="text-sm font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
+                Total Tasks
+              </span>
+            </div>
+            
+            {/* Overdue Card */}
             <div className="bg-white dark:bg-background-dark-subtle p-6 rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-overdue/30 hover:shadow-md transition-all">
               <div className="mb-3 p-3 rounded-full bg-status-overdue/10 text-status-overdue">
                 <span className="material-symbols-outlined text-2xl">priority_high</span>
@@ -112,33 +178,39 @@ export const EmployeeDashboard: React.FC = () => {
                 Overdue
               </span>
             </div>
+            
+            {/* Due Soon Card */}
             <div className="bg-white dark:bg-background-dark-subtle p-6 rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-duesoon/30 hover:shadow-md transition-all">
               <div className="mb-3 p-3 rounded-full bg-status-duesoon/10 text-status-duesoon">
                 <span className="material-symbols-outlined text-2xl">hourglass_top</span>
               </div>
-              <span className="text-4xl font-bold text-text-main dark:text-white mb-2">
+              <span className="text-4xl font-bold text-status-duesoon mb-2">
                 {getStatusCount('duesoon')}
               </span>
               <span className="text-sm font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
                 Due Soon
               </span>
             </div>
+            
+            {/* In Progress Card */}
             <div className="bg-white dark:bg-background-dark-subtle p-6 rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-inprogress/30 hover:shadow-md transition-all">
               <div className="mb-3 p-3 rounded-full bg-status-inprogress/10 text-status-inprogress">
                 <span className="material-symbols-outlined text-2xl">pending_actions</span>
               </div>
-              <span className="text-4xl font-bold text-text-main dark:text-white mb-2">
+              <span className="text-4xl font-bold text-status-inprogress mb-2">
                 {getStatusCount('inprogress')}
               </span>
               <span className="text-sm font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
                 In Progress
               </span>
             </div>
+            
+            {/* Completed Card */}
             <div className="bg-white dark:bg-background-dark-subtle p-6 rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-completed/30 hover:shadow-md transition-all">
               <div className="mb-3 p-3 rounded-full bg-status-completed/10 text-status-completed">
                 <span className="material-symbols-outlined text-2xl">task_alt</span>
               </div>
-              <span className="text-4xl font-bold text-text-main dark:text-white mb-2">
+              <span className="text-4xl font-bold text-status-completed mb-2">
                 {getStatusCount('completed')}
               </span>
               <span className="text-sm font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
@@ -162,20 +234,34 @@ export const EmployeeDashboard: React.FC = () => {
                 <div>
                   <h3 className="text-text-main dark:text-white text-lg font-bold mb-4">General Tasks</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {renderTaskSection([
-                      ...(currentTasks.general.overdue || []),
-                      ...(currentTasks.general.dueSoon || []),
-                      ...(currentTasks.general.inProgress || []),
-                      ...(currentTasks.general.completed || []),
-                    ])}
+                    {renderTaskSection(currentTasks.general.overdue || [], 'overdue')}
+                    {renderTaskSection(currentTasks.general.dueSoon || [], 'dueSoon')}
+                    {renderTaskSection(currentTasks.general.inProgress || [], 'inProgress')}
+                    {renderTaskSection(currentTasks.general.completed || [], 'completed')}
                   </div>
+                  {(!currentTasks.general.overdue?.length && 
+                    !currentTasks.general.dueSoon?.length && 
+                    !currentTasks.general.inProgress?.length && 
+                    !currentTasks.general.completed?.length) && (
+                    <div className="text-center py-8 text-text-muted dark:text-white/60">
+                      <span className="material-symbols-outlined text-4xl mb-2 opacity-50">task_alt</span>
+                      <p>No general tasks found</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {!currentTasks?.general && (
+                <div className="text-center py-12 text-text-muted dark:text-white/60">
+                  <span className="material-symbols-outlined text-5xl mb-4 opacity-50">task_alt</span>
+                  <p className="text-lg">No tasks found</p>
+                  <p className="text-sm mt-2">Create a new task to get started</p>
                 </div>
               )}
 
               {/* Document Management Section */}
               <div>
                 <button
-                  onClick={() => setExpandedDM(!expandedDM)}
+                  onClick={() => setExpandedDM(prev => ({ ...prev, [taskView]: !prev[taskView] }))}
                   className="w-full flex items-center justify-between p-5 bg-white dark:bg-background-dark-subtle rounded-xl shadow-sm border border-gray-100 dark:border-white/5 group hover:shadow-md hover:border-primary/30 transition-all"
                 >
                   <div className="flex items-center gap-4">
@@ -195,20 +281,18 @@ export const EmployeeDashboard: React.FC = () => {
                     </div>
                   </div>
                   <span
-                    className={`material-symbols-outlined text-gray-400 group-hover:text-primary transition-all text-2xl ${expandedDM ? 'rotate-180' : ''
+                    className={`material-symbols-outlined text-gray-400 group-hover:text-primary transition-all text-2xl ${expandedDM[taskView] ? 'rotate-180' : ''
                       }`}
                   >
                     expand_more
                   </span>
                 </button>
-                {expandedDM && currentTasks?.documentManagement && (
+                {expandedDM[taskView] && currentTasks?.documentManagement && (
                   <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {renderTaskSection([
-                      ...(currentTasks.documentManagement.overdue || []),
-                      ...(currentTasks.documentManagement.dueSoon || []),
-                      ...(currentTasks.documentManagement.inProgress || []),
-                      ...(currentTasks.documentManagement.completed || []),
-                    ])}
+                    {renderTaskSection(currentTasks.documentManagement.overdue || [], 'overdue')}
+                    {renderTaskSection(currentTasks.documentManagement.dueSoon || [], 'dueSoon')}
+                    {renderTaskSection(currentTasks.documentManagement.inProgress || [], 'inProgress')}
+                    {renderTaskSection(currentTasks.documentManagement.completed || [], 'completed')}
                   </div>
                 )}
               </div>
@@ -216,7 +300,7 @@ export const EmployeeDashboard: React.FC = () => {
               {/* Compliance Management Section */}
               <div>
                 <button
-                  onClick={() => setExpandedCM(!expandedCM)}
+                  onClick={() => setExpandedCM(prev => ({ ...prev, [taskView]: !prev[taskView] }))}
                   className="w-full flex items-center justify-between p-5 bg-white dark:bg-background-dark-subtle rounded-xl shadow-sm border border-gray-100 dark:border-white/5 group hover:shadow-md hover:border-primary/30 transition-all"
                 >
                   <div className="flex items-center gap-4">
@@ -236,20 +320,18 @@ export const EmployeeDashboard: React.FC = () => {
                     </div>
                   </div>
                   <span
-                    className={`material-symbols-outlined text-gray-400 group-hover:text-primary transition-all text-2xl ${expandedCM ? 'rotate-180' : ''
+                    className={`material-symbols-outlined text-gray-400 group-hover:text-primary transition-all text-2xl ${expandedCM[taskView] ? 'rotate-180' : ''
                       }`}
                   >
                     expand_more
                   </span>
                 </button>
-                {expandedCM && currentTasks?.complianceManagement && (
+                {expandedCM[taskView] && currentTasks?.complianceManagement && (
                   <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {renderTaskSection([
-                      ...(currentTasks.complianceManagement.overdue || []),
-                      ...(currentTasks.complianceManagement.dueSoon || []),
-                      ...(currentTasks.complianceManagement.inProgress || []),
-                      ...(currentTasks.complianceManagement.completed || []),
-                    ])}
+                    {renderTaskSection(currentTasks.complianceManagement.overdue || [], 'overdue')}
+                    {renderTaskSection(currentTasks.complianceManagement.dueSoon || [], 'dueSoon')}
+                    {renderTaskSection(currentTasks.complianceManagement.inProgress || [], 'inProgress')}
+                    {renderTaskSection(currentTasks.complianceManagement.completed || [], 'completed')}
                   </div>
                 )}
               </div>

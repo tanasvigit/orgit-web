@@ -38,11 +38,11 @@ export default {
         "text-sub-dark": "#bca3c9",
         "text-body": "#374151",
         "text-muted-light": "#9ca3af",
-        // Status colors
-        "status-overdue": "#D32F2F",
-        "status-duesoon": "#EF5350",
-        "status-inprogress": "#F57C00",
-        "status-completed": "#2E7D32",
+        // Status colors - matching requirements: Over Due (Red), Due Soon (Light Red), In Progress (Orange), Completed (Green)
+        "status-overdue": "#D32F2F", // Red
+        "status-duesoon": "#EF5350", // Light Red
+        "status-inprogress": "#F57C00", // Orange
+        "status-completed": "#2E7D32", // Green
         // Chat colors
         "bubble-incoming": "#ffffff",
         "border-light": "#E5E7EB", // Match code.html

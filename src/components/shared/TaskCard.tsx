@@ -27,11 +27,19 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   progress,
   onClick,
 }) => {
-  const statusColorMap = {
-    overdue: 'status-overdue',
-    duesoon: 'status-duesoon',
-    inprogress: 'status-inprogress',
-    completed: 'status-completed',
+  // Status color mapping with full Tailwind classes (required for build-time class detection)
+  const statusColorClasses = {
+    overdue: 'bg-status-overdue',
+    duesoon: 'bg-status-duesoon',
+    inprogress: 'bg-status-inprogress',
+    completed: 'bg-status-completed',
+  };
+
+  const statusTextColorClasses = {
+    overdue: 'text-status-overdue',
+    duesoon: 'text-status-duesoon',
+    inprogress: 'text-status-inprogress',
+    completed: 'text-status-completed',
   };
 
   const formatDueDate = (date?: string) => {
@@ -53,7 +61,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       } cursor-pointer`}
       onClick={onClick}
     >
-      <div className={`absolute left-0 top-0 bottom-0 w-1.5 bg-${statusColorMap[status]}`} />
+      <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${statusColorClasses[status]}`} />
       <div className="p-4 pl-5">
         <div className="flex justify-between items-start mb-2">
           <StatusBadge status={status} />
@@ -83,13 +91,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         {progress !== undefined && status === 'inprogress' && (
           <div className="w-full bg-gray-100 dark:bg-white/10 rounded-full h-1.5 mb-4">
             <div
-              className={`bg-${statusColorMap[status]} h-1.5 rounded-full`}
+              className={`${statusColorClasses[status]} h-1.5 rounded-full`}
               style={{ width: `${progress}%` }}
             />
           </div>
         )}
         <div className="flex items-center justify-between border-t border-gray-50 dark:border-white/5 pt-3">
-          <div className="flex items-center gap-2 text-status-overdue">
+          <div className={`flex items-center gap-2 ${statusTextColorClasses[status]}`}>
             {dueDate && (
               <>
                 <span className="material-symbols-outlined text-[16px]">

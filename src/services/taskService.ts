@@ -73,8 +73,20 @@ export const taskService = {
   },
 
   updateTask: async (taskId: string, updates: Partial<CreateTaskRequest>) => {
-    const response = await api.put(`/tasks/${taskId}`, updates);
+    const response = await api.patch(`/tasks/${taskId}`, updates);
     return response.data;
+  },
+
+  updateTaskStatus: async (taskId: string, status: string) => {
+    try {
+      const response = await api.patch(`/tasks/${taskId}/status`, { status });
+      // Backend returns: { task: {...} } or { success: true, task: {...} }
+      return response.data.task || response.data.data || response.data;
+    } catch (error: any) {
+      console.error('Update task status error:', error);
+      // Re-throw with more details
+      throw error;
+    }
   },
 
   getMentionableTasks: async () => {
