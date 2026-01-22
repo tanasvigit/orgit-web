@@ -32,14 +32,14 @@ export const Dashboard: React.FC = () => {
   };
 
   const statCards = [
-    { label: 'Total Organizations', value: stats.totalOrganizations, icon: 'domain', color: 'blue' },
-    { label: 'Active Organizations', value: stats.activeOrganizations, icon: 'check_circle', color: 'green' },
-    { label: 'Total Users', value: stats.totalUsers, icon: 'people', color: 'purple' },
-    { label: 'Active Users', value: stats.activeUsers, icon: 'person_check', color: 'indigo' },
-    { label: 'Total Tasks', value: stats.totalTasks, icon: 'task', color: 'orange' },
-    { label: 'Active Tasks', value: stats.activeTasks, icon: 'play_circle', color: 'yellow' },
-    { label: 'Completed Tasks', value: stats.completedTasks, icon: 'done_all', color: 'green' },
-    { label: 'Overdue Tasks', value: stats.overdueTasks, icon: 'warning', color: 'red' },
+    { label: 'Total Organizations', value: stats.totalOrganizations, icon: 'domain', bgColor: 'bg-blue-100 dark:bg-blue-900/20', iconColor: 'text-blue-600 dark:text-blue-400' },
+    { label: 'Active Organizations', value: stats.activeOrganizations, icon: 'check_circle', bgColor: 'bg-green-100 dark:bg-green-900/20', iconColor: 'text-green-600 dark:text-green-400' },
+    { label: 'Total Users', value: stats.totalUsers, icon: 'people', bgColor: 'bg-purple-100 dark:bg-purple-900/20', iconColor: 'text-purple-600 dark:text-purple-400' },
+    { label: 'Active Users', value: stats.activeUsers, icon: 'person_check', bgColor: 'bg-indigo-100 dark:bg-indigo-900/20', iconColor: 'text-indigo-600 dark:text-indigo-400' },
+    { label: 'Total Tasks', value: stats.totalTasks, icon: 'task', bgColor: 'bg-orange-100 dark:bg-orange-900/20', iconColor: 'text-orange-600 dark:text-orange-400' },
+    { label: 'Active Tasks', value: stats.activeTasks, icon: 'play_circle', bgColor: 'bg-yellow-100 dark:bg-yellow-900/20', iconColor: 'text-yellow-600 dark:text-yellow-400' },
+    { label: 'Completed Tasks', value: stats.completedTasks, icon: 'done_all', bgColor: 'bg-green-100 dark:bg-green-900/20', iconColor: 'text-green-600 dark:text-green-400' },
+    { label: 'Overdue Tasks', value: stats.overdueTasks, icon: 'warning', bgColor: 'bg-red-100 dark:bg-red-900/20', iconColor: 'text-red-600 dark:text-red-400' },
   ];
 
   return (
@@ -63,8 +63,8 @@ export const Dashboard: React.FC = () => {
                   <p className="text-sm text-gray-500 dark:text-gray-400">{card.label}</p>
                   <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{card.value}</p>
                 </div>
-                <div className={`p-3 rounded-lg bg-${card.color}-100 dark:bg-${card.color}-900/20`}>
-                  <span className="material-symbols-outlined text-2xl text-${card.color}-600 dark:text-${card.color}-400">
+                <div className={`w-12 h-12 flex items-center justify-center rounded-lg ${card.bgColor} shrink-0 p-2.5 box-border`}>
+                  <span className={`material-symbols-outlined text-base ${card.iconColor} leading-none block`}>
                     {card.icon}
                   </span>
                 </div>

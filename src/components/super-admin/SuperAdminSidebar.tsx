@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
@@ -9,17 +9,32 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { path: '/super-admin', icon: 'dashboard', label: 'Dashboard' },
+  { path: '/super-admin', icon: 'grid_view', label: 'Dashboard' },
   { path: '/super-admin/organizations', icon: 'domain', label: 'Organisations' },
   { path: '/super-admin/users', icon: 'people', label: 'Users' },
   { path: '/super-admin/document-templates', icon: 'description', label: 'Document Templates' },
   { path: '/super-admin/compliance', icon: 'verified_user', label: 'Compliance Management' },
 ];
 
-export const SuperAdminSidebar: React.FC = () => {
+interface SuperAdminSidebarProps {
+  onToggleRef?: React.MutableRefObject<(() => void) | undefined>;
+}
+
+export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRef }) => {
   const location = useLocation();
   const { user } = useAuth();
   const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const handleToggle = useCallback(() => {
+    setIsCollapsed(prev => !prev);
+  }, []);
+
+  // Expose toggle function via ref
+  useEffect(() => {
+    if (onToggleRef) {
+      onToggleRef.current = handleToggle;
+    }
+  }, [onToggleRef, handleToggle]);
 
   return (
     <aside
@@ -41,24 +56,17 @@ export const SuperAdminSidebar: React.FC = () => {
             </div>
           )}
         </div>
-        {/* Toggle Button - Top Right */}
-        <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-400 hover:text-super-admin-primary dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
-          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <span
-            className={`material-icons-outlined text-lg transition-transform duration-300 ${
-              isCollapsed ? '' : 'rotate-180'
-            }`}
-          >
-            chevron_left
-          </span>
-        </button>
+        {/* Removed Toggle Button - now in Navbar */}
       </div>
       <nav className={`flex-1 overflow-y-auto overflow-x-visible py-6 space-y-1 ${isCollapsed ? 'px-3' : 'px-4'}`}>
         {navItems.map((item) => {
-          const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+          // Special handling for Dashboard - only active when exactly /super-admin or /super-admin/
+          let isActive: boolean;
+          if (item.path === '/super-admin') {
+            isActive = location.pathname === '/super-admin' || location.pathname === '/super-admin/';
+          } else {
+            isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+          }
           return (
             <Link
               key={item.path}

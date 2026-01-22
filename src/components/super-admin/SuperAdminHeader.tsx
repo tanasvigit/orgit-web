@@ -11,12 +11,14 @@ interface SuperAdminHeaderProps {
   breadcrumbs?: BreadcrumbItem[];
   showSearch?: boolean;
   searchPlaceholder?: string;
+  onSidebarToggle?: () => void;
 }
 
 export const SuperAdminHeader: React.FC<SuperAdminHeaderProps> = ({
   breadcrumbs = [],
   showSearch = false,
   searchPlaceholder = 'Search...',
+  onSidebarToggle,
 }) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -69,6 +71,16 @@ export const SuperAdminHeader: React.FC<SuperAdminHeaderProps> = ({
   return (
     <header className="h-20 bg-super-admin-surface-light dark:bg-super-admin-surface-dark flex items-center justify-between px-8 flex-shrink-0 border-b border-super-admin-border-light dark:border-super-admin-border-dark shadow-sm z-10">
       <div className="flex items-center gap-8">
+        {/* Hamburger menu button */}
+        {onSidebarToggle && (
+          <button 
+            onClick={onSidebarToggle} 
+            className="text-gray-600 dark:text-gray-400 hover:text-super-admin-primary dark:hover:text-white transition-colors"
+            title="Toggle sidebar"
+          >
+            <span className="material-symbols-outlined">menu</span>
+          </button>
+        )}
         <nav className="flex items-center text-sm text-gray-500 dark:text-gray-400">
           <span className="material-symbols-outlined text-xl mr-2 text-gray-400">home</span>
           {finalBreadcrumbs.map((crumb, index) => (
