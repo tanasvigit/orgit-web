@@ -16,6 +16,7 @@ import { useQuery, useQueryClient } from 'react-query';
 import { AdminLayout } from '../../../components/admin/AdminLayout';
 import { employeeService, Employee } from '../../../services/employeeService';
 import { useAuth } from '../../../context/AuthContext';
+import { getDepartments, getDesignations } from '../../../services/settingsService';
 
 export const EmployeeList: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -155,18 +156,16 @@ export const EmployeeList: React.FC = () => {
   };
 
   return (
-    <AdminLayout
-      headerActions={
+    <AdminLayout>
+      <div className="max-w-[1600px] mx-auto p-6 md:p-8 space-y-6 relative">
+        {/* Add Employee Button - Top Right Corner */}
         <button
           onClick={() => setShowAddForm(true)}
-          className="bg-primary hover:bg-primary-dark text-white font-semibold py-2 px-4 rounded-lg flex items-center gap-2 transition-all shadow-md shadow-primary/20 active:scale-95"
+          className="fixed top-24 right-8 z-40 bg-primary hover:bg-primary-dark text-white font-semibold py-2.5 px-4 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-primary/40 active:scale-95 hover:scale-105"
         >
           <span className="material-symbols-outlined text-[20px]">add</span>
           <span>Add Employee</span>
         </button>
-      }
-    >
-      <div className="max-w-[1600px] mx-auto p-6 md:p-8 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-2xl md:text-3xl font-bold text-text-main tracking-tight">Employees</h2>
@@ -379,6 +378,20 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, onSave, onCancel,
     password: '',
   });
 
+  // Fetch departments and designations
+  const { data: departmentsData } = useQuery('departments', async () => {
+    const response = await getDepartments();
+    return response.data || response;
+  });
+
+  const { data: designationsData } = useQuery('designations', async () => {
+    const response = await getDesignations();
+    return response.data || response;
+  });
+
+  const departments = Array.isArray(departmentsData) ? departmentsData : (departmentsData?.items || []);
+  const designations = Array.isArray(designationsData) ? designationsData : (designationsData?.items || []);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const submitData = { ...formData };
@@ -433,22 +446,35 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, onSave, onCancel,
       </div>
       <div>
         <label className="block text-sm font-medium text-text-main mb-1">Department *</label>
-        <input
-          type="text"
+        <select
           required
           className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
           value={formData.department}
           onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-        />
+        >
+          <option value="">Select Department</option>
+          {departments.map((dept: any) => (
+            <option key={dept.id} value={dept.name}>
+              {dept.name}
+            </option>
+          ))}
+        </select>
       </div>
       <div>
-        <label className="block text-sm font-medium text-text-main mb-1">Designation</label>
-        <input
-          type="text"
+        <label className="block text-sm font-medium text-text-main mb-1">Designation *</label>
+        <select
+          required
           className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
           value={formData.designation}
           onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
-        />
+        >
+          <option value="">Select Designation</option>
+          {designations.map((desg: any) => (
+            <option key={desg.id} value={desg.name}>
+              {desg.name}
+            </option>
+          ))}
+        </select>
       </div>
       {/* Note: Reporting To can be set later via edit, requires employee ID selection */}
       {employee && (

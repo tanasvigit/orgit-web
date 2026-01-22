@@ -1,48 +1,69 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from 'react-query';
-import { getReminderConfig, updateReminderConfig } from '../../../services/settingsService';
+import { getRecurringTaskSettings, updateRecurringTaskSettings } from '../../../services/settingsService';
 import { AdminLayout } from '../../../components/admin/AdminLayout';
 
-interface ReminderConfig {
-  dueSoonDays?: number;
-  pushEnabled?: boolean;
-  emailEnabled?: boolean;
-  reminderIntervals?: number[];
+interface RecurringTaskSettings {
+  defaultFrequencies?: string[];
+  autoCalculateDueDate?: boolean;
+  escalationEnabled?: boolean;
 }
 
-export const ReminderConfig: React.FC = () => {
+const availableFrequencies = [
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'quarterly', label: 'Quarterly' },
+  { value: 'yearly', label: 'Yearly' },
+  { value: 'specific_weekday', label: 'Specific Weekday' },
+];
+
+export const RecurringTaskSettings: React.FC = () => {
   const navigate = useNavigate();
-  const [config, setConfig] = useState<ReminderConfig>({
-    dueSoonDays: 3,
-    pushEnabled: true,
-    emailEnabled: true,
-    reminderIntervals: [24, 12, 6],
+  const [settings, setSettings] = useState<RecurringTaskSettings>({
+    defaultFrequencies: ['weekly', 'monthly', 'quarterly', 'yearly'],
+    autoCalculateDueDate: true,
+    escalationEnabled: true,
   });
 
-  const { data: configResponse, isLoading, error } = useQuery('reminder-config', getReminderConfig, {
+  const { data: settingsResponse, isLoading, error } = useQuery('recurring-task-settings', getRecurringTaskSettings, {
     onSuccess: (data) => {
       if (data.success && data.data) {
-        setConfig(data.data);
+        setSettings(data.data);
       }
     },
     onError: (error: any) => {
-      console.error('Error loading reminder config:', error);
+      console.error('Error loading recurring task settings:', error);
     },
   });
 
-  const updateMutation = useMutation(updateReminderConfig, {
+  const updateMutation = useMutation(updateRecurringTaskSettings, {
     onSuccess: () => {
-      alert('Reminder configuration updated successfully');
+      alert('Recurring task settings updated successfully');
       navigate(-1);
     },
     onError: (error: any) => {
-      alert(error.response?.data?.error || 'Failed to update configuration');
+      alert(error.response?.data?.error || 'Failed to update settings');
     },
   });
 
   const handleSave = () => {
-    updateMutation.mutate(config);
+    updateMutation.mutate(settings);
+  };
+
+  const toggleFrequency = (frequency: string) => {
+    const currentFrequencies = settings.defaultFrequencies || [];
+    if (currentFrequencies.includes(frequency)) {
+      setSettings({
+        ...settings,
+        defaultFrequencies: currentFrequencies.filter((f) => f !== frequency),
+      });
+    } else {
+      setSettings({
+        ...settings,
+        defaultFrequencies: [...currentFrequencies, frequency],
+      });
+    }
   };
 
   const content = (
@@ -51,10 +72,10 @@ export const ReminderConfig: React.FC = () => {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-text-main-light dark:text-text-main-dark mb-1">
-              Reminder Configuration
+              Recurring Task Settings
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Configure due soon days and reminder intervals
+              Configure default frequency options, due date calculation, and escalation behavior
             </p>
           </div>
           <button
@@ -73,7 +94,7 @@ export const ReminderConfig: React.FC = () => {
         ) : error ? (
           <div className="flex flex-col items-center justify-center py-12">
             <span className="material-icons-outlined text-6xl text-red-500 mb-4">error_outline</span>
-            <p className="text-red-600 dark:text-red-400 mb-2">Failed to load configuration</p>
+            <p className="text-red-600 dark:text-red-400 mb-2">Failed to load settings</p>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               {(error as any)?.response?.data?.error || (error as any)?.message || 'Unknown error'}
             </p>
@@ -86,33 +107,55 @@ export const ReminderConfig: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Due Soon Days */}
+            {/* Default Frequencies */}
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
-              <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-2">Due Soon Days</label>
-              <input
-                type="number"
-                min="1"
-                max="30"
-                value={config.dueSoonDays || 3}
-                onChange={(e) => setConfig({ ...config, dueSoonDays: parseInt(e.target.value) || 3 })}
-                placeholder="Days before due date"
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
-              />
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Number of days before due date to send reminders (1-30 days)</p>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Default Frequency Options
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                Select which frequency options should be available when creating recurring tasks
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {availableFrequencies.map((freq) => {
+                  const isSelected = settings.defaultFrequencies?.includes(freq.value) ?? false;
+                  return (
+                    <button
+                      key={freq.value}
+                      onClick={() => toggleFrequency(freq.value)}
+                      className={`p-4 rounded-lg border-2 transition-all ${
+                        isSelected
+                          ? 'border-primary bg-primary/10 dark:bg-primary/20 text-primary dark:text-primary-light'
+                          : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:border-primary/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{freq.label}</span>
+                        {isSelected && (
+                          <span className="material-symbols-outlined text-primary text-lg">check_circle</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Push Notifications */}
+            {/* Auto Calculate Due Date */}
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Push Notifications</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Enable push notification reminders</p>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+                    Auto Calculate Due Date
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Automatically calculate due dates for recurring tasks based on frequency
+                  </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={config.pushEnabled ?? true}
-                    onChange={(e) => setConfig({ ...config, pushEnabled: e.target.checked })}
+                    checked={settings.autoCalculateDueDate ?? true}
+                    onChange={(e) => setSettings({ ...settings, autoCalculateDueDate: e.target.checked })}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 dark:peer-focus:ring-primary/30 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary"></div>
@@ -120,45 +163,27 @@ export const ReminderConfig: React.FC = () => {
               </div>
             </div>
 
-            {/* Email Notifications */}
+            {/* Escalation Enabled */}
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Email Notifications</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Enable email reminders</p>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+                    Enable Escalation for Recurring Tasks
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Automatically escalate recurring tasks that miss their scheduled date
+                  </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={config.emailEnabled ?? true}
-                    onChange={(e) => setConfig({ ...config, emailEnabled: e.target.checked })}
+                    checked={settings.escalationEnabled ?? true}
+                    onChange={(e) => setSettings({ ...settings, escalationEnabled: e.target.checked })}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 dark:peer-focus:ring-primary/30 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary"></div>
                 </label>
               </div>
-            </div>
-
-            {/* Reminder Intervals */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
-              <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-2">
-                Reminder Intervals (Hours)
-              </label>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Comma-separated list (e.g., 24,12,6)</p>
-              <input
-                type="text"
-                value={config.reminderIntervals?.join(',') || ''}
-                onChange={(e) => {
-                  const intervals = e.target.value
-                    .split(',')
-                    .map((i) => parseInt(i.trim()))
-                    .filter((i) => !isNaN(i));
-                  setConfig({ ...config, reminderIntervals: intervals });
-                }}
-                placeholder="24, 12, 6"
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
-              />
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Hours before due date to send reminders (1-168 hours each)</p>
             </div>
 
             {/* Save Button */}
@@ -171,10 +196,10 @@ export const ReminderConfig: React.FC = () => {
               </button>
               <button
                 onClick={handleSave}
-                disabled={updateMutation.isLoading}
+                disabled={updateMutation.isLoading || (settings.defaultFrequencies?.length ?? 0) === 0}
                 className="px-6 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-md shadow-primary/20"
               >
-                {updateMutation.isLoading ? 'Saving...' : 'Save Configuration'}
+                {updateMutation.isLoading ? 'Saving...' : 'Save Settings'}
               </button>
             </div>
           </div>
@@ -185,4 +210,3 @@ export const ReminderConfig: React.FC = () => {
 
   return <AdminLayout>{content}</AdminLayout>;
 };
-

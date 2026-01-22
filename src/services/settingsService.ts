@@ -44,7 +44,7 @@ export const deleteDesignation = async (id: string) => {
 
 // Reminder Configuration
 export const getReminderConfig = async () => {
-  const response = await api.get('/settings/reminder');
+  const response = await api.get('/admin/settings/reminder');
   return response.data;
 };
 
@@ -54,7 +54,38 @@ export const updateReminderConfig = async (data: {
   emailEnabled?: boolean;
   reminderIntervals?: number[];
 }) => {
-  const response = await api.put('/settings/reminder', data);
+  const response = await api.put('/admin/settings/reminder', data);
+  return response.data;
+};
+
+// Auto Escalation Configuration
+export const getAutoEscalationConfig = async () => {
+  const response = await api.get('/admin/settings/auto-escalation');
+  return response.data;
+};
+
+export const updateAutoEscalationConfig = async (data: {
+  enabled?: boolean;
+  unacceptedHours?: number;
+  overdueDays?: number;
+  missedRecurrenceEnabled?: boolean;
+}) => {
+  const response = await api.put('/admin/settings/auto-escalation', data);
+  return response.data;
+};
+
+// Recurring Task Settings
+export const getRecurringTaskSettings = async () => {
+  const response = await api.get('/admin/settings/recurring-tasks');
+  return response.data;
+};
+
+export const updateRecurringTaskSettings = async (data: {
+  defaultFrequencies?: string[];
+  autoCalculateDueDate?: boolean;
+  escalationEnabled?: boolean;
+}) => {
+  const response = await api.put('/admin/settings/recurring-tasks', data);
   return response.data;
 };
 

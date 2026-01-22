@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
@@ -20,7 +20,11 @@ const navItems: NavItem[] = [
 const ADMIN_STORAGE_KEY = 'admin-sidebar-minimized-by-messages';
 const ADMIN_STORAGE_KEY_MANUAL = 'admin-sidebar-manually-expanded';
 
-export const AdminSidebar: React.FC = () => {
+interface AdminSidebarProps {
+  onToggleRef?: React.MutableRefObject<(() => void) | null>;
+}
+
+export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
   const location = useLocation();
   const { user } = useAuth();
   
@@ -79,14 +83,31 @@ export const AdminSidebar: React.FC = () => {
   
   // Store the collapsed state in a ref to prevent unwanted resets
   const collapsedStateRef = useRef(isCollapsed);
-  const [configExpanded, setConfigExpanded] = useState(
-    location.pathname.startsWith('/admin/configuration') || 
-    (location.pathname.startsWith('/admin/settings') && 
-     !location.pathname.startsWith('/admin/settings/departments') &&
-     !location.pathname.startsWith('/admin/settings/designations') &&
-     !location.pathname.startsWith('/admin/settings/reporting-hierarchy') &&
-     location.pathname !== '/admin/settings/organisation-structure')
-  );
+
+  // Expose toggle function to parent component
+  const handleToggle = useCallback(() => {
+    const newState = !isCollapsed;
+    setIsCollapsed(newState);
+    collapsedStateRef.current = newState;
+    // Track if user manually expanded (only when expanding, not collapsing)
+    if (newState === false) {
+      wasManuallyExpanded.current = true;
+      wasMinimizedByMessageRoute.current = false; // User manually expanded, clear the flag
+      setStoredManualExpanded(true);
+      setStoredMinimizedFlag(false);
+    } else {
+      wasManuallyExpanded.current = false;
+      setStoredManualExpanded(false);
+      // If user manually collapses, we don't need to track it as message-route minimized
+    }
+  }, [isCollapsed]);
+
+  // Expose toggle function via ref
+  useEffect(() => {
+    if (onToggleRef) {
+      onToggleRef.current = handleToggle;
+    }
+  }, [handleToggle, onToggleRef]);
 
   // Automatically minimize sidebar when entering message routes
   // Keep minimized state when leaving message routes (don't auto-expand)
@@ -192,39 +213,16 @@ export const AdminSidebar: React.FC = () => {
             </div>
           )}
         </div>
-        {/* Toggle Button - Top Right */}
-        <button
-          onClick={() => {
-            const newState = !isCollapsed;
-            setIsCollapsed(newState);
-            collapsedStateRef.current = newState;
-            // Track if user manually expanded (only when expanding, not collapsing)
-            if (newState === false) {
-              wasManuallyExpanded.current = true;
-              wasMinimizedByMessageRoute.current = false; // User manually expanded, clear the flag
-              setStoredManualExpanded(true);
-              setStoredMinimizedFlag(false);
-            } else {
-              wasManuallyExpanded.current = false;
-              setStoredManualExpanded(false);
-              // If user manually collapses, we don't need to track it as message-route minimized
-            }
-          }}
-          className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-slate-50 transition-colors"
-          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <span
-            className={`material-icons-outlined text-lg transition-transform duration-300 ${
-              isCollapsed ? '' : 'rotate-180'
-            }`}
-          >
-            chevron_left
-          </span>
-        </button>
       </div>
       <nav className={`flex-1 overflow-y-auto overflow-x-visible pb-2 flex flex-col gap-1 ${isCollapsed ? 'px-3' : 'px-6'}`}>
         {navItems.map((item) => {
-          const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+          // Special handling for Dashboard - only active when exactly /admin or /admin/
+          let isActive: boolean;
+          if (item.path === '/admin') {
+            isActive = location.pathname === '/admin' || location.pathname === '/admin/';
+          } else {
+            isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+          }
           return (
             <Link
               key={item.path}
@@ -273,107 +271,54 @@ export const AdminSidebar: React.FC = () => {
           </span>
           {!isCollapsed && <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0">Entity Master Data</span>}
         </Link>
-        <Link
-          to="/admin/settings/organisation-structure"
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 ${
-            isCollapsed ? 'justify-center' : ''
-          } ${
-            location.pathname === '/admin/settings/organisation-structure' ||
-            location.pathname.startsWith('/admin/settings/departments') ||
-            location.pathname.startsWith('/admin/settings/designations') ||
-            location.pathname.startsWith('/admin/settings/reporting-hierarchy')
-              ? 'bg-primary text-white shadow-md shadow-primary/20'
-              : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-          }`}
-          title={isCollapsed ? 'Organisation Structure' : 'Organisation Structure'}
-        >
-          <span
-            className={`material-symbols-outlined text-[22px] shrink-0 ${
-              location.pathname === '/admin/settings/organisation-structure' ||
-              location.pathname.startsWith('/admin/settings/departments') ||
-              location.pathname.startsWith('/admin/settings/designations') ||
-              location.pathname.startsWith('/admin/settings/reporting-hierarchy')
-                ? ''
-                : 'text-slate-400 group-hover:text-slate-600 transition-colors'
-            }`}
-          >
-            account_tree
-          </span>
-          {!isCollapsed && <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0">Organisation Structure</span>}
-        </Link>
         {!isCollapsed && (
           <>
-            <div className="px-3 pt-6 pb-2">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">System</p>
-            </div>
-            <button
-              onClick={() => setConfigExpanded(!configExpanded)}
+            <Link
+              to="/admin/settings/organisation-structure"
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 ${
-                location.pathname.startsWith('/admin/configuration') || 
-                (location.pathname.startsWith('/admin/settings') && 
-                 !location.pathname.startsWith('/admin/settings/departments') &&
-                 !location.pathname.startsWith('/admin/settings/designations') &&
-                 !location.pathname.startsWith('/admin/settings/reporting-hierarchy'))
+                location.pathname === '/admin/settings/organisation-structure' ||
+                location.pathname.startsWith('/admin/settings/departments') ||
+                location.pathname.startsWith('/admin/settings/designations') ||
+                location.pathname.startsWith('/admin/settings/reporting-hierarchy')
                   ? 'bg-primary text-white shadow-md shadow-primary/20'
                   : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
               }`}
+              title="Organisation Structure"
             >
               <span
                 className={`material-symbols-outlined text-[22px] shrink-0 ${
-                  location.pathname.startsWith('/admin/configuration') || 
-                  (location.pathname.startsWith('/admin/settings') && 
-                   !location.pathname.startsWith('/admin/settings/departments') &&
-                   !location.pathname.startsWith('/admin/settings/designations') &&
-                   !location.pathname.startsWith('/admin/settings/reporting-hierarchy'))
+                  location.pathname === '/admin/settings/organisation-structure' ||
+                  location.pathname.startsWith('/admin/settings/departments') ||
+                  location.pathname.startsWith('/admin/settings/designations') ||
+                  location.pathname.startsWith('/admin/settings/reporting-hierarchy')
+                    ? ''
+                    : 'text-slate-400 group-hover:text-slate-600 transition-colors'
+                }`}
+              >
+                account_tree
+              </span>
+              <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0">Organisation Structure</span>
+            </Link>
+            <Link
+              to="/settings"
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 ${
+                location.pathname === '/settings' || location.pathname.startsWith('/settings/')
+                  ? 'bg-primary text-white shadow-md shadow-primary/20'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              }`}
+              title="Settings"
+            >
+              <span
+                className={`material-symbols-outlined text-[22px] shrink-0 ${
+                  location.pathname === '/settings' || location.pathname.startsWith('/settings/')
                     ? ''
                     : 'text-slate-400 group-hover:text-slate-600 transition-colors'
                 }`}
               >
                 settings
               </span>
-              <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0">Settings (Admin Configurations)</span>
-              <span
-                className={`material-symbols-outlined text-sm ml-auto transition-transform shrink-0 ${
-                  configExpanded ? 'rotate-180' : ''
-                }`}
-              >
-                expand_more
-              </span>
-            </button>
-            {configExpanded && (
-              <div className="pl-[11px] space-y-1 pt-1">
-                <Link
-                  to="/admin/settings/reminder-config"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors pl-11 ${
-                    location.pathname === '/admin/settings/reminder-config'
-                      ? 'bg-primary text-white shadow-md shadow-primary/20'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  <span className="font-medium text-sm">Reminder Config</span>
-                </Link>
-                <Link
-                  to="/admin/configuration/notifications"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors pl-11 ${
-                    location.pathname === '/admin/configuration/notifications'
-                      ? 'bg-primary text-white shadow-md shadow-primary/20'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  <span className="font-medium text-sm">Notifications</span>
-                </Link>
-                <Link
-                  to="/admin/configuration/auto-escalation"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors pl-11 ${
-                    location.pathname === '/admin/configuration/auto-escalation'
-                      ? 'bg-primary text-white shadow-md shadow-primary/20'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  <span className="font-medium text-sm">Auto Escalation</span>
-                </Link>
-              </div>
-            )}
+              <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0">Settings</span>
+            </Link>
           </>
         )}
         {isCollapsed && (
@@ -393,15 +338,15 @@ export const AdminSidebar: React.FC = () => {
               <span className="material-symbols-outlined text-[22px]">account_tree</span>
             </Link>
             <Link
-              to="/admin/settings/reminder-config"
+              to="/settings"
               className={`flex items-center justify-center px-3 py-2.5 rounded-lg transition-colors ${
-                location.pathname === '/admin/settings/reminder-config'
+                location.pathname === '/settings' || location.pathname.startsWith('/settings/')
                   ? 'bg-primary text-white shadow-md shadow-primary/20'
                   : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
               }`}
-              title="Reminder Config"
+              title="Settings"
             >
-              <span className="material-symbols-outlined text-[22px]">notifications_active</span>
+              <span className="material-symbols-outlined text-[22px]">settings</span>
             </Link>
           </>
         )}

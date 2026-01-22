@@ -34,6 +34,7 @@ export const EmployeeLayout: React.FC<EmployeeLayoutProps> = ({
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
+  const sidebarToggleRef = useRef<(() => void) | null>(null);
 
   // Close profile menu when clicking outside
   useEffect(() => {
@@ -72,14 +73,18 @@ export const EmployeeLayout: React.FC<EmployeeLayoutProps> = ({
   return (
     <div className="flex h-screen w-full bg-background-light dark:bg-background-dark overflow-hidden font-sans text-text-light dark:text-text-dark transition-colors duration-200">
       {/* Left Sidebar Navigation */}
-      <EmployeeSidebar />
+      <EmployeeSidebar onToggleRef={sidebarToggleRef} />
 
       {/* Main Content Area with Header */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-background-light dark:bg-background-dark">
         {!hideHeader && (
           <header className="h-16 border-b border-border-light dark:border-border-dark bg-surface-light/80 dark:bg-surface-dark/80 backdrop-blur-md flex items-center justify-between px-8 shrink-0 z-50 sticky top-0">
             <div className="flex items-center gap-4">
-              <button className="md:hidden text-text-main-light dark:text-text-main-dark">
+              <button 
+                onClick={() => sidebarToggleRef.current?.()}
+                className="p-2 rounded-lg text-text-main-light dark:text-text-main-dark hover:bg-slate-100 dark:hover:bg-gray-700 transition-colors"
+                title="Toggle Sidebar"
+              >
                 <span className="material-symbols-outlined">menu</span>
               </button>
               <div className="flex items-center gap-2 text-sm text-text-muted dark:text-gray-400">
@@ -96,7 +101,7 @@ export const EmployeeLayout: React.FC<EmployeeLayoutProps> = ({
                     search
                   </span>
                   <input
-                    className="bg-slate-100 dark:bg-gray-800 border border-transparent hover:border-border-light dark:hover:border-border-dark focus:border-primary-600 rounded-full py-2 pl-10 pr-4 text-sm text-text-main-light dark:text-text-main-dark focus:ring-0 focus:outline-none w-64 placeholder:text-text-muted dark:placeholder:text-gray-400 transition-all"
+                    className="bg-slate-100 dark:bg-gray-800 border border-transparent hover:border-border-light dark:hover:border-border-dark focus:border-primary-600 rounded-full py-2 pl-10 pr-4 text-sm text-slate-900 dark:text-white focus:ring-0 focus:outline-none w-64 placeholder:text-slate-500 dark:placeholder:text-gray-400 transition-all"
                     placeholder="Search..."
                     type="text"
                   />

@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -49,6 +49,8 @@ import { Departments } from './screens/admin/settings/Departments';
 import { Designations } from './screens/admin/settings/Designations';
 import { ReportingHierarchy } from './screens/admin/settings/ReportingHierarchy';
 import { ReminderConfig } from './screens/admin/settings/ReminderConfig';
+import { AutoEscalationConfig } from './screens/admin/settings/AutoEscalationConfig';
+import { RecurringTaskSettings } from './screens/admin/settings/RecurringTaskSettings';
 import { OrganisationStructureScreen } from './screens/admin/settings/OrganisationStructureScreen';
 import './App.css';
 
@@ -63,6 +65,7 @@ const queryClient = new QueryClient({
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading, user } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -76,13 +79,16 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     return <Navigate to="/login" replace />;
   }
 
-  // Redirect admin users to admin dashboard
-  if (user?.role === 'admin') {
+  // Allow admin users to access settings routes
+  const isSettingsRoute = location.pathname.startsWith('/settings');
+  
+  // Redirect admin users to admin dashboard (except for settings routes)
+  if (user?.role === 'admin' && !isSettingsRoute) {
     return <Navigate to="/admin" replace />;
   }
 
-  // Redirect super_admin users to super admin dashboard
-  if (user?.role === 'super_admin') {
+  // Redirect super_admin users to super admin dashboard (except for settings routes)
+  if (user?.role === 'super_admin' && !isSettingsRoute) {
     return <Navigate to="/super-admin" replace />;
   }
 
@@ -641,15 +647,23 @@ function App() {
               }
             />
             <Route
-              path="/admin/configuration/notifications"
+              path="/admin/settings/auto-escalation"
               element={
                 <AdminProtectedRoute>
-                  <AdminSettings />
+                  <AutoEscalationConfig />
                 </AdminProtectedRoute>
               }
             />
             <Route
-              path="/admin/configuration/auto-escalation"
+              path="/admin/settings/recurring-tasks"
+              element={
+                <AdminProtectedRoute>
+                  <RecurringTaskSettings />
+                </AdminProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/configuration/notifications"
               element={
                 <AdminProtectedRoute>
                   <AdminSettings />

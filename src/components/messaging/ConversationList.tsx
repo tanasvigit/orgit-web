@@ -158,7 +158,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                 <span className="material-icons-outlined text-xl">search</span>
               </span>
               <input
-                className="w-full pl-10 pr-4 py-3 rounded-xl border-none bg-white dark:bg-surface-dark shadow-sm focus:ring-2 focus:ring-primary text-sm placeholder-gray-400 dark:text-gray-200"
+                className="w-full pl-10 pr-4 py-3 rounded-xl border-none bg-white dark:bg-surface-dark shadow-sm focus:ring-2 focus:ring-primary text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-200"
                 placeholder="Search chats or tasks..."
                 type="text"
                 value={searchQuery}
@@ -198,7 +198,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                 <span className="material-icons-outlined text-lg">search</span>
               </span>
               <input
-                className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-surface-dark focus:ring-2 focus:ring-primary text-sm placeholder-gray-400 dark:text-gray-200"
+                className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-surface-dark focus:ring-2 focus:ring-primary text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-200"
                 placeholder="Search chats or tasks..."
                 type="text"
                 value={searchQuery}

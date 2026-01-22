@@ -43,7 +43,17 @@ export const ComplianceManagementHome: React.FC = () => {
   };
 
   const content = (
-    <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white min-h-screen flex flex-col overflow-x-hidden">
+    <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white min-h-screen flex flex-col overflow-x-hidden relative">
+      {/* Add Compliance Button - Top Right Corner (Admin only, when not in editor) */}
+      {isAdmin && !showExcelEditor && (
+        <button
+          onClick={() => setShowExcelEditor(true)}
+          className="fixed top-24 right-8 z-40 bg-primary hover:bg-primary-dark text-white font-semibold py-2.5 px-4 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-primary/40 active:scale-95 hover:scale-105"
+        >
+          <span className="material-icons-outlined text-[20px]">add</span>
+          <span>Add Compliance</span>
+        </button>
+      )}
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
           <div className="flex items-center justify-between mb-4">
@@ -53,15 +63,6 @@ export const ComplianceManagementHome: React.FC = () => {
                 {isAdmin ? 'Manage compliance requirements for your organisation' : 'View compliance requirements'}
               </p>
             </div>
-            {isAdmin && !showExcelEditor && (
-              <button
-                onClick={() => setShowExcelEditor(true)}
-                className="flex items-center gap-2 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg shadow-sm transition-colors font-medium"
-              >
-                <span className="material-icons-outlined text-lg">add</span>
-                Add Compliance
-              </button>
-            )}
             {isAdmin && showExcelEditor && (
               <button
                 onClick={() => setShowExcelEditor(false)}

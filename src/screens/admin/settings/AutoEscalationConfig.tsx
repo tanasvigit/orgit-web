@@ -1,39 +1,39 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from 'react-query';
-import { getReminderConfig, updateReminderConfig } from '../../../services/settingsService';
+import { getAutoEscalationConfig, updateAutoEscalationConfig } from '../../../services/settingsService';
 import { AdminLayout } from '../../../components/admin/AdminLayout';
 
-interface ReminderConfig {
-  dueSoonDays?: number;
-  pushEnabled?: boolean;
-  emailEnabled?: boolean;
-  reminderIntervals?: number[];
+interface AutoEscalationConfig {
+  enabled?: boolean;
+  unacceptedHours?: number;
+  overdueDays?: number;
+  missedRecurrenceEnabled?: boolean;
 }
 
-export const ReminderConfig: React.FC = () => {
+export const AutoEscalationConfig: React.FC = () => {
   const navigate = useNavigate();
-  const [config, setConfig] = useState<ReminderConfig>({
-    dueSoonDays: 3,
-    pushEnabled: true,
-    emailEnabled: true,
-    reminderIntervals: [24, 12, 6],
+  const [config, setConfig] = useState<AutoEscalationConfig>({
+    enabled: true,
+    unacceptedHours: 24,
+    overdueDays: 2,
+    missedRecurrenceEnabled: true,
   });
 
-  const { data: configResponse, isLoading, error } = useQuery('reminder-config', getReminderConfig, {
+  const { data: configResponse, isLoading, error } = useQuery('auto-escalation-config', getAutoEscalationConfig, {
     onSuccess: (data) => {
       if (data.success && data.data) {
         setConfig(data.data);
       }
     },
     onError: (error: any) => {
-      console.error('Error loading reminder config:', error);
+      console.error('Error loading auto-escalation config:', error);
     },
   });
 
-  const updateMutation = useMutation(updateReminderConfig, {
+  const updateMutation = useMutation(updateAutoEscalationConfig, {
     onSuccess: () => {
-      alert('Reminder configuration updated successfully');
+      alert('Auto-escalation configuration updated successfully');
       navigate(-1);
     },
     onError: (error: any) => {
@@ -51,10 +51,10 @@ export const ReminderConfig: React.FC = () => {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-text-main-light dark:text-text-main-dark mb-1">
-              Reminder Configuration
+              Auto Escalation Configuration
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Configure due soon days and reminder intervals
+              Configure rules for automatic task escalation
             </p>
           </div>
           <button
@@ -86,79 +86,86 @@ export const ReminderConfig: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Due Soon Days */}
+            {/* Enable Auto Escalation */}
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
-              <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-2">Due Soon Days</label>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+                    Enable Auto Escalation
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Automatically escalate tasks based on configured rules
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={config.enabled ?? true}
+                    onChange={(e) => setConfig({ ...config, enabled: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 dark:peer-focus:ring-primary/30 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary"></div>
+                </label>
+              </div>
+            </div>
+
+            {/* Unaccepted Hours */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+              <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                Unaccepted Hours
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="168"
+                value={config.unacceptedHours || 24}
+                onChange={(e) => setConfig({ ...config, unacceptedHours: parseInt(e.target.value) || 24 })}
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
+              />
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Number of hours before escalating tasks that have not been accepted (1-168 hours)
+              </p>
+            </div>
+
+            {/* Overdue Days */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+              <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                Overdue Days
+              </label>
               <input
                 type="number"
                 min="1"
                 max="30"
-                value={config.dueSoonDays || 3}
-                onChange={(e) => setConfig({ ...config, dueSoonDays: parseInt(e.target.value) || 3 })}
-                placeholder="Days before due date"
+                value={config.overdueDays || 2}
+                onChange={(e) => setConfig({ ...config, overdueDays: parseInt(e.target.value) || 2 })}
                 className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
               />
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Number of days before due date to send reminders (1-30 days)</p>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Number of days after due date before escalating overdue tasks (1-30 days)
+              </p>
             </div>
 
-            {/* Push Notifications */}
+            {/* Missed Recurrence Enabled */}
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Push Notifications</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Enable push notification reminders</p>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+                    Escalate Missed Recurrence
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Automatically escalate recurring tasks that miss their scheduled date
+                  </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={config.pushEnabled ?? true}
-                    onChange={(e) => setConfig({ ...config, pushEnabled: e.target.checked })}
+                    checked={config.missedRecurrenceEnabled ?? true}
+                    onChange={(e) => setConfig({ ...config, missedRecurrenceEnabled: e.target.checked })}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 dark:peer-focus:ring-primary/30 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary"></div>
                 </label>
               </div>
-            </div>
-
-            {/* Email Notifications */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Email Notifications</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Enable email reminders</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={config.emailEnabled ?? true}
-                    onChange={(e) => setConfig({ ...config, emailEnabled: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 dark:peer-focus:ring-primary/30 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary"></div>
-                </label>
-              </div>
-            </div>
-
-            {/* Reminder Intervals */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
-              <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-2">
-                Reminder Intervals (Hours)
-              </label>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Comma-separated list (e.g., 24,12,6)</p>
-              <input
-                type="text"
-                value={config.reminderIntervals?.join(',') || ''}
-                onChange={(e) => {
-                  const intervals = e.target.value
-                    .split(',')
-                    .map((i) => parseInt(i.trim()))
-                    .filter((i) => !isNaN(i));
-                  setConfig({ ...config, reminderIntervals: intervals });
-                }}
-                placeholder="24, 12, 6"
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
-              />
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Hours before due date to send reminders (1-168 hours each)</p>
             </div>
 
             {/* Save Button */}
@@ -185,4 +192,3 @@ export const ReminderConfig: React.FC = () => {
 
   return <AdminLayout>{content}</AdminLayout>;
 };
-

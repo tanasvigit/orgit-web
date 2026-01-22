@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
@@ -9,8 +9,8 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-  { path: '/messages', icon: 'chat_bubble', label: 'Messages' },
+  { path: '/dashboard', icon: 'grid_view', label: 'Dashboard' },
+  { path: '/messages', icon: 'chat', label: 'Messages' },
   { path: '/tasks', icon: 'check_circle', label: 'Tasks' },
   { path: '/documents', icon: 'description', label: 'Documents' },
   { path: '/compliance', icon: 'verified_user', label: 'Compliance' },
@@ -19,7 +19,11 @@ const navItems: NavItem[] = [
 const STORAGE_KEY = 'employee-sidebar-minimized-by-messages';
 const STORAGE_KEY_MANUAL = 'employee-sidebar-manually-expanded';
 
-export const EmployeeSidebar: React.FC = () => {
+interface EmployeeSidebarProps {
+  onToggleRef?: React.MutableRefObject<(() => void) | null>;
+}
+
+export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -79,6 +83,31 @@ export const EmployeeSidebar: React.FC = () => {
   
   // Store the collapsed state in a ref to prevent unwanted resets
   const collapsedStateRef = useRef(isCollapsed);
+
+  // Expose toggle function to parent component
+  const handleToggle = useCallback(() => {
+    const newState = !isCollapsed;
+    setIsCollapsed(newState);
+    collapsedStateRef.current = newState;
+    // Track if user manually expanded (only when expanding, not collapsing)
+    if (newState === false) {
+      wasManuallyExpanded.current = true;
+      wasMinimizedByMessageRoute.current = false; // User manually expanded, clear the flag
+      setStoredManualExpanded(true);
+      setStoredMinimizedFlag(false);
+    } else {
+      wasManuallyExpanded.current = false;
+      setStoredManualExpanded(false);
+      // If user manually collapses, we don't need to track it as message-route minimized
+    }
+  }, [isCollapsed]);
+
+  // Expose toggle function via ref
+  useEffect(() => {
+    if (onToggleRef) {
+      onToggleRef.current = handleToggle;
+    }
+  }, [handleToggle, onToggleRef]);
 
   // Automatically minimize sidebar when entering message routes
   // Keep minimized state when leaving message routes (don't auto-expand)
@@ -167,10 +196,11 @@ export const EmployeeSidebar: React.FC = () => {
   }, [isCollapsed, location.pathname]);
 
   const isActive = (path: string) => {
+    // Special handling for Dashboard - only active when exactly /dashboard or /dashboard/
     if (path === '/dashboard') {
-      return location.pathname === '/dashboard';
+      return location.pathname === '/dashboard' || location.pathname === '/dashboard/';
     }
-    return location.pathname.startsWith(path);
+    return location.pathname === path || location.pathname.startsWith(path + '/');
   };
 
   return (
@@ -207,35 +237,6 @@ export const EmployeeSidebar: React.FC = () => {
             </div>
           )}
         </div>
-        {/* Toggle Button - Top Right */}
-        <button
-          onClick={() => {
-            const newState = !isCollapsed;
-            setIsCollapsed(newState);
-            collapsedStateRef.current = newState;
-            // Track if user manually expanded (only when expanding, not collapsing)
-            if (newState === false) {
-              wasManuallyExpanded.current = true;
-              wasMinimizedByMessageRoute.current = false; // User manually expanded, clear the flag
-              setStoredManualExpanded(true);
-              setStoredMinimizedFlag(false);
-            } else {
-              wasManuallyExpanded.current = false;
-              setStoredManualExpanded(false);
-              // If user manually collapses, we don't need to track it as message-route minimized
-            }
-          }}
-          className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-secondary/50 dark:hover:bg-primary/10 transition-colors"
-          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <span
-            className={`material-icons-outlined text-lg transition-transform duration-300 ${
-              isCollapsed ? '' : 'rotate-180'
-            }`}
-          >
-            chevron_left
-          </span>
-        </button>
       </div>
 
       {/* Navigation */}
@@ -269,6 +270,36 @@ export const EmployeeSidebar: React.FC = () => {
             </Link>
           );
         })}
+        {/* Settings Link */}
+        {!isCollapsed && (
+          <Link
+            to="/settings"
+            className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group ${
+              location.pathname === '/settings' || location.pathname.startsWith('/settings/')
+                ? 'bg-primary text-white shadow-md shadow-primary/20'
+                : 'text-gray-400 hover:text-primary hover:bg-secondary/50 dark:hover:bg-primary/10'
+            }`}
+            title="Settings"
+          >
+            <span className={`material-icons-outlined text-2xl shrink-0 ${location.pathname === '/settings' || location.pathname.startsWith('/settings/') ? '' : 'group-hover:text-primary'}`}>
+              settings
+            </span>
+            <span className="font-medium text-sm whitespace-nowrap">Settings</span>
+          </Link>
+        )}
+        {isCollapsed && (
+          <Link
+            to="/settings"
+            className={`relative flex items-center justify-center px-3 py-2.5 rounded-xl transition-all ${
+              location.pathname === '/settings' || location.pathname.startsWith('/settings/')
+                ? 'bg-primary text-white shadow-md shadow-primary/20'
+                : 'text-gray-400 hover:text-primary hover:bg-secondary/50 dark:hover:bg-primary/10'
+            }`}
+            title="Settings"
+          >
+            <span className="material-icons-outlined text-2xl shrink-0">settings</span>
+          </Link>
+        )}
       </nav>
 
       {/* Bottom Actions */}

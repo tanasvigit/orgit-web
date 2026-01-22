@@ -281,20 +281,19 @@ export const TaskDashboardScreen: React.FC = () => {
     );
   };
 
-  // Create Task button for header
-  const createTaskButton = (
-    <button
-      onClick={() => setShowTaskCreateModal(true)}
-      className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-lg font-semibold text-sm hover:bg-primary/90 transition-all shadow-md hover:shadow-lg active:scale-[0.98]"
-    >
-      <span className="material-symbols-outlined text-lg">add</span>
-      Create Task
-    </button>
-  );
-
   // Main content component
   const mainContent = (
-    <div className="p-6 md:p-8">
+    <div className="p-6 md:p-8 relative">
+      {/* Create Task Button - Top Right Corner (Admin only) */}
+      {isAdmin && (
+        <button
+          onClick={() => setShowTaskCreateModal(true)}
+          className="fixed top-24 right-8 z-40 bg-primary hover:bg-primary-dark text-white font-semibold py-2.5 px-4 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-primary/40 active:scale-95 hover:scale-105"
+        >
+          <span className="material-symbols-outlined text-[20px]">add</span>
+          <span>Create Task</span>
+        </button>
+      )}
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div>
@@ -305,10 +304,16 @@ export const TaskDashboardScreen: React.FC = () => {
             Manage your tasks and track progress
           </p>
         </div>
-        {/* Show Create Button for Employee Layout (Admin has it in header) */}
+        {/* Show Create Button for Employee Layout (Admin has it in top right corner) */}
         {!isAdmin && (
           <div className="flex-shrink-0">
-            {createTaskButton}
+            <button
+              onClick={() => setShowTaskCreateModal(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-lg font-semibold text-sm hover:bg-primary/90 transition-all shadow-md hover:shadow-lg active:scale-[0.98]"
+            >
+              <span className="material-symbols-outlined text-lg">add</span>
+              Create Task
+            </button>
           </div>
         )}
       </div>
@@ -463,7 +468,7 @@ export const TaskDashboardScreen: React.FC = () => {
 
   if (isAdmin) {
     return (
-      <AdminLayout headerActions={createTaskButton}>
+      <AdminLayout>
         {mainContent}
       </AdminLayout>
     );

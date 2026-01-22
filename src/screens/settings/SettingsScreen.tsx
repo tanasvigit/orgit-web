@@ -30,14 +30,19 @@ export const SettingsScreen: React.FC = () => {
       section: 'Automation & Configuration',
       icon: 'settings',
       items: [
-        { icon: 'notifications-active', title: 'Reminder Configuration', subtitle: 'Due soon days & intervals', screen: '/admin/settings/reminder-config' },
+        { icon: 'schedule', title: 'Reminder Configuration', subtitle: 'Due soon days & intervals', screen: '/admin/settings/reminder-config' },
+        { icon: 'trending_up', title: 'Auto Escalation Configuration', subtitle: 'Rules for task escalation', screen: '/admin/settings/auto-escalation' },
+        { icon: 'repeat', title: 'Recurring Task Settings', subtitle: 'Frequency options & due date calculation', screen: '/admin/settings/recurring-tasks' },
       ],
     },
   ];
 
   const SettingCard = ({ icon, title, subtitle, screen }: { icon: string; title: string; subtitle: string; screen: string }) => (
     <button
-      onClick={() => navigate(screen)}
+      onClick={() => {
+        console.log('Navigating to:', screen);
+        navigate(screen);
+      }}
       className="w-full flex items-center justify-between p-5 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary/50 hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-md transition-all text-left group"
     >
       <div className="flex items-center gap-4">

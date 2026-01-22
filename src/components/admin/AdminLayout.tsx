@@ -21,6 +21,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, headerAction
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
+  const sidebarToggleRef = useRef<(() => void) | null>(null);
 
   // Redirect if not admin
   if (user?.role !== 'admin') {
@@ -48,12 +49,16 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, headerAction
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
-      <AdminSidebar />
+      <AdminSidebar onToggleRef={sidebarToggleRef} />
       <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-background">
         {!hideHeader && (
           <header className="h-16 border-b border-border bg-surface/80 backdrop-blur-md flex items-center justify-between px-8 shrink-0 z-10 sticky top-0">
             <div className="flex items-center gap-4">
-              <button className="md:hidden text-text-main">
+              <button 
+                onClick={() => sidebarToggleRef.current?.()}
+                className="p-2 rounded-lg text-text-main hover:bg-slate-100 transition-colors"
+                title="Toggle Sidebar"
+              >
                 <span className="material-symbols-outlined">menu</span>
               </button>
               <div className="flex items-center gap-2 text-sm text-text-muted">
@@ -70,7 +75,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, headerAction
                     search
                   </span>
                   <input
-                    className="bg-slate-100 border border-transparent hover:border-border focus:border-primary-600 rounded-full py-2 pl-10 pr-4 text-sm text-text-main focus:ring-0 focus:outline-none w-64 placeholder:text-text-muted transition-all"
+                    className="bg-slate-100 border border-transparent hover:border-border focus:border-primary-600 rounded-full py-2 pl-10 pr-4 text-sm text-slate-900 focus:ring-0 focus:outline-none w-64 placeholder:text-slate-500 transition-all"
                     placeholder="Search..."
                     type="text"
                   />
