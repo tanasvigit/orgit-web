@@ -296,5 +296,17 @@ export const conversationService = {
     });
     return response.data;
   },
+
+  /**
+   * Create a task group conversation
+   */
+  createTaskGroupConversation: async (taskId: string, name: string, memberIds: string[]): Promise<string> => {
+    const response = await api.post<{ conversationId: string }>('/conversations/groups/task-group', {
+      taskId,
+      name,
+      memberIds,
+    });
+    return response.data.conversationId;
+  },
 };
 

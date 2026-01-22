@@ -2,6 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { EmployeeSidebar } from './EmployeeSidebar';
 import { useAuth } from '../../context/AuthContext';
+import { FloatingActionButton } from '../shared/FloatingActionButton';
+import { TaskCreateModal } from '../tasks/TaskCreateModal';
+import { useQueryClient } from 'react-query';
 
 interface EmployeeLayoutProps {
   children: React.ReactNode;
@@ -27,8 +30,10 @@ export const EmployeeLayout: React.FC<EmployeeLayoutProps> = ({
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
 
   // Close profile menu when clicking outside
   useEffect(() => {
@@ -189,6 +194,25 @@ export const EmployeeLayout: React.FC<EmployeeLayoutProps> = ({
           {rightSidebarContent}
         </aside>
       )}
+
+      {/* Floating Action Button */}
+      <FloatingActionButton 
+        isAdmin={false}
+        onOpenTaskModal={() => setShowTaskCreateModal(true)}
+        onOpenDocumentPage={() => navigate('/documents/create')}
+        onOpenCompliancePage={() => navigate('/compliance')}
+      />
+
+      {/* Task Create Modal */}
+      <TaskCreateModal
+        visible={showTaskCreateModal}
+        onClose={() => setShowTaskCreateModal(false)}
+        onSuccess={() => {
+          setShowTaskCreateModal(false);
+          queryClient.invalidateQueries(['tasks']);
+          queryClient.invalidateQueries(['dashboard']);
+        }}
+      />
     </div>
   );
 };

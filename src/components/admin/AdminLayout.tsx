@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { AdminSidebar } from './AdminSidebar';
 import { useAuth } from '../../context/AuthContext';
 import { Navigate } from 'react-router-dom';
+import { FloatingActionButton } from '../shared/FloatingActionButton';
+import { TaskCreateModal } from '../tasks/TaskCreateModal';
+import { useQueryClient } from 'react-query';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -14,8 +17,10 @@ interface AdminLayoutProps {
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, headerActions, hideHeader = false, hideSearch = false }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
 
   // Redirect if not admin
   if (user?.role !== 'admin') {
@@ -141,6 +146,25 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, headerAction
         )}
         <main className="flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
       </div>
+
+      {/* Floating Action Button */}
+      <FloatingActionButton 
+        isAdmin={true}
+        onOpenTaskModal={() => setShowTaskCreateModal(true)}
+        onOpenDocumentPage={() => navigate('/admin/documents/create')}
+        onOpenCompliancePage={() => navigate('/admin/compliance/create')}
+      />
+
+      {/* Task Create Modal */}
+      <TaskCreateModal
+        visible={showTaskCreateModal}
+        onClose={() => setShowTaskCreateModal(false)}
+        onSuccess={() => {
+          setShowTaskCreateModal(false);
+          queryClient.invalidateQueries(['tasks']);
+          queryClient.invalidateQueries(['dashboard']);
+        }}
+      />
     </div>
   );
 };

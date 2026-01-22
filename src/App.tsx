@@ -15,6 +15,7 @@ import { TaskGroupChatConversation } from './screens/messaging/TaskGroupChatConv
 import { TaskCreationScreen } from './screens/tasks/TaskCreationScreen';
 import { TaskDashboardScreen } from './screens/tasks/TaskDashboardScreen';
 import { TaskDetailsScreen } from './screens/tasks/TaskDetailsScreen';
+import { TaskChatScreen } from './screens/tasks/TaskChatScreen';
 import { DocumentManagementHome } from './screens/documents/DocumentManagementHome';
 import { DocumentLibrary } from './screens/admin/documents/DocumentLibrary';
 import { CreateDocument } from './screens/admin/documents/CreateDocument';
@@ -226,7 +227,7 @@ function App() {
               path="/tasks/:taskId"
               element={
                 <ProtectedRoute>
-                  <TaskDetailsScreen />
+                  <TaskChatScreen />
                 </ProtectedRoute>
               }
             />
@@ -515,7 +516,7 @@ function App() {
               path="/admin/tasks/:taskId"
               element={
                 <AdminProtectedRoute>
-                  <TaskDetailsScreen />
+                  <TaskChatScreen />
                 </AdminProtectedRoute>
               }
             />

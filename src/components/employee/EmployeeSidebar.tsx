@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
@@ -16,11 +16,155 @@ const navItems: NavItem[] = [
   { path: '/compliance', icon: 'verified_user', label: 'Compliance' },
 ];
 
+const STORAGE_KEY = 'employee-sidebar-minimized-by-messages';
+const STORAGE_KEY_MANUAL = 'employee-sidebar-manually-expanded';
+
 export const EmployeeSidebar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  
+  // Use localStorage to persist state across remounts
+  const getStoredMinimizedFlag = () => {
+    try {
+      return localStorage.getItem(STORAGE_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  };
+  
+  const getStoredManualExpanded = () => {
+    try {
+      return localStorage.getItem(STORAGE_KEY_MANUAL) === 'true';
+    } catch {
+      return false;
+    }
+  };
+  
+  const setStoredMinimizedFlag = (value: boolean) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, value.toString());
+    } catch {}
+  };
+  
+  const setStoredManualExpanded = (value: boolean) => {
+    try {
+      localStorage.setItem(STORAGE_KEY_MANUAL, value.toString());
+    } catch {}
+  };
+  
+  // Use refs to track state that persists across renders
+  const wasManuallyExpanded = useRef(getStoredManualExpanded());
+  const wasMinimizedByMessageRoute = useRef(getStoredMinimizedFlag());
+  const previousPath = useRef(location.pathname);
+  
+  // Initialize: check localStorage and current route
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    const onMessageRoute = location.pathname.startsWith('/messages');
+    const storedMinimized = getStoredMinimizedFlag();
+    const storedManualExpanded = getStoredManualExpanded();
+    
+    if (onMessageRoute) {
+      wasMinimizedByMessageRoute.current = true;
+      setStoredMinimizedFlag(true);
+      return true; // Always minimized on message route
+    } else if (storedMinimized && !storedManualExpanded) {
+      // Was minimized by message route and not manually expanded - keep minimized
+      wasMinimizedByMessageRoute.current = true;
+      wasManuallyExpanded.current = false;
+      return true;
+    }
+    return false;
+  });
+  
+  // Store the collapsed state in a ref to prevent unwanted resets
+  const collapsedStateRef = useRef(isCollapsed);
+
+  // Automatically minimize sidebar when entering message routes
+  // Keep minimized state when leaving message routes (don't auto-expand)
+  useEffect(() => {
+    const isOnMessageRoute = location.pathname.startsWith('/messages');
+    const wasOnMessageRoute = previousPath.current.startsWith('/messages');
+
+    // Auto-minimize when entering message route (unless user manually expanded)
+    if (isOnMessageRoute) {
+      if (!wasOnMessageRoute) {
+        // Just entered message route - always minimize
+        setIsCollapsed(true);
+        collapsedStateRef.current = true;
+        wasManuallyExpanded.current = false;
+        wasMinimizedByMessageRoute.current = true;
+        setStoredManualExpanded(false);
+        setStoredMinimizedFlag(true);
+      } else if (!wasManuallyExpanded.current) {
+        // Already on message route and wasn't manually expanded - ensure minimized
+        setIsCollapsed(true);
+        collapsedStateRef.current = true;
+        wasMinimizedByMessageRoute.current = true;
+        setStoredMinimizedFlag(true);
+      }
+    }
+    
+    // On EVERY route change, if it was minimized by message route, keep it minimized
+    // This ensures it stays minimized when navigating to tasks, dashboard, etc.
+    if (wasMinimizedByMessageRoute.current && !wasManuallyExpanded.current && !isOnMessageRoute) {
+      // Always force keep minimized state - don't auto-expand
+      setIsCollapsed(true);
+      collapsedStateRef.current = true;
+    }
+
+    previousPath.current = location.pathname;
+  }, [location.pathname]);
+  
+  // Enforce minimized state on every route change - this is the primary enforcement
+  useEffect(() => {
+    const isOnMessageRoute = location.pathname.startsWith('/messages');
+    
+    // Always sync from localStorage first
+    wasMinimizedByMessageRoute.current = getStoredMinimizedFlag();
+    wasManuallyExpanded.current = getStoredManualExpanded();
+    
+    // If we're on message route, minimize and set flag
+    if (isOnMessageRoute) {
+      setIsCollapsed(true);
+      collapsedStateRef.current = true;
+      wasMinimizedByMessageRoute.current = true;
+      wasManuallyExpanded.current = false;
+      setStoredMinimizedFlag(true);
+      setStoredManualExpanded(false);
+    } 
+    // If we're NOT on message route but flag is set and user hasn't manually expanded
+    else if (wasMinimizedByMessageRoute.current && !wasManuallyExpanded.current) {
+      // CRITICAL: Force minimize - this prevents any auto-expansion
+      setIsCollapsed(true);
+      collapsedStateRef.current = true;
+    }
+  }, [location.pathname]);
+  
+  // Additional safeguard: enforce minimized state whenever isCollapsed changes
+  // This catches any state changes that might try to expand the sidebar
+  useEffect(() => {
+    // Sync from localStorage
+    wasMinimizedByMessageRoute.current = getStoredMinimizedFlag();
+    wasManuallyExpanded.current = getStoredManualExpanded();
+    
+    const isOnMessageRoute = location.pathname.startsWith('/messages');
+    
+    // If flag is set and user hasn't manually expanded, FORCE minimize
+    if (wasMinimizedByMessageRoute.current && !wasManuallyExpanded.current) {
+      if (!isCollapsed) {
+        // Sidebar is expanded but shouldn't be - force minimize
+        setIsCollapsed(true);
+        collapsedStateRef.current = true;
+      } else {
+        // Sidebar is correctly minimized - just update ref
+        collapsedStateRef.current = true;
+      }
+    } else if (!isOnMessageRoute && wasManuallyExpanded.current) {
+      // User manually expanded and we're not on message route - allow current state
+      collapsedStateRef.current = isCollapsed;
+    }
+  }, [isCollapsed, location.pathname]);
 
   const isActive = (path: string) => {
     if (path === '/dashboard') {
@@ -65,7 +209,22 @@ export const EmployeeSidebar: React.FC = () => {
         </div>
         {/* Toggle Button - Top Right */}
         <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
+          onClick={() => {
+            const newState = !isCollapsed;
+            setIsCollapsed(newState);
+            collapsedStateRef.current = newState;
+            // Track if user manually expanded (only when expanding, not collapsing)
+            if (newState === false) {
+              wasManuallyExpanded.current = true;
+              wasMinimizedByMessageRoute.current = false; // User manually expanded, clear the flag
+              setStoredManualExpanded(true);
+              setStoredMinimizedFlag(false);
+            } else {
+              wasManuallyExpanded.current = false;
+              setStoredManualExpanded(false);
+              // If user manually collapses, we don't need to track it as message-route minimized
+            }
+          }}
           className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-secondary/50 dark:hover:bg-primary/10 transition-colors"
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >

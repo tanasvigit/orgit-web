@@ -19,15 +19,25 @@ import { DocumentMessage } from '../../components/messaging/DocumentMessage';
 import { LocationMessage } from '../../components/messaging/LocationMessage';
 import { VoiceMessage } from '../../components/messaging/VoiceMessage';
 import { TaskGroupDetailsModal } from '../../components/messaging/TaskGroupDetailsModal';
+import { TaskDetailsModal } from '../../components/tasks/TaskDetailsModal';
 import { NewChatModal } from '../../components/messaging/NewChatModal';
 
-export const TaskGroupChatConversation: React.FC = () => {
-  const { conversationId } = useParams<{ conversationId: string }>();
+interface TaskGroupChatConversationProps {
+  conversationId?: string; // Optional prop to override useParams
+}
+
+export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps> = ({ conversationId: propConversationId }) => {
+  const { conversationId: paramConversationId, taskId: routeTaskId } = useParams<{ conversationId?: string; taskId?: string }>();
+  // Use prop if provided, otherwise use param from route
+  const conversationId = propConversationId || paramConversationId;
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
+  // Check if accessed from task module route (not from messages route)
+  // If pathname matches /tasks/:taskId or /admin/tasks/:taskId pattern, we're in task module
+  const isFromTaskModule = /^\/tasks\/[^/]+$/.test(location.pathname) || /^\/admin\/tasks\/[^/]+$/.test(location.pathname);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<any[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -51,6 +61,7 @@ export const TaskGroupChatConversation: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showTaskGroupDetails, setShowTaskGroupDetails] = useState(false);
+  const [showTaskDetails, setShowTaskDetails] = useState(false);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
 
   // Fetch conversation details
@@ -852,7 +863,8 @@ export const TaskGroupChatConversation: React.FC = () => {
   const conversationName = conversationData?.name || conversationData?.data?.name || 'Task Group';
   const conversationPhoto = conversationData?.photoUrl || conversationData?.data?.photoUrl || conversationData?.group_photo || '';
   const groupMembers = conversationData?.otherMembers || conversationData?.data?.otherMembers || conversationData?.other_members || [];
-  const taskId = conversationData?.taskId || conversationData?.data?.taskId || conversationData?.task_id;
+  // Get taskId from route params (when in task module) or from conversation data
+  const taskId = routeTaskId || conversationData?.taskId || conversationData?.data?.taskId || conversationData?.task_id;
 
   // Render message component
   const renderMessage = (msg: any, index: number) => {
@@ -1062,6 +1074,7 @@ export const TaskGroupChatConversation: React.FC = () => {
       onSearchChange={setConversationSearchQuery}
       onCreateNew={() => setShowNewChatModal(true)}
       hideHeader={!isAdmin}
+      hideSearchAndFilters={isFromTaskModule}
     />
   );
 
@@ -1080,8 +1093,21 @@ export const TaskGroupChatConversation: React.FC = () => {
   const mainContent = (
     <div className="flex-1 flex flex-col bg-[#F9FAFB] dark:bg-surface-dark relative overflow-hidden h-full">
       {/* Header */}
-      <header className="h-20 border-b border-border-light dark:border-border-dark flex items-center justify-between px-6 bg-white/50 dark:bg-surface-dark/50 backdrop-blur-sm z-10">
-        <div className="flex items-center gap-4">
+      <header 
+        className="h-20 border-b border-border-light dark:border-border-dark flex items-center justify-between px-6 bg-white/50 dark:bg-surface-dark/50 backdrop-blur-sm z-10"
+      >
+        <button
+          onClick={() => {
+            // Always show Task Details modal if taskId is available (from route or conversation)
+            if (taskId) {
+              setShowTaskDetails(true);
+            } else {
+              // Fallback to Task Group Details if no taskId
+              setShowTaskGroupDetails(true);
+            }
+          }}
+          className="flex items-center gap-4 flex-1 text-left hover:opacity-80 transition-opacity cursor-pointer"
+        >
           <div className="relative">
             <div 
               className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-800 to-primary flex items-center justify-center text-white shadow-md"
@@ -1099,15 +1125,10 @@ export const TaskGroupChatConversation: React.FC = () => {
             </div>
           </div>
           <div>
-            <button
-              onClick={() => setShowTaskGroupDetails(true)}
-              className="text-left hover:opacity-80 transition-opacity"
-            >
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2 cursor-pointer">
-                {conversationName}
-                <span className="bg-accent-pink dark:bg-red-900/30 text-accent-text dark:text-red-300 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">Task Group</span>
-              </h2>
-            </button>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              {conversationName}
+              <span className="bg-accent-pink dark:bg-red-900/30 text-accent-text dark:text-red-300 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">Task Group</span>
+            </h2>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {isTyping ? (
                 <span className="flex items-center gap-1">
@@ -1123,11 +1144,14 @@ export const TaskGroupChatConversation: React.FC = () => {
               )}
             </p>
           </div>
-        </div>
-        <div className="flex items-center gap-4 text-gray-400">
+        </button>
+        <div className="flex items-center gap-4 text-gray-400" onClick={(e) => e.stopPropagation()}>
           {taskId && (
             <button
-              onClick={() => navigate(isAdmin ? `/admin/tasks/${taskId}` : `/tasks/${taskId}`)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowTaskDetails(true);
+              }}
               className="hover:text-primary transition flex items-center gap-2 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 rounded-lg"
               title="View Task"
             >
@@ -1136,16 +1160,25 @@ export const TaskGroupChatConversation: React.FC = () => {
             </button>
           )}
           <button 
-            onClick={() => setShowMessageSearch(!showMessageSearch)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMessageSearch(!showMessageSearch);
+            }}
             className="hover:text-primary transition"
             title="Search messages"
           >
             <span className="material-icons-outlined">search</span>
           </button>
-          <button className="hover:text-primary transition">
+          <button 
+            onClick={(e) => e.stopPropagation()}
+            className="hover:text-primary transition"
+          >
             <span className="material-icons-outlined">push_pin</span>
           </button>
-          <button className="hover:text-primary transition">
+          <button 
+            onClick={(e) => e.stopPropagation()}
+            className="hover:text-primary transition"
+          >
             <span className="material-icons-outlined">more_vert</span>
           </button>
         </div>
@@ -1330,6 +1363,74 @@ export const TaskGroupChatConversation: React.FC = () => {
   );
 
   // Wrap in appropriate layout matching DirectChatConversation structure
+  // If accessed from task module, use full width (no conversation list sidebar)
+  if (isFromTaskModule) {
+    // Full width layout for task module (like TaskDetailsScreen)
+    if (isAdmin) {
+      return (
+        <AdminLayout hideSearch>
+          <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden h-full">
+            {mainContent}
+
+            {/* Task Details Modal */}
+            <TaskDetailsModal
+              visible={showTaskDetails}
+              onClose={() => setShowTaskDetails(false)}
+              taskId={taskId}
+            />
+
+            {/* Task Group Details Modal */}
+            <TaskGroupDetailsModal
+              visible={showTaskGroupDetails}
+              onClose={() => setShowTaskGroupDetails(false)}
+              taskId={taskId}
+              conversationId={conversationId}
+              conversationData={conversationData}
+            />
+
+            {/* New Chat Modal */}
+            <NewChatModal
+              visible={showNewChatModal}
+              onClose={() => setShowNewChatModal(false)}
+            />
+          </div>
+        </AdminLayout>
+      );
+    }
+
+    // Employee route - full width
+    return (
+      <EmployeeLayout hideSearch>
+        <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden h-full">
+          {mainContent}
+
+          {/* Task Details Modal */}
+          <TaskDetailsModal
+            visible={showTaskDetails}
+            onClose={() => setShowTaskDetails(false)}
+            taskId={taskId}
+          />
+
+          {/* Task Group Details Modal */}
+          <TaskGroupDetailsModal
+            visible={showTaskGroupDetails}
+            onClose={() => setShowTaskGroupDetails(false)}
+            taskId={taskId}
+            conversationId={conversationId}
+            conversationData={conversationData}
+          />
+
+          {/* New Chat Modal */}
+          <NewChatModal
+            visible={showNewChatModal}
+            onClose={() => setShowNewChatModal(false)}
+          />
+        </div>
+      </EmployeeLayout>
+    );
+  }
+
+  // Normal layout with conversation list (when accessed from messages module)
   if (isAdmin) {
     return (
       <AdminLayout hideSearch>
@@ -1341,6 +1442,13 @@ export const TaskGroupChatConversation: React.FC = () => {
             {mainContent}
           </div>
         </div>
+
+        {/* Task Details Modal */}
+        <TaskDetailsModal
+          visible={showTaskDetails}
+          onClose={() => setShowTaskDetails(false)}
+          taskId={taskId}
+        />
 
         {/* Task Group Details Modal */}
         <TaskGroupDetailsModal
@@ -1368,6 +1476,13 @@ export const TaskGroupChatConversation: React.FC = () => {
       hideSearch
     >
       {mainContent}
+
+      {/* Task Details Modal */}
+      <TaskDetailsModal
+        visible={showTaskDetails}
+        onClose={() => setShowTaskDetails(false)}
+        taskId={taskId}
+      />
 
       {/* Task Group Details Modal */}
       <TaskGroupDetailsModal

@@ -13,6 +13,7 @@ interface ConversationListProps {
   onSearchChange: (query: string) => void;
   onCreateNew: () => void;
   hideHeader?: boolean;
+  hideSearchAndFilters?: boolean; // Hide search bar and filters (for task module)
 }
 
 export const ConversationList: React.FC<ConversationListProps> = ({
@@ -24,6 +25,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
   onSearchChange,
   onCreateNew,
   hideHeader = false,
+  hideSearchAndFilters = false,
 }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -145,7 +147,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
 
   return (
     <>
-      {!hideHeader && (
+      {!hideHeader && !hideSearchAndFilters && (
         <div className="p-6 pb-2">
           <div className="mb-6">
             <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Messages</h1>
@@ -188,7 +190,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
           </div>
         </div>
       )}
-      {hideHeader && (
+      {hideHeader && !hideSearchAndFilters && (
         <div className="p-4 pb-2 border-b border-border-light dark:border-border-dark">
           <div className="flex items-center gap-3 mb-4">
             <div className="relative flex-1">
@@ -229,7 +231,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
         </div>
       )}
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-6">
-        {pinnedConversations.length > 0 && (
+        {pinnedConversations.length > 0 && !hideSearchAndFilters && (
           <div>
             <h3 className="flex items-center text-xs font-bold text-primary uppercase tracking-wider mb-3 px-2">
               <span className="material-icons-round text-sm mr-1">push_pin</span>

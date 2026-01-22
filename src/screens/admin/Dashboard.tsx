@@ -1,403 +1,333 @@
 import React, { useState } from 'react';
 import { useQuery } from 'react-query';
 import { useNavigate } from 'react-router-dom';
+import { TaskCard } from '../../components/shared';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { dashboardService } from '../../services/dashboardService';
-import { taskService } from '../../services/taskService';
 import { useAuth } from '../../context/AuthContext';
-import { format } from 'date-fns';
 
 export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [taskFilter, setTaskFilter] = useState<'all' | 'pending' | 'completed'>('all');
+  // Expand/collapse state for D.M. and C.M. sections (combined for both self and assigned)
+  const [expandedDM, setExpandedDM] = useState(false);
+  const [expandedCM, setExpandedCM] = useState(false);
 
-  const { data: dashboardData, isLoading: dashboardLoading } = useQuery(
+  const { data: dashboardData, isLoading } = useQuery(
     ['admin-dashboard'],
     () => dashboardService.getDashboard(3),
-    { refetchInterval: 30000 }
-  );
-
-  const { data: statistics } = useQuery('admin-statistics', () =>
-    dashboardService.getStatistics()
-  );
-
-  const { data: tasksData, isLoading: tasksLoading } = useQuery(
-    ['admin-tasks', taskFilter],
-    () => taskService.getTasks({ status: taskFilter === 'all' ? undefined : taskFilter })
-  );
-
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good Morning';
-    if (hour < 17) return 'Good Afternoon';
-    return 'Good Evening';
-  };
-
-  const stats = statistics?.data || {};
-  const tasks = tasksData?.data?.items || [];
-
-  // Flatten nested task structures from backend
-  const flattenTasks = (taskGroups: any) => {
-    if (!taskGroups || typeof taskGroups !== 'object') return [];
-    const allTasks: any[] = [];
-    Object.values(taskGroups).forEach((category: any) => {
-      if (category && typeof category === 'object') {
-        Object.values(category).forEach((taskArray: any) => {
-          if (Array.isArray(taskArray)) {
-            allTasks.push(...taskArray);
-          }
-        });
+    { 
+      refetchInterval: 30000, // Refetch every 30 seconds
+      onSuccess: (data) => {
+        // Debug logging
+        console.log('[Admin Dashboard Frontend] Received data:', data);
+        console.log('[Admin Dashboard Frontend] Self tasks:', data?.data?.selfTasks);
+        console.log('[Admin Dashboard Frontend] Assigned tasks:', data?.data?.assignedTasks);
       }
-    });
-    return allTasks;
-  };
+    }
+  );
 
-  const selfTasks = flattenTasks(dashboardData?.data?.selfTasks || {});
-  const assignedTasks = flattenTasks(dashboardData?.data?.assignedTasks || {});
+  const { data: statistics } = useQuery(
+    ['admin-dashboard-statistics'],
+    () => dashboardService.getStatistics(),
+    {
+      refetchInterval: 30000, // Refetch every 30 seconds
+      onSuccess: (data) => {
+        // Debug logging
+        console.log('[Admin Dashboard Statistics] Received data:', data);
+        console.log('[Admin Dashboard Statistics] Statistics:', data?.data);
+      }
+    }
+  );
 
-  // Get recent tasks for display
-  const recentSelfTasks = selfTasks.slice(0, 3);
-  const recentAssignedTasks = assignedTasks.slice(0, 2);
-
-  const getStatusBadge = (status: string) => {
-    const statusMap: Record<string, { bg: string; text: string; label: string }> = {
-      overdue: { bg: 'bg-red-50', text: 'text-red-600', label: 'Overdue' },
-      duesoon: { bg: 'bg-red-50', text: 'text-red-600', label: 'Due Soon' },
-      inprogress: { bg: 'bg-orange-50', text: 'text-orange-600', label: 'In Progress' },
-      completed: { bg: 'bg-green-50', text: 'text-green-600', label: 'Completed' },
-      pending: { bg: 'bg-blue-50', text: 'text-blue-600', label: 'Pending' },
+  const getStatusCount = (status: 'overdue' | 'duesoon' | 'inprogress' | 'completed', view: 'self' | 'assigned') => {
+    if (!statistics?.data) {
+      console.log('[Admin Dashboard] No statistics data available');
+      return 0;
+    }
+    const prefix = view === 'self' ? 'selfTasks' : 'assignedTasks';
+    // Map status to correct key format matching backend response
+    const statusKeyMap: Record<string, string> = {
+      overdue: 'Overdue',
+      duesoon: 'DueSoon',
+      inprogress: 'InProgress',
+      completed: 'Completed',
     };
-    const statusInfo = statusMap[status.toLowerCase()] || statusMap.pending;
+    const statusKey = statusKeyMap[status] || status.charAt(0).toUpperCase() + status.slice(1);
+    const key = `${prefix}${statusKey}`;
+    const value = statistics.data[key] || 0;
+    console.log(`[Admin Dashboard] ${key}:`, value);
+    return value;
+  };
+
+  const getTotalCount = (view: 'self' | 'assigned') => {
+    if (!statistics?.data) return 0;
+    const prefix = view === 'self' ? 'selfTasks' : 'assignedTasks';
+    const total = (
+      (statistics.data[`${prefix}Overdue`] || 0) +
+      (statistics.data[`${prefix}DueSoon`] || 0) +
+      (statistics.data[`${prefix}InProgress`] || 0) +
+      (statistics.data[`${prefix}Completed`] || 0)
+    );
+    console.log(`[Admin Dashboard] Total ${prefix}:`, total);
+    return total;
+  };
+
+  const renderTaskSection = (
+    tasks: any[],
+    statusCategory: 'overdue' | 'dueSoon' | 'inProgress' | 'completed'
+  ) => {
+    if (tasks.length === 0) return null;
+
+    // Map backend status categories to frontend status values
+    const statusMap: Record<string, 'overdue' | 'duesoon' | 'inprogress' | 'completed'> = {
+      overdue: 'overdue',
+      dueSoon: 'duesoon',
+      inProgress: 'inprogress',
+      completed: 'completed',
+    };
+
+    const status = statusMap[statusCategory] || 'inprogress';
+
     return (
-      <span className={`${statusInfo.bg} ${statusInfo.text} text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wide`}>
-        {statusInfo.label}
-      </span>
+      <>
+        {tasks.map((task) => {
+          return (
+            <TaskCard
+              key={task.id}
+              id={task.id}
+              title={task.title}
+              description={task.description}
+              status={status}
+              dueDate={task.due_date || task.dueDate}
+              category={task.category}
+              onClick={() => navigate(`/admin/tasks/${task.id}`)}
+            />
+          );
+        })}
+      </>
     );
   };
 
-  const formatDueDate = (dueDate: string | null) => {
-    if (!dueDate) return 'No due date';
-    const date = new Date(dueDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const due = new Date(date);
-    due.setHours(0, 0, 0, 0);
+  const selfTasks = dashboardData?.data?.selfTasks;
+  const assignedTasks = dashboardData?.data?.assignedTasks;
 
-    if (due < today) {
-      return `Due: ${format(date, 'MMM d, yyyy')}`;
-    }
-    if (due.getTime() === today.getTime()) {
-      return 'Due: Today';
-    }
-    return `Due: ${format(date, 'MMM d, yyyy')}`;
-  };
-
-  if (dashboardLoading || tasksLoading) {
+  const renderTaskRow = (tasks: any, viewType: 'self' | 'assigned', title: string) => {
     return (
-      <AdminLayout>
-        <div className="flex items-center justify-center h-full">
-          <div className="text-text-muted">Loading...</div>
+      <div className="space-y-6">
+        <div className="flex items-center gap-3 mb-4">
+          <h2 className="text-2xl font-bold text-text-main dark:text-white">{title}</h2>
+          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
         </div>
-      </AdminLayout>
+
+        {/* Statistics Cards for this section */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-6">
+          {/* Total Tasks Card */}
+          <div className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-primary/30 hover:shadow-md transition-all">
+            <div className="mb-2 p-2 rounded-full bg-primary/10 text-primary">
+              <span className="material-symbols-outlined text-xl">task</span>
+            </div>
+            <span className="text-2xl font-bold text-primary mb-1">
+              {getTotalCount(viewType)}
+            </span>
+            <span className="text-xs font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
+              Total Tasks
+            </span>
+          </div>
+          
+          {/* Overdue Card */}
+          <div className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-overdue/30 hover:shadow-md transition-all">
+            <div className="mb-2 p-2 rounded-full bg-status-overdue/10 text-status-overdue">
+              <span className="material-symbols-outlined text-xl">priority_high</span>
+            </div>
+            <span className="text-2xl font-bold text-status-overdue mb-1">
+              {getStatusCount('overdue', viewType)}
+            </span>
+            <span className="text-xs font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
+              Overdue
+            </span>
+          </div>
+          
+          {/* Due Soon Card */}
+          <div className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-duesoon/30 hover:shadow-md transition-all">
+            <div className="mb-2 p-2 rounded-full bg-status-duesoon/10 text-status-duesoon">
+              <span className="material-symbols-outlined text-xl">hourglass_top</span>
+            </div>
+            <span className="text-2xl font-bold text-status-duesoon mb-1">
+              {getStatusCount('duesoon', viewType)}
+            </span>
+            <span className="text-xs font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
+              Due Soon
+            </span>
+          </div>
+          
+          {/* In Progress Card */}
+          <div className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-inprogress/30 hover:shadow-md transition-all">
+            <div className="mb-2 p-2 rounded-full bg-status-inprogress/10 text-status-inprogress">
+              <span className="material-symbols-outlined text-xl">pending_actions</span>
+            </div>
+            <span className="text-2xl font-bold text-status-inprogress mb-1">
+              {getStatusCount('inprogress', viewType)}
+            </span>
+            <span className="text-xs font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
+              In Progress
+            </span>
+          </div>
+          
+          {/* Completed Card */}
+          <div className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-completed/30 hover:shadow-md transition-all">
+            <div className="mb-2 p-2 rounded-full bg-status-completed/10 text-status-completed">
+              <span className="material-symbols-outlined text-xl">task_alt</span>
+            </div>
+            <span className="text-2xl font-bold text-status-completed mb-1">
+              {getStatusCount('completed', viewType)}
+            </span>
+            <span className="text-xs font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
+              Completed
+            </span>
+          </div>
+        </div>
+      </div>
     );
-  }
+  };
 
   return (
     <AdminLayout>
-      <main className="flex-1 overflow-y-auto p-6 md:p-8 scroll-smooth">
-        <div className="max-w-7xl mx-auto space-y-8">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex-1 w-full max-w-7xl mx-auto px-6 py-8 space-y-8">
+        {/* Tasks List */}
+        <div className="space-y-12">
+          {/* Self Tasks Row */}
+          {renderTaskRow(selfTasks, 'self', 'Self Tasks')}
+          
+          {/* Assigned Tasks Row */}
+          {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks')}
+
+          {/* Document Management Section - Combined for both self and assigned */}
+          {isLoading ? (
+            <div className="text-center py-12 text-text-muted">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent mx-auto mb-4"></div>
+              <p>Loading tasks...</p>
+            </div>
+          ) : (
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-text-main tracking-tight mb-1">
-                {getGreeting()}, {user?.name?.split(' ')[0] || 'Admin'}
-              </h1>
-              <p className="text-text-muted text-sm">Here's what's happening with your organization today.</p>
-            </div>
-            <button
-              onClick={() => navigate('/admin/tasks/create')}
-              className="bg-primary hover:bg-primary-700 text-white font-semibold py-2.5 px-6 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-primary/20 active:scale-95"
-            >
-              <span className="material-symbols-outlined text-[20px]">add</span>
-              <span>New Task</span>
-            </button>
-          </div>
-
-          {/* Statistics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="border-l-4 border-l-blue-600 bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-between h-32 relative overflow-hidden group">
-              <div className="flex justify-between items-start z-10">
-                <h3 className="text-slate-500 font-semibold text-sm">Self Tasks</h3>
-                <span className="material-symbols-outlined text-primary-600">person</span>
-              </div>
-              <p className="text-4xl font-bold text-slate-800 z-10">{stats.selfTasksTotal || 0}</p>
-              <div className="absolute -right-4 -bottom-4 bg-blue-50 w-24 h-24 rounded-full group-hover:scale-110 transition-transform"></div>
-            </div>
-
-            <div className="border-l-4 border-l-sky-500 bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-between h-32 relative overflow-hidden group">
-              <div className="flex justify-between items-start z-10">
-                <h3 className="text-slate-500 font-semibold text-sm">Assigned Tasks</h3>
-                <span className="material-symbols-outlined text-sky-500">assignment_ind</span>
-              </div>
-              <p className="text-4xl font-bold text-slate-800 z-10">{stats.assignedTasksTotal || 0}</p>
-              <div className="absolute -right-4 -bottom-4 bg-sky-50 w-24 h-24 rounded-full group-hover:scale-110 transition-transform"></div>
-            </div>
-
-            <div className="border-l-4 border-l-orange-500 bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-between h-32 relative overflow-hidden group">
-              <div className="flex justify-between items-start z-10">
-                <h3 className="text-slate-500 font-semibold text-sm">In Progress</h3>
-                <span className="material-symbols-outlined text-orange-500">pending_actions</span>
-              </div>
-              <p className="text-4xl font-bold text-slate-800 z-10">
-                {(stats.selfTasksInProgress || 0) + (stats.assignedTasksInProgress || 0)}
-              </p>
-              <div className="absolute -right-4 -bottom-4 bg-orange-50 w-24 h-24 rounded-full group-hover:scale-110 transition-transform"></div>
-            </div>
-
-            <div className="border-l-4 border-l-red-500 bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-between h-32 relative overflow-hidden group">
-              <div className="flex justify-between items-start z-10">
-                <h3 className="text-slate-500 font-semibold text-sm">Escalated</h3>
-                <span className="material-symbols-outlined text-red-500">warning</span>
-              </div>
-              <p className="text-4xl font-bold text-slate-800 z-10">
-                {(stats.selfTasksOverdue || 0) + (stats.assignedTasksOverdue || 0)}
-              </p>
-              <div className="absolute -right-4 -bottom-4 bg-red-50 w-24 h-24 rounded-full group-hover:scale-110 transition-transform"></div>
-            </div>
-          </div>
-
-          {/* Self Tasks Section */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-primary-600"></div>
-                <h3 className="text-lg font-bold text-text-main">Self Tasks</h3>
-              </div>
               <button
-                onClick={() => navigate('/admin/tasks?view=self')}
-                className="text-sm font-semibold text-primary-700 hover:text-primary-800"
+                onClick={() => setExpandedDM(!expandedDM)}
+                className="w-full flex items-center justify-between p-5 bg-white dark:bg-background-dark-subtle rounded-xl shadow-sm border border-gray-100 dark:border-white/5 group hover:shadow-md hover:border-primary/30 transition-all"
               >
-                View All
-              </button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {recentSelfTasks.length > 0 ? (
-                recentSelfTasks.map((task: any) => (
-                  <div
-                    key={task.id}
-                    onClick={() => navigate(`/admin/tasks/${task.id}`)}
-                    className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-all group cursor-pointer"
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      {getStatusBadge(task.status)}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          // Handle menu
-                        }}
-                        className="text-slate-400 hover:text-slate-600"
-                      >
-                        <span className="material-symbols-outlined text-[20px]">more_horiz</span>
-                      </button>
-                    </div>
-                    <h4 className="font-bold text-slate-900 mb-2 group-hover:text-primary-700 transition-colors">
-                      {task.title}
-                    </h4>
-                    <p className="text-xs text-slate-500 mb-4 leading-relaxed line-clamp-2">
-                      {task.description || 'No description'}
-                    </p>
-                    <div
-                      className={`flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg w-max ${task.status === 'overdue' || task.status === 'duesoon'
-                          ? 'text-red-500 bg-red-50'
-                          : 'text-slate-500 bg-slate-50'
-                        }`}
-                    >
-                      <span className="material-symbols-outlined text-[14px]">
-                        {task.status === 'overdue' ? 'calendar_today' : 'schedule'}
-                      </span>
-                      <span>{formatDueDate(task.dueDate)}</span>
-                    </div>
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-primary/10 rounded-lg text-primary">
+                    <span className="material-symbols-outlined text-2xl">folder_shared</span>
                   </div>
-                ))
-              ) : (
-                <div className="col-span-3 text-center py-8 text-text-muted">
-                  No self tasks found
+                  <div className="text-left">
+                    <span className="font-bold text-text-main dark:text-white text-lg block">Document Management</span>
+                    <span className="text-sm text-text-muted dark:text-gray-400">
+                      {(() => {
+                        const selfDM = selfTasks?.documentManagement || {};
+                        const assignedDM = assignedTasks?.documentManagement || {};
+                        const total = 
+                          (selfDM.overdue?.length || 0) + 
+                          (selfDM.dueSoon?.length || 0) + 
+                          (selfDM.inProgress?.length || 0) + 
+                          (selfDM.completed?.length || 0) +
+                          (assignedDM.overdue?.length || 0) + 
+                          (assignedDM.dueSoon?.length || 0) + 
+                          (assignedDM.inProgress?.length || 0) + 
+                          (assignedDM.completed?.length || 0);
+                        return total;
+                      })()} tasks
+                    </span>
+                  </div>
+                </div>
+                <span
+                  className={`material-symbols-outlined text-gray-400 group-hover:text-primary transition-all text-2xl ${expandedDM ? 'rotate-180' : ''}`}
+                >
+                  expand_more
+                </span>
+              </button>
+              {expandedDM && (
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {renderTaskSection([
+                    ...(selfTasks?.documentManagement?.overdue || []),
+                    ...(assignedTasks?.documentManagement?.overdue || [])
+                  ], 'overdue')}
+                  {renderTaskSection([
+                    ...(selfTasks?.documentManagement?.dueSoon || []),
+                    ...(assignedTasks?.documentManagement?.dueSoon || [])
+                  ], 'dueSoon')}
+                  {renderTaskSection([
+                    ...(selfTasks?.documentManagement?.inProgress || []),
+                    ...(assignedTasks?.documentManagement?.inProgress || [])
+                  ], 'inProgress')}
+                  {renderTaskSection([
+                    ...(selfTasks?.documentManagement?.completed || []),
+                    ...(assignedTasks?.documentManagement?.completed || [])
+                  ], 'completed')}
                 </div>
               )}
             </div>
-          </div>
+          )}
 
-          {/* Assigned Tasks Section */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-sky-400"></div>
-                <h3 className="text-lg font-bold text-text-main">Assigned Tasks</h3>
-              </div>
+          {/* Compliance Management Section - Combined for both self and assigned */}
+          {isLoading ? null : (
+            <div>
               <button
-                onClick={() => navigate('/admin/tasks?view=assigned')}
-                className="text-sm font-semibold text-primary-700 hover:text-primary-800"
+                onClick={() => setExpandedCM(!expandedCM)}
+                className="w-full flex items-center justify-between p-5 bg-white dark:bg-background-dark-subtle rounded-xl shadow-sm border border-gray-100 dark:border-white/5 group hover:shadow-md hover:border-primary/30 transition-all"
               >
-                View All
-              </button>
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {recentAssignedTasks.length > 0 ? (
-                recentAssignedTasks.map((task: any) => (
-                  <div
-                    key={task.id}
-                    onClick={() => navigate(`/admin/tasks/${task.id}`)}
-                    className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex flex-col md:flex-row items-center gap-4 hover:shadow-md transition-all cursor-pointer"
-                  >
-                    {task.assignee?.profilePhotoUrl ? (
-                      <div
-                        className="size-12 shrink-0 rounded-full bg-cover bg-center border border-slate-200"
-                        style={{ backgroundImage: `url(${task.assignee.profilePhotoUrl})` }}
-                      />
-                    ) : (
-                      <div className="size-12 shrink-0 rounded-full bg-primary flex items-center justify-center text-white font-bold border border-slate-200">
-                        {task.assignee?.name?.charAt(0).toUpperCase() || 'U'}
-                      </div>
-                    )}
-                    <div className="flex-1 w-full">
-                      <div className="flex justify-between items-center mb-1">
-                        <h4 className="font-bold text-slate-900 text-sm md:text-base">{task.title}</h4>
-                        {getStatusBadge(task.status)}
-                      </div>
-                      <p className="text-xs text-slate-500 mb-3">
-                        {task.assignee?.name || 'Unassigned'}
-                      </p>
-                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${task.status === 'completed'
-                              ? 'bg-green-500 w-full'
-                              : task.status === 'inprogress'
-                                ? 'bg-orange-500 w-2/3'
-                                : 'bg-blue-500 w-1/3'
-                            }`}
-                        ></div>
-                      </div>
-                    </div>
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-primary/10 rounded-lg text-primary">
+                    <span className="material-symbols-outlined text-2xl">policy</span>
                   </div>
-                ))
-              ) : (
-                <div className="col-span-2 text-center py-8 text-text-muted">
-                  No assigned tasks found
+                  <div className="text-left">
+                    <span className="font-bold text-text-main dark:text-white text-lg block">Compliance Management</span>
+                    <span className="text-sm text-text-muted dark:text-gray-400">
+                      {(() => {
+                        const selfCM = selfTasks?.complianceManagement || {};
+                        const assignedCM = assignedTasks?.complianceManagement || {};
+                        const total = 
+                          (selfCM.overdue?.length || 0) + 
+                          (selfCM.dueSoon?.length || 0) + 
+                          (selfCM.inProgress?.length || 0) + 
+                          (selfCM.completed?.length || 0) +
+                          (assignedCM.overdue?.length || 0) + 
+                          (assignedCM.dueSoon?.length || 0) + 
+                          (assignedCM.inProgress?.length || 0) + 
+                          (assignedCM.completed?.length || 0);
+                        return total;
+                      })()} tasks
+                    </span>
+                  </div>
+                </div>
+                <span
+                  className={`material-symbols-outlined text-gray-400 group-hover:text-primary transition-all text-2xl ${expandedCM ? 'rotate-180' : ''}`}
+                >
+                  expand_more
+                </span>
+              </button>
+              {expandedCM && (
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {renderTaskSection([
+                    ...(selfTasks?.complianceManagement?.overdue || []),
+                    ...(assignedTasks?.complianceManagement?.overdue || [])
+                  ], 'overdue')}
+                  {renderTaskSection([
+                    ...(selfTasks?.complianceManagement?.dueSoon || []),
+                    ...(assignedTasks?.complianceManagement?.dueSoon || [])
+                  ], 'dueSoon')}
+                  {renderTaskSection([
+                    ...(selfTasks?.complianceManagement?.inProgress || []),
+                    ...(assignedTasks?.complianceManagement?.inProgress || [])
+                  ], 'inProgress')}
+                  {renderTaskSection([
+                    ...(selfTasks?.complianceManagement?.completed || []),
+                    ...(assignedTasks?.complianceManagement?.completed || [])
+                  ], 'completed')}
                 </div>
               )}
             </div>
-          </div>
-
-          {/* All Tasks Table */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setTaskFilter('all')}
-                  className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors ${taskFilter === 'all'
-                      ? 'bg-primary text-white shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                    }`}
-                >
-                  All Tasks
-                </button>
-                <button
-                  onClick={() => setTaskFilter('pending')}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${taskFilter === 'pending'
-                      ? 'bg-primary text-white shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                    }`}
-                >
-                  Pending
-                </button>
-                <button
-                  onClick={() => setTaskFilter('completed')}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${taskFilter === 'completed'
-                      ? 'bg-primary text-white shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                    }`}
-                >
-                  Completed
-                </button>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50/50 text-xs uppercase font-bold text-slate-400 tracking-wider">
-                  <tr>
-                    <th className="px-6 py-4">Task Name</th>
-                    <th className="px-6 py-4">Assignees</th>
-                    <th className="px-6 py-4">Due Date</th>
-                    <th className="px-6 py-4">Status</th>
-                    <th className="px-6 py-4"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {tasks.slice(0, 5).map((task: any) => (
-                    <tr
-                      key={task.id}
-                      onClick={() => navigate(`/admin/tasks/${task.id}`)}
-                      className="hover:bg-slate-50/50 transition-colors group cursor-pointer"
-                    >
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-slate-900 text-sm mb-1">{task.title}</span>
-                          <span className="text-xs text-slate-500">
-                            {task.category || 'General'} • {task.taskType === 'RECURRING' ? 'Recurring' : 'One-Time'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex -space-x-2">
-                          {task.assignments?.slice(0, 2).map((assignment: any, idx: number) => (
-                            <div
-                              key={idx}
-                              className="size-8 rounded-full ring-2 ring-white bg-primary flex items-center justify-center text-white text-xs font-bold"
-                            >
-                              {assignment.assignee?.name?.charAt(0).toUpperCase() || 'U'}
-                            </div>
-                          ))}
-                          {task.assignments?.length > 2 && (
-                            <div className="size-8 rounded-full ring-2 ring-white bg-slate-200 text-slate-600 flex items-center justify-center text-xs font-bold">
-                              +{task.assignments.length - 2}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-sm font-medium text-slate-900">
-                          {task.dueDate ? format(new Date(task.dueDate), 'MMM d, yyyy') : 'No due date'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">{getStatusBadge(task.status)}</td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            // Handle menu
-                          }}
-                          className="text-slate-400 hover:text-slate-600"
-                        >
-                          <span className="material-symbols-outlined">more_horiz</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {tasks.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-8 text-center text-text-muted">
-                        No tasks found
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          )}
         </div>
-      </main>
+      </div>
     </AdminLayout>
   );
 };
-
