@@ -6,14 +6,14 @@ interface FloatingActionButtonProps {
   isAdmin?: boolean;
   onOpenTaskModal?: () => void;
   onOpenDocumentPage?: () => void;
-  onOpenCompliancePage?: () => void;
+  // onOpenCompliancePage?: () => void;
 }
 
 export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ 
   isAdmin = false,
   onOpenTaskModal,
   onOpenDocumentPage,
-  onOpenCompliancePage,
+  // onOpenCompliancePage,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -61,14 +61,14 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
     setIsOpen(false);
   };
 
-  const handleCreateCompliance = () => {
-    if (onOpenCompliancePage) {
-      onOpenCompliancePage();
-    } else {
-      navigate(isAdmin ? '/admin/compliance/create' : '/compliance');
-    }
-    setIsOpen(false);
-  };
+  // const handleCreateCompliance = () => {
+  //   if (onOpenCompliancePage) {
+  //     onOpenCompliancePage();
+  //   } else {
+  //     navigate(isAdmin ? '/admin/compliance/create' : '/compliance');
+  //   }
+  //   setIsOpen(false);
+  // };
 
   return (
     <div className="fixed bottom-6 right-6 z-50" ref={menuRef}>
@@ -76,7 +76,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
       {isOpen && (
         <div className="absolute bottom-20 right-0 mb-2 flex flex-col gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
           {/* Create Compliance Task */}
-          <button
+          {/* <button
             onClick={handleCreateCompliance}
             className="flex items-center gap-3 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-4 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 border border-gray-200 dark:border-gray-700 min-w-[200px] group"
           >
@@ -91,7 +91,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
                 {isAdmin ? 'New compliance requirement' : 'View & assign compliance'}
               </div>
             </div>
-          </button>
+          </button> */}
 
           {/* Create Document */}
           <button

@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { format } from 'date-fns';
 import { messageService } from '../../services/messageService';
 import { conversationService } from '../../services/conversationService';
+import { taskService } from '../../services/taskService';
 import { waitForSocketConnection, joinConversationRoom, leaveConversationRoom, onSocketEvent, offSocketEvent, sendMessageViaSocket, getSocket } from '../../services/socketService';
 import { useAuth } from '../../context/AuthContext';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
@@ -36,8 +37,9 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
   // Check if accessed from task module route (not from messages route)
-  // If pathname matches /tasks/:taskId or /admin/tasks/:taskId pattern, we're in task module
-  const isFromTaskModule = /^\/tasks\/[^/]+$/.test(location.pathname) || /^\/admin\/tasks\/[^/]+$/.test(location.pathname);
+  // If pathname matches /tasks/... or /admin/tasks/... pattern, we're in task module
+  const isFromTaskModule =
+    /^\/tasks(\/|$)/.test(location.pathname) || /^\/admin\/tasks(\/|$)/.test(location.pathname);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<any[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -70,6 +72,19 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     () => conversationService.getConversationDetails(conversationId!),
     { enabled: !!conversationId }
   );
+
+  // Derive a reliable taskId for this conversation (works for both /messages and /tasks routes)
+  const effectiveTaskId = useMemo(() => {
+    if (routeTaskId) return routeTaskId;
+    const conv: any = conversationData;
+    return (
+      conv?.taskId ||
+      conv?.data?.taskId ||
+      conv?.task_id ||
+      conv?.data?.task_id ||
+      null
+    );
+  }, [routeTaskId, conversationData]);
 
   // Normalize message function (matching mobile)
   const normalizeMessage = (msg: any) => {
@@ -866,6 +881,159 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   // Get taskId from route params (when in task module) or from conversation data
   const taskId = routeTaskId || conversationData?.taskId || conversationData?.data?.taskId || conversationData?.task_id;
 
+  // Fetch task data for verification logic
+  const { data: taskData } = useQuery(
+    ['task', taskId],
+    () => taskService.getTask(taskId!),
+    { enabled: !!taskId }
+  );
+
+  const task = taskData;
+  const currentUserId = user?.id || (user as any)?.userId;
+
+  // Check if current user is the task creator
+  const isTaskCreator = () => {
+    if (!task) return false;
+    const creatorId = task.created_by || task.creator_id;
+    return creatorId === currentUserId;
+  };
+
+  // Check if current user is the reporting member
+  const isReportingMember = () => {
+    if (!task) return false;
+    const reportingMemberId = task.reporting_member_id;
+    return reportingMemberId === currentUserId;
+  };
+
+  // Check if current user can verify a specific member (EXACT mobile logic)
+  const canVerifyMember = (targetMemberId: string) => {
+    if (!task || !user) return false;
+    
+    const taskCreatorId = task.created_by || task.creator_id;
+    const reportingMemberId = task.reporting_member_id;
+    const isCurrentUserCreator = currentUserId === taskCreatorId;
+    const isCurrentUserReportingMember = currentUserId === reportingMemberId;
+    const isTargetReportingMember = targetMemberId === reportingMemberId;
+    const isTargetCreator = targetMemberId === taskCreatorId;
+    const isTargetCurrentUser = targetMemberId === currentUserId;
+    
+    // Cannot verify yourself
+    if (isTargetCurrentUser) return false;
+    
+    // Creator can verify reporting member (or all assignees if no reporting member)
+    if (isCurrentUserCreator) {
+      if (reportingMemberId) {
+        // If there's a reporting member, creator can only verify the reporting member
+        return isTargetReportingMember;
+      } else {
+        // If no reporting member, creator can verify all assignees
+        return true;
+      }
+    }
+    
+    // Reporting member can verify non-reporting assignees (but not creator or themselves)
+    if (isCurrentUserReportingMember) {
+      return !isTargetCreator && !isTargetReportingMember && !isTargetCurrentUser;
+    }
+    
+    // Regular assignees cannot verify anyone
+    return false;
+  };
+
+  // Verify completion mutation
+  const verifyCompletionMutation = useMutation(
+    (memberUserId: string) => {
+      if (!taskId) {
+        throw new Error('Missing taskId');
+      }
+      return taskService.verifyMemberCompletion(taskId, memberUserId);
+    },
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        loadMessages(); // Reload messages to show verification message
+      },
+      onError: (error: any) => {
+        const message =
+          error?.response?.data?.error ||
+          error?.message ||
+          'Failed to verify completion';
+        alert(message);
+      },
+    }
+  );
+
+  const [verifyingUserId, setVerifyingUserId] = useState<string | null>(null);
+
+  const handleVerifyCompletion = async (memberUserId: string) => {
+    if (!taskId) return;
+    
+    const member = task?.assignees?.find((a: any) => {
+      const assigneeId = a.id || a.user_id || a.userId;
+      return assigneeId === memberUserId;
+    });
+    const memberName = member?.name || 'User';
+    
+    if (!window.confirm(`Verify that ${memberName} has completed their part of the task?`)) {
+      return;
+    }
+
+    try {
+      setVerifyingUserId(memberUserId);
+      await verifyCompletionMutation.mutateAsync(memberUserId);
+      
+      // Send verification confirmation message via socket
+      const socket = await waitForSocketConnection();
+      socket.emit('send_message', {
+        conversationId,
+        text: `✓ Verified ${memberName}'s completion.`,
+        messageType: 'text',
+      });
+    } finally {
+      setVerifyingUserId(null);
+    }
+  };
+
+  // Get assignees from task
+  const assignees = React.useMemo(() => {
+    if (!task?.assignees) return [];
+    if (Array.isArray(task.assignees)) return task.assignees;
+    if (typeof task.assignees === 'string') {
+      try {
+        return JSON.parse(task.assignees);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }, [task?.assignees]);
+
+  // Check if member needs verification
+  const needsVerification = (assignee: any) => {
+    if (task?.status === 'completed') return false;
+    if (!assignee.completed_at) return false;
+    if (assignee.verified_at) return false;
+    
+    const assigneeId = assignee.id || assignee.user_id || assignee.userId;
+    const taskCreatorId = task?.created_by || task?.creator_id;
+    const isCreator = assigneeId === taskCreatorId;
+    
+    if (isCreator) return false;
+    
+    return assignee.completed_at && !assignee.verified_at;
+  };
+
+  // Get pending verifications
+  const pendingVerifications = React.useMemo(() => {
+    return assignees.filter((assignee: any) => {
+      const assigneeId = assignee.id || assignee.user_id || assignee.userId;
+      return needsVerification(assignee) && canVerifyMember(assigneeId);
+    });
+  }, [assignees, task]);
+
   // Render message component
   const renderMessage = (msg: any, index: number) => {
     const messageSenderId = msg.sender_id || msg.senderId;
@@ -1098,12 +1266,13 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       >
         <button
           onClick={() => {
-            // Always show Task Details modal if taskId is available (from route or conversation)
-            if (taskId) {
-              setShowTaskDetails(true);
+            // Navigate to full Task Details page from the task header
+            const id = effectiveTaskId || taskId;
+            if (!id) return;
+            if (isAdmin) {
+              navigate(`/admin/tasks/${id}`);
             } else {
-              // Fallback to Task Group Details if no taskId
-              setShowTaskGroupDetails(true);
+              navigate(`/tasks/${id}`);
             }
           }}
           className="flex items-center gap-4 flex-1 text-left hover:opacity-80 transition-opacity cursor-pointer"
@@ -1183,6 +1352,66 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           </button>
         </div>
       </header>
+
+      {/* Pending Verifications Section - EXACT mobile logic */}
+      {pendingVerifications.length > 0 && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800 px-6 py-4">
+          <h3 className="text-sm font-bold text-amber-900 dark:text-amber-300 mb-3">
+            {isTaskCreator() 
+              ? 'Pending Verifications' 
+              : isReportingMember() 
+                ? 'Pending Verifications (Your Reports)'
+                : 'Pending Verifications'}
+          </h3>
+          <div className="space-y-2">
+            {pendingVerifications.map((assignee: any) => {
+              const assigneeId = assignee.id || assignee.user_id || assignee.userId;
+              return (
+                <div 
+                  key={assigneeId} 
+                  className="flex items-center justify-between bg-white dark:bg-gray-800 rounded-lg p-3 border border-amber-200 dark:border-amber-800"
+                >
+                  <div className="flex items-center gap-3">
+                    {assignee.profile_photo_url || assignee.profile_photo ? (
+                      <img
+                        src={assignee.profile_photo_url || assignee.profile_photo}
+                        alt={assignee.name || 'Member'}
+                        className="w-10 h-10 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                        <span className="text-primary text-sm font-semibold">
+                          {(assignee.name || 'U').charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                    )}
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      {assignee.name || 'Unknown'} marked as complete
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleVerifyCompletion(assigneeId)}
+                    disabled={verifyingUserId === assigneeId}
+                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {verifyingUserId === assigneeId ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                        <span>Verifying...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-base">verified</span>
+                        <span>Verify</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Message Search */}
       {showMessageSearch && (
@@ -1376,16 +1605,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             <TaskDetailsModal
               visible={showTaskDetails}
               onClose={() => setShowTaskDetails(false)}
-              taskId={taskId}
-            />
-
-            {/* Task Group Details Modal */}
-            <TaskGroupDetailsModal
-              visible={showTaskGroupDetails}
-              onClose={() => setShowTaskGroupDetails(false)}
-              taskId={taskId}
-              conversationId={conversationId}
-              conversationData={conversationData}
+              taskId={effectiveTaskId || undefined}
             />
 
             {/* New Chat Modal */}
@@ -1408,16 +1628,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           <TaskDetailsModal
             visible={showTaskDetails}
             onClose={() => setShowTaskDetails(false)}
-            taskId={taskId}
-          />
-
-          {/* Task Group Details Modal */}
-          <TaskGroupDetailsModal
-            visible={showTaskGroupDetails}
-            onClose={() => setShowTaskGroupDetails(false)}
-            taskId={taskId}
-            conversationId={conversationId}
-            conversationData={conversationData}
+            taskId={effectiveTaskId || undefined}
           />
 
           {/* New Chat Modal */}
@@ -1447,7 +1658,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         <TaskDetailsModal
           visible={showTaskDetails}
           onClose={() => setShowTaskDetails(false)}
-          taskId={taskId}
+          taskId={effectiveTaskId || undefined}
         />
 
         {/* Task Group Details Modal */}
@@ -1481,7 +1692,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       <TaskDetailsModal
         visible={showTaskDetails}
         onClose={() => setShowTaskDetails(false)}
-        taskId={taskId}
+        taskId={effectiveTaskId || undefined}
       />
 
       {/* Task Group Details Modal */}

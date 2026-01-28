@@ -19,19 +19,13 @@ export const TaskListManagement: React.FC = () => {
       id: 'p1',
       title: 'Update Compliance Docs',
       status: 'Pending',
-      priority: 'High Priority',
       due: 'Oct 24, 5:00 PM',
-      priorityColor: 'text-red-600 dark:text-red-400',
-      icon: 'priority_high'
     },
     {
       id: 'p2',
       title: 'Safety Training Module 1',
       status: 'Pending',
-      priority: 'Medium Priority',
       due: 'Oct 25, 9:00 AM',
-      priorityColor: 'text-amber-600 dark:text-amber-400',
-      icon: 'equalizer',
       image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuC9uIhu6_0xzsUNeZGqJVO3QbT62TnR6C8axKwtWu4AffCEZ7InWE9GHl9keOsMvp8wcSKkgrfyRD9OPGIAPPP028SnfAMjkP7QY7HCw_Ai6VML_Ei5JFbn4dWMASYT8Bn_MLwqU1dcbXXx79GZDaKAH5Le0QpatC8UWtbL92IrxxOl4nN0fg10GhkEYVZAP1kIIMtWKZb7HO6BwWTwmnqfFY77e-iZEKjDIoZz0wBghMKHfFuukML2tot4YMj-MOK3VdQBMCcy2yEv'
     }
   ];
@@ -103,10 +97,6 @@ export const TaskListManagement: React.FC = () => {
                 <div className="flex flex-col gap-1 flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 text-xs font-bold px-2 py-0.5 rounded-full">Pending</span>
-                    <span className={`flex items-center text-xs ${task.priorityColor} font-medium`}>
-                      <span className="material-symbols-outlined text-[16px] mr-1">{task.icon}</span>
-                      {task.priority}
-                    </span>
                   </div>
                   <p className="text-gray-900 dark:text-white text-base font-bold leading-tight">{task.title}</p>
                   <div className="flex items-center text-gray-500 dark:text-gray-400 text-sm mt-1">

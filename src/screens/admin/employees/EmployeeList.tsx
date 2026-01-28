@@ -17,6 +17,7 @@ import { AdminLayout } from '../../../components/admin/AdminLayout';
 import { employeeService, Employee } from '../../../services/employeeService';
 import { useAuth } from '../../../context/AuthContext';
 import { getDepartments, getDesignations } from '../../../services/settingsService';
+import { chatUserService } from '../../../services/chatUserService';
 
 export const EmployeeList: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -142,6 +143,10 @@ export const EmployeeList: React.FC = () => {
         await employeeService.updateEmployee(editEmployee.id, submitData);
         alert('Employee updated successfully');
       } else {
+        // Remove password from submitData if user_id is present (existing user)
+        if (submitData.user_id && !submitData.password) {
+          delete submitData.password;
+        }
         await employeeService.addEmployee(submitData);
         alert('Employee added successfully');
       }
@@ -322,6 +327,7 @@ export const EmployeeList: React.FC = () => {
                   setShowAddForm(false);
                 }}
                 isSaving={isSaving}
+                key={editEmployee?.id || 'new'} // Force re-render when switching between add/edit
               />
             </div>
           </div>
@@ -377,6 +383,24 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, onSave, onCancel,
     status: employee?.status || 'active',
     password: '',
   });
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [selectedExistingUser, setSelectedExistingUser] = useState<any | null>(null);
+  const searchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // Reset form when employee changes (switching between add/edit)
+  React.useEffect(() => {
+    setFormData({
+      mobile: employee?.mobile || '',
+      name: employee?.name || '',
+      department: employee?.department || '',
+      designation: employee?.designation || '',
+      status: employee?.status || 'active',
+      password: '',
+    });
+    setSearchResults([]);
+    setSelectedExistingUser(null);
+  }, [employee]);
 
   // Fetch departments and designations
   const { data: departmentsData } = useQuery('departments', async () => {
@@ -392,9 +416,70 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, onSave, onCancel,
   const departments = Array.isArray(departmentsData) ? departmentsData : (departmentsData?.items || []);
   const designations = Array.isArray(designationsData) ? designationsData : (designationsData?.items || []);
 
+  // Search for existing users by mobile number (EXACT mobile logic)
+  const handleMobileChange = async (text: string) => {
+    setFormData({ ...formData, mobile: text });
+    setSelectedExistingUser(null);
+    
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // Extract digits only
+    const digits = text.replace(/\D/g, '');
+    
+    // Only search if we have exactly 10 digits (full phone number)
+    if (digits.length === 10) {
+      setSearchLoading(true);
+      searchTimeoutRef.current = setTimeout(async () => {
+        try {
+          // Search users by phone number
+          const response = await chatUserService.searchUsers(digits);
+          const users = response.data || response || [];
+          
+          // Filter to only show users whose mobile number matches exactly (last 10 digits)
+          const normalizedSearch = digits.slice(-10);
+          
+          const matchingUsers = users.filter((user: any) => {
+            if (!user.mobile && !user.phone) return false;
+            const userPhone = user.mobile || user.phone || '';
+            const normalizedDbPhone = userPhone.replace(/\D/g, '').slice(-10);
+            return normalizedDbPhone === normalizedSearch;
+          });
+
+          setSearchResults(matchingUsers);
+          
+          // If exactly one match found, auto-select it
+          if (matchingUsers.length === 1) {
+            handleSelectExistingUser(matchingUsers[0]);
+          }
+        } catch (error) {
+          console.error('Search users error:', error);
+          setSearchResults([]);
+        } finally {
+          setSearchLoading(false);
+        }
+      }, 500); // Debounce search by 500ms
+    } else {
+      setSearchResults([]);
+      setSearchLoading(false);
+    }
+  };
+
+  const handleSelectExistingUser = (user: any) => {
+    setSelectedExistingUser(user);
+    setFormData({
+      ...formData,
+      name: user.name || '',
+      mobile: user.mobile || user.phone || formData.mobile,
+    });
+    setSearchResults([]);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const submitData = { ...formData };
+    const submitData: any = { ...formData };
     if (employee) {
       // For updates, don't send password if not changed
       if (!submitData.password) {
@@ -402,19 +487,33 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, onSave, onCancel,
       }
       delete submitData.mobile; // Can't change mobile
     } else {
-      // For new employees, password is required
-      if (!submitData.password) {
-        alert('Password is required for new employees');
+      // For new employees, password is only required if user doesn't exist
+      if (!selectedExistingUser && !submitData.password) {
+        alert('Password is required for new users');
         return;
+      }
+      // If existing user selected, don't send password
+      if (selectedExistingUser) {
+        delete submitData.password;
+        submitData.user_id = selectedExistingUser.id;
       }
     }
     onSave(submitData);
   };
 
+  // Cleanup timeout on unmount
+  React.useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {!employee && (
-        <div>
+        <div className="relative">
           <label className="block text-sm font-medium text-text-main mb-1">Mobile Number *</label>
           <input
             type="tel"
@@ -425,24 +524,113 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, onSave, onCancel,
             onChange={(e) => {
               // Allow only digits, +, and spaces for easier input
               const value = e.target.value.replace(/[^\d+]/g, '');
-              setFormData({ ...formData, mobile: value });
+              handleMobileChange(value);
             }}
             maxLength={15}
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Enter any 10-digit mobile number (will be formatted automatically)
           </p>
+          
+          {/* Search Results Dropdown - EXACT mobile logic */}
+          {searchLoading && (
+            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg p-2">
+              <div className="flex items-center justify-center py-2">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+                <span className="ml-2 text-sm text-gray-500">Searching...</span>
+              </div>
+            </div>
+          )}
+          
+          {!searchLoading && searchResults.length > 0 && (
+            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+              {searchResults.map((user: any) => {
+                const isSelected = selectedExistingUser?.id === user.id;
+                return (
+                  <button
+                    key={user.id}
+                    type="button"
+                    onClick={() => handleSelectExistingUser(user)}
+                    className={`w-full flex items-center gap-3 p-3 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors ${
+                      isSelected ? 'bg-primary/10 border-l-4 border-primary' : ''
+                    }`}
+                  >
+                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                      {user.profilePhotoUrl || user.profile_photo_url ? (
+                        <img
+                          src={user.profilePhotoUrl || user.profile_photo_url}
+                          alt={user.name || 'User'}
+                          className="w-full h-full rounded-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-primary text-sm font-semibold">
+                          {(user.name || 'U').charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1 text-left">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {user.name || 'Unknown User'}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {user.mobile || user.phone}
+                      </p>
+                    </div>
+                    {isSelected && (
+                      <span className="material-symbols-outlined text-primary text-lg">check_circle</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          
+          {selectedExistingUser && (
+            <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg flex items-center justify-between">
+              <p className="text-xs text-green-700 dark:text-green-300">
+                <span className="material-symbols-outlined text-sm align-middle mr-1">check_circle</span>
+                User found: {selectedExistingUser.name} - Password field hidden
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedExistingUser(null);
+                  setFormData({ ...formData, name: '', password: '' });
+                }}
+                className="text-green-700 dark:text-green-300 hover:text-green-900 dark:hover:text-green-100"
+                title="Clear selection"
+              >
+                <span className="material-symbols-outlined text-sm">close</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
       <div>
-        <label className="block text-sm font-medium text-text-main mb-1">Name *</label>
+        <label className="block text-sm font-medium text-text-main mb-1">
+          Name *
+          {selectedExistingUser && (
+            <span className="ml-2 text-xs text-green-600 dark:text-green-400 font-normal">
+              (Auto-filled from existing user)
+            </span>
+          )}
+        </label>
         <input
           type="text"
           required
-          className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
+          className={`w-full px-4 py-2 rounded-lg border ${
+            selectedExistingUser
+              ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20'
+              : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+          } text-text-main`}
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
         />
+        {selectedExistingUser && (
+          <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+            Name auto-filled from existing user. You can edit if needed.
+          </p>
+        )}
       </div>
       <div>
         <label className="block text-sm font-medium text-text-main mb-1">Department *</label>
@@ -491,7 +679,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, onSave, onCancel,
           </select>
         </div>
       )}
-      {!employee && (
+      {!employee && !selectedExistingUser && (
         <div>
           <label className="block text-sm font-medium text-text-main mb-1">Password *</label>
           <input
@@ -503,6 +691,9 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, onSave, onCancel,
             value={formData.password}
             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
           />
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Required for new users. If user exists in OrgIT, password field will disappear automatically.
+          </p>
         </div>
       )}
       <div className="flex justify-end gap-3 pt-4">

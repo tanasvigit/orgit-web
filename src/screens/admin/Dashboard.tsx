@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import { TaskCard } from '../../components/shared';
@@ -11,7 +11,7 @@ export const AdminDashboard: React.FC = () => {
   const { user } = useAuth();
   // Expand/collapse state for D.M. and C.M. sections (combined for both self and assigned)
   const [expandedDM, setExpandedDM] = useState(false);
-  const [expandedCM, setExpandedCM] = useState(false);
+  // const [expandedCM, setExpandedCM] = useState(false);
 
   const { data: dashboardData, isLoading } = useQuery(
     ['admin-dashboard'],
@@ -40,7 +40,82 @@ export const AdminDashboard: React.FC = () => {
     }
   );
 
+  const selfTasks = dashboardData?.data?.selfTasks;
+  const assignedTasks = dashboardData?.data?.assignedTasks;
+
+  const currentUserId = user?.id || (user as any)?.userId;
+
+  const flattenedSelfTasksForUser = useMemo(() => {
+    if (!selfTasks || !currentUserId) return [] as any[];
+    const buckets = ['overdue', 'dueSoon', 'inProgress', 'completed'] as const;
+    const all: any[] = [];
+
+    Object.values(selfTasks).forEach((group: any) => {
+      if (!group) return;
+      buckets.forEach((bucket) => {
+        const arr = group[bucket];
+        if (Array.isArray(arr)) {
+          all.push(...arr);
+        }
+      });
+    });
+
+    return all.filter((task) => {
+      const assignees = Array.isArray(task?.assignees) ? task.assignees : [];
+      return assignees.some((a: any) => {
+        const assigneeId = a.id || a.user_id || a.userId;
+        return assigneeId === currentUserId;
+      });
+    });
+  }, [selfTasks, currentUserId]);
+
+  const selfUserStatusCounts = useMemo(
+    () => {
+      const counts = { overdue: 0, duesoon: 0, inprogress: 0, completed: 0 };
+      if (!flattenedSelfTasksForUser.length) return counts;
+
+      flattenedSelfTasksForUser.forEach((task: any) => {
+        const assignees = Array.isArray(task?.assignees) ? task.assignees : [];
+        const assignee = assignees.find((a: any) => {
+          const assigneeId = a.id || a.user_id || a.userId;
+          return assigneeId === currentUserId;
+        });
+
+        let bucket: 'completed' | 'inprogress' = 'inprogress';
+        if (assignee) {
+          const verified =
+            assignee.verified_at ||
+            (assignee.verifiedAt as any) ||
+            assignee.is_verified;
+          const completed =
+            assignee.completed_at ||
+            assignee.completion_status === 'completed' ||
+            assignee.status === 'completed';
+
+          if (verified) {
+            bucket = 'completed';
+          } else if (completed) {
+            bucket = 'inprogress';
+          }
+        }
+
+        if (bucket === 'completed') {
+          counts.completed += 1;
+        } else {
+          counts.inprogress += 1;
+        }
+      });
+
+      return counts;
+    },
+    [flattenedSelfTasksForUser, currentUserId]
+  );
+
   const getStatusCount = (status: 'overdue' | 'duesoon' | 'inprogress' | 'completed', view: 'self' | 'assigned') => {
+    if (view === 'self') {
+      if (status === 'completed') return selfUserStatusCounts.completed;
+      if (status === 'inprogress') return selfUserStatusCounts.inprogress;
+    }
     if (!statistics?.data) {
       console.log('[Admin Dashboard] No statistics data available');
       return 0;
@@ -61,6 +136,11 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const getTotalCount = (view: 'self' | 'assigned') => {
+    if (view === 'self') {
+      const localTotal =
+        selfUserStatusCounts.completed + selfUserStatusCounts.inprogress;
+      if (localTotal > 0) return localTotal;
+    }
     if (!statistics?.data) return 0;
     const prefix = view === 'self' ? 'selfTasks' : 'assignedTasks';
     const total = (
@@ -108,9 +188,6 @@ export const AdminDashboard: React.FC = () => {
       </>
     );
   };
-
-  const selfTasks = dashboardData?.data?.selfTasks;
-  const assignedTasks = dashboardData?.data?.assignedTasks;
 
   const renderTaskRow = (tasks: any, viewType: 'self' | 'assigned', title: string) => {
     return (
@@ -268,7 +345,7 @@ export const AdminDashboard: React.FC = () => {
           )}
 
           {/* Compliance Management Section - Combined for both self and assigned */}
-          {isLoading ? null : (
+          {/* {isLoading ? null : (
             <div>
               <button
                 onClick={() => setExpandedCM(!expandedCM)}
@@ -325,7 +402,7 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               )}
             </div>
-          )}
+          )} */}
         </div>
       </div>
     </AdminLayout>

@@ -13,7 +13,6 @@ export const TaskCreationScreen: React.FC = () => {
   const [taskType, setTaskType] = useState<'one_time' | 'recurring'>('one_time');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
   const [selectedAssignees, setSelectedAssignees] = useState<any[]>([]);
   const [startDate, setStartDate] = useState(new Date());
   const [targetDate, setTargetDate] = useState(new Date());
@@ -25,6 +24,7 @@ export const TaskCreationScreen: React.FC = () => {
   const [recurrenceType, setRecurrenceType] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
   const [autoEscalate, setAutoEscalate] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [reportingMemberId, setReportingMemberId] = useState<string | null>(null);
 
   // Fetch users for assignee selection
   const { data: usersData } = useQuery(
@@ -80,7 +80,6 @@ export const TaskCreationScreen: React.FC = () => {
         title: title.trim(),
         description: description.trim(),
         task_type: taskType,
-        priority,
         assignee_ids: selectedAssignees.map(a => a.id),
         start_date: startDate.toISOString(),
         target_date: targetDate.toISOString(),
@@ -195,6 +194,50 @@ export const TaskCreationScreen: React.FC = () => {
           </button>
         </div>
 
+        {/* Reporting Member Selection - Only show after assignees are selected */}
+        {selectedAssignees.length > 0 && (
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+              Reporting Member (Optional)
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              Select a member who will verify other members' task completions. If not selected, verification requests will go to the task creator.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {selectedAssignees.map((assignee) => {
+                const isSelected = reportingMemberId === assignee.id;
+                return (
+                  <button
+                    key={assignee.id}
+                    onClick={() => setReportingMemberId(isSelected ? null : assignee.id)}
+                    className={`flex items-center gap-2 p-3 rounded-lg border-2 transition-colors ${
+                      isSelected
+                        ? 'bg-primary/10 border-primary dark:bg-primary/20'
+                        : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    <div className="size-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                      <span className="text-primary text-xs font-semibold">
+                        {assignee.name?.charAt(0).toUpperCase() || '?'}
+                      </span>
+                    </div>
+                    <span className={`text-sm font-medium truncate flex-1 text-left ${
+                      isSelected
+                        ? 'text-primary dark:text-purple-300'
+                        : 'text-gray-700 dark:text-gray-300'
+                    }`}>
+                      {assignee.name || assignee.mobile}
+                    </span>
+                    {isSelected && (
+                      <span className="material-symbols-outlined text-primary text-lg">check_circle</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Schedule Section */}
         <div>
           <h3 className="text-sm font-bold uppercase text-primary dark:text-purple-400 mb-4 tracking-wider">
@@ -268,28 +311,6 @@ export const TaskCreationScreen: React.FC = () => {
             </div>
           </div>
         )}
-
-        {/* Priority */}
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-            Priority
-          </label>
-          <div className="flex gap-2">
-            {(['low', 'medium', 'high'] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPriority(p)}
-                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                  priority === p
-                    ? 'bg-primary text-white'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                }`}
-              >
-                {p.charAt(0).toUpperCase() + p.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
 
         {/* Auto Escalate Toggle */}
         <div className="flex items-center justify-between">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { taskService } from '../../services/taskService';
 import { conversationService } from '../../services/conversationService';
 import { useAuth } from '../../context/AuthContext';
@@ -10,6 +10,7 @@ import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
 
 export const TaskDashboardScreen: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin';
@@ -33,6 +34,11 @@ export const TaskDashboardScreen: React.FC = () => {
     }
   );
 
+  // When navigating back to this screen (e.g., after rejecting), force a refetch
+  useEffect(() => {
+    refetch();
+  }, [location.key, activeTab, refetch]);
+
   const tasks = tasksData || [];
 
   // Filter tasks by search query
@@ -45,9 +51,49 @@ export const TaskDashboardScreen: React.FC = () => {
     );
   }, [tasks, searchQuery]);
 
-  // Separate pending and all tasks
-  const pendingTasks = filteredTasks.filter((task: any) => task.status === 'pending');
-  const allTasks = filteredTasks.filter((task: any) => task.status !== 'pending');
+  const currentUserId = user?.id || (user as any)?.userId;
+  const rejectedStorageKey = React.useMemo(() => {
+    const uid = currentUserId || 'unknown';
+    return `orgit.rejectedTaskIds.${uid}`;
+  }, [currentUserId]);
+
+  const locallyRejectedIds = React.useMemo(() => {
+    try {
+      const raw = localStorage.getItem(rejectedStorageKey);
+      const parsed = raw ? (JSON.parse(raw) as string[]) : [];
+      return new Set(parsed || []);
+    } catch {
+      return new Set<string>();
+    }
+  }, [rejectedStorageKey]);
+
+  const hasUserRejectedTask = (task: any) => {
+    if (task?.id && locallyRejectedIds.has(task.id)) return true;
+
+    const statusForUser = task?.current_user_status || task?.currentUserStatus || {};
+    if (statusForUser.has_rejected || statusForUser.hasRejected) return true;
+    if (statusForUser.rejected_at || statusForUser.rejectedAt) return true;
+
+    // Some endpoints embed per-user state inside assignees
+    const assignees = Array.isArray(task?.assignees) ? task.assignees : [];
+    const me = assignees.find((a: any) => (a.id || a.user_id || a.userId) === currentUserId);
+    if (!me) return false;
+    return !!(me.has_rejected || me.hasRejected || me.rejected_at || me.rejectedAt);
+  };
+
+  // Hide tasks that the current user has rejected
+  const visibleTasks = React.useMemo(
+    () =>
+      filteredTasks.filter((task: any) => {
+        return !hasUserRejectedTask(task);
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filteredTasks, currentUserId]
+  );
+
+  // Separate pending and all tasks (only from visible tasks)
+  const pendingTasks = visibleTasks.filter((task: any) => task.status === 'pending');
+  const allTasks = visibleTasks.filter((task: any) => task.status !== 'pending');
 
   // Format date helper (matching mobile)
   const formatDate = (dateString?: string) => {
@@ -76,17 +122,7 @@ export const TaskDashboardScreen: React.FC = () => {
     return new Date(dueDate) < new Date();
   };
 
-  // Get priority color
-  const getPriorityColor = (priority?: string) => {
-    switch (priority) {
-      case 'high': return '#EF4444';
-      case 'medium': return '#F59E0B';
-      case 'low': return '#10B981';
-      default: return '#6B7280';
-    }
-  };
-
-  // Get status color
+  // Get status color (global mapping)
   const getStatusColor = (status?: string) => {
     switch (status) {
       case 'pending': return '#F59E0B';
@@ -95,6 +131,50 @@ export const TaskDashboardScreen: React.FC = () => {
       case 'rejected': return '#EF4444';
       default: return '#6B7280';
     }
+  };
+
+  // Per-viewer status based on assignee + verification, similar to mobile getMemberStatus
+  type ViewerStatus = 'pending' | 'in_progress' | 'pending_verification' | 'completed';
+
+  const getViewerStatusForTask = (task: any): ViewerStatus => {
+    const statusForUser = task?.current_user_status || task?.currentUserStatus || {};
+
+    // Quick shortcut: if backend explicitly marks current user as rejected, treat as pending (but filtered out earlier).
+    if (statusForUser.has_rejected || statusForUser.hasRejected) {
+      return 'pending';
+    }
+
+    const assignees = Array.isArray(task?.assignees) ? task.assignees : [];
+    const me = assignees.find((a: any) => {
+      const assigneeId = a.id || a.user_id || a.userId;
+      return assigneeId === currentUserId;
+    });
+
+    if (me) {
+      const verified =
+        me.verified_at ||
+        (me.verifiedAt as any) ||
+        me.is_verified;
+      const completed =
+        me.completed_at ||
+        me.completion_status === 'completed' ||
+        me.status === 'completed';
+      const accepted =
+        me.accepted_at ||
+        me.has_accepted ||
+        statusForUser.has_accepted ||
+        statusForUser.accepted_at;
+
+      if (verified) return 'completed';
+      if (completed) return 'pending_verification';
+      if (accepted) return 'in_progress';
+    } else if (statusForUser.has_accepted) {
+      // Fallback if only current_user_status is available
+      return 'in_progress';
+    }
+
+    // Default: pending until accepted
+    return 'pending';
   };
 
   // Handle refresh
@@ -130,40 +210,71 @@ export const TaskDashboardScreen: React.FC = () => {
   };
 
   const handleReject = (taskId: string) => {
-    navigate(`/tasks/${taskId}`, { state: { showReject: true } });
+    navigate(isAdmin ? `/admin/tasks/${taskId}` : `/tasks/${taskId}`, { state: { showReject: true } });
   };
 
   // Render task card - Desktop optimized
   const renderTask = (task: any) => {
-    const isPending = task.status === 'pending';
+    const viewerStatus = getViewerStatusForTask(task);
+    const isPending = viewerStatus === 'pending';
     const overdue = isOverdue(task.due_date);
-    const priorityColor = getPriorityColor(task.priority);
-    const statusColor = getStatusColor(task.status);
+    const statusColor = getStatusColor(
+      viewerStatus === 'pending_verification' ? 'in_progress' : viewerStatus
+    );
     
-    // Check current user's acceptance status
+    // Check current user's relationship to this task
     const currentUserStatus = task.current_user_status;
     const hasAccepted = currentUserStatus?.has_accepted || false;
     const hasRejected = currentUserStatus?.has_rejected || false;
     const isAssigned = task.assignees?.some((a: any) => a.id === user?.id);
-    
-    // User can accept/reject if assigned, task is pending, and they haven't accepted/rejected
-    const canAccept = isPending && isAssigned && !hasAccepted && !hasRejected;
-    const canReject = isPending && isAssigned && !hasRejected && !hasAccepted;
+
+    // Task creator is always part of the task and does not need to accept/reject
+    const creatorId = task.created_by || task.creator_id;
+    const isCreatorForTask = creatorId && currentUserId && creatorId === currentUserId;
+
+    // User can accept/reject if assigned (and not creator), task is pending, and they haven't accepted/rejected
+    const canAccept = !isCreatorForTask && isPending && isAssigned && !hasAccepted && !hasRejected;
+    const canReject = !isCreatorForTask && isPending && !hasRejected && !hasAccepted;
     
     // Calculate acceptance count
     const acceptedCount = task.accepted_count || 0;
     const totalAssignees = task.total_assignees || 0;
 
+    const handleCardClick = () => {
+      const convId = task.conversation_id || task.conversationId;
+
+      // Creators: if a task group exists, go straight to the task-group chat in the Task module
+      if (isCreatorForTask && convId) {
+        navigate(isAdmin ? `/admin/tasks/task-group/${convId}` : `/tasks/task-group/${convId}`);
+        return;
+      }
+
+      // Assignees who have not yet accepted should see the Task Details screen (with Accept / Reject)
+      if (!hasAccepted) {
+        navigate(isAdmin ? `/admin/tasks/${task.id}` : `/tasks/${task.id}`);
+        return;
+      }
+
+      // Assignees who have accepted and have a task group -> open chat in Task module
+      if (convId) {
+        navigate(isAdmin ? `/admin/tasks/task-group/${convId}` : `/tasks/task-group/${convId}`);
+        return;
+      }
+
+      // Fallback: open Task Details
+      navigate(isAdmin ? `/admin/tasks/${task.id}` : `/tasks/${task.id}`);
+    };
+
     return (
       <div
         key={task.id}
         className="flex flex-col gap-3 rounded-xl bg-white dark:bg-slate-800 p-4 shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:shadow-md hover:border-primary/30 dark:hover:border-primary/50 transition-all group"
-        onClick={() => navigate(isAdmin ? `/admin/tasks/${task.id}` : `/tasks/${task.id}`)}
+        onClick={handleCardClick}
       >
-        {/* Header with Status and Priority */}
+        {/* Header with Status (viewer based) */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2 flex-wrap">
-            {isPending && (
+            {viewerStatus === 'pending' && (
               <span 
                 className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
                 style={{ backgroundColor: statusColor }}
@@ -171,7 +282,7 @@ export const TaskDashboardScreen: React.FC = () => {
                 Pending
               </span>
             )}
-            {task.status === 'in_progress' && (
+            {viewerStatus === 'in_progress' && (
               <span 
                 className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
                 style={{ backgroundColor: statusColor }}
@@ -179,31 +290,21 @@ export const TaskDashboardScreen: React.FC = () => {
                 In Progress
               </span>
             )}
-            {task.status === 'completed' && (
+            {viewerStatus === 'pending_verification' && (
+              <span 
+                className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
+                style={{ backgroundColor: statusColor }}
+              >
+                Pending Review
+              </span>
+            )}
+            {viewerStatus === 'completed' && (
               <span 
                 className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
                 style={{ backgroundColor: statusColor }}
               >
                 Completed
               </span>
-            )}
-            {task.priority === 'high' && (
-              <div className="flex items-center gap-1.5" style={{ color: priorityColor }}>
-                <span className="material-symbols-outlined text-base">priority_high</span>
-                <span className="text-xs font-semibold">High</span>
-              </div>
-            )}
-            {task.priority === 'medium' && (
-              <div className="flex items-center gap-1.5" style={{ color: priorityColor }}>
-                <span className="material-symbols-outlined text-base">equalizer</span>
-                <span className="text-xs font-semibold">Medium</span>
-              </div>
-            )}
-            {task.priority === 'low' && (
-              <div className="flex items-center gap-1.5" style={{ color: priorityColor }}>
-                <span className="material-symbols-outlined text-base">low_priority</span>
-                <span className="text-xs font-semibold">Low</span>
-              </div>
             )}
           </div>
           {overdue && task.status !== 'completed' && (

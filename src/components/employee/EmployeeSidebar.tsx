@@ -13,7 +13,7 @@ const navItems: NavItem[] = [
   { path: '/messages', icon: 'chat', label: 'Messages' },
   { path: '/tasks', icon: 'check_circle', label: 'Tasks' },
   { path: '/documents', icon: 'description', label: 'Documents' },
-  { path: '/compliance', icon: 'verified_user', label: 'Compliance' },
+  // { path: '/compliance', icon: 'verified_user', label: 'Compliance' },
 ];
 
 const STORAGE_KEY = 'employee-sidebar-minimized-by-messages';

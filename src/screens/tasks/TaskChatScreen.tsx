@@ -14,6 +14,9 @@ export const TaskChatScreen: React.FC = () => {
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [showReject, setShowReject] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
 
   // Fetch task
   const { data: taskData, isLoading: isLoadingTask, error: taskError } = useQuery(
@@ -37,6 +40,86 @@ export const TaskChatScreen: React.FC = () => {
     }
     return [];
   }, [task?.assignees]);
+
+  const currentUserId = user?.id || (user as any)?.userId;
+
+  // Current user's relationship to the task
+  const isAssigned = useMemo(() => {
+    if (!assignees || !currentUserId) return false;
+    return assignees.some((a: any) => {
+      const assigneeId = a.id || a.user_id || a.userId;
+      return assigneeId === currentUserId;
+    });
+  }, [assignees, currentUserId]);
+
+  const currentUserStatus = (task as any)?.current_user_status;
+  const hasAccepted = !!(currentUserStatus?.has_accepted);
+  const isCreator =
+    !!task &&
+    !!currentUserId &&
+    ((task as any).created_by === currentUserId ||
+      (task as any).creator_id === currentUserId);
+
+  // **Access rule**: task group chat is available only after user accepts the task,
+  // except the creator who always has access.
+  const canAccessChat = isCreator || (isAssigned && hasAccepted);
+
+  // Accept / Reject mutations (same backend flow as TaskDetailsScreen)
+  const acceptTaskMutation = useMutation(
+    () => taskService.acceptTask(taskId!),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+      },
+    }
+  );
+
+  const rejectTaskMutation = useMutation(
+    (reason: string) => taskService.rejectTask(taskId!, reason),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        setShowReject(false);
+        setRejectionReason('');
+      },
+    }
+  );
+
+  const handleAccept = async () => {
+    try {
+      setProcessing(true);
+      await acceptTaskMutation.mutateAsync();
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.error || error?.message || 'Failed to accept task';
+      alert(message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!rejectionReason.trim()) {
+      alert('Please enter a reason for rejection');
+      return;
+    }
+    try {
+      setProcessing(true);
+      await rejectTaskMutation.mutateAsync(rejectionReason.trim());
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.error || error?.message || 'Failed to reject task';
+      alert(message);
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   // Extract conversation_id from task
   const taskConversationId = task?.conversation_id || task?.conversationId || null;
@@ -100,6 +183,11 @@ export const TaskChatScreen: React.FC = () => {
   useEffect(() => {
     if (isLoadingTask || taskError || !task || !taskId) return;
 
+    // If user is not allowed to access chat yet, never create or load the conversation
+    if (!canAccessChat) {
+      return;
+    }
+
     // If conversation_id exists, use it
     if (taskConversationId) {
       setConversationId(taskConversationId);
@@ -107,10 +195,23 @@ export const TaskChatScreen: React.FC = () => {
     }
 
     // If no conversation_id and not already creating, create one
-    if (!conversationId && !createConversationMutation.isLoading && !createConversationMutation.isSuccess) {
+    if (
+      !conversationId &&
+      !createConversationMutation.isLoading &&
+      !createConversationMutation.isSuccess
+    ) {
       createConversationMutation.mutate();
     }
-  }, [task, taskConversationId, isLoadingTask, taskError, taskId, conversationId, createConversationMutation]);
+  }, [
+    task,
+    taskConversationId,
+    isLoadingTask,
+    taskError,
+    taskId,
+    conversationId,
+    createConversationMutation,
+    canAccessChat,
+  ]);
 
   // Loading state
   if (isLoadingTask || (createConversationMutation.isLoading && !conversationId)) {
@@ -139,6 +240,124 @@ export const TaskChatScreen: React.FC = () => {
           >
             Back to Tasks
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // If user is not allowed into the group yet, show guard screen
+  if (!canAccessChat) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="max-w-lg w-full bg-white dark:bg-slate-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6">
+          <div className="mb-3 flex items-center justify-center">
+            <span className="material-symbols-outlined text-4xl text-amber-500">
+              lock
+            </span>
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1 text-center">
+            Task group not available yet
+          </h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 text-center">
+            You must accept this task before you can access the task group chat.
+          </p>
+
+          {/* Quick Accept / Reject actions for assignee */}
+          {isAssigned && !hasAccepted && (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  type="button"
+                  onClick={handleAccept}
+                  disabled={processing}
+                  className="flex-1 inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90 transition-colors disabled:opacity-50"
+                >
+                  {processing && acceptTaskMutation.isLoading ? (
+                    <>
+                      <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                      Accepting...
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-base mr-1">
+                        check
+                      </span>
+                      Accept Task
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowReject(true)}
+                  disabled={processing}
+                  className="flex-1 inline-flex items-center justify-center rounded-lg border border-red-500/60 px-4 py-2.5 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-base mr-1">
+                    close
+                  </span>
+                  Reject
+                </button>
+              </div>
+
+              {/* Reject reason input */}
+              {showReject && (
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 text-left">
+                    Rejection reason
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500/60"
+                    placeholder="Enter reason for rejecting this task..."
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowReject(false);
+                        setRejectionReason('');
+                      }}
+                      className="inline-flex items-center justify-center rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleReject}
+                      disabled={!rejectionReason.trim() || processing}
+                      className="inline-flex items-center justify-center rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 transition-colors disabled:opacity-50"
+                    >
+                      {processing && rejectTaskMutation.isLoading ? 'Rejecting...' : 'Confirm Reject'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Fallback navigation if user is not assigned (e.g. viewer) */}
+          {!isAssigned && (
+            <div className="mt-4 flex flex-col sm:flex-row gap-3 justify-center">
+              <button
+                type="button"
+                onClick={() =>
+                  navigate(isAdmin ? `/admin/tasks/${taskId}` : `/tasks/${taskId}`)
+                }
+                className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 transition-colors"
+              >
+                View Task Details
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(isAdmin ? '/admin/tasks' : '/tasks')}
+                className="inline-flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Back to Tasks
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );

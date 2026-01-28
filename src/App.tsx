@@ -20,8 +20,8 @@ import { DocumentManagementHome } from './screens/documents/DocumentManagementHo
 import { DocumentLibrary } from './screens/admin/documents/DocumentLibrary';
 import { CreateDocument } from './screens/admin/documents/CreateDocument';
 import { DocumentViewer } from './screens/admin/documents/DocumentViewer';
-import { ComplianceManagementHome } from './screens/compliance/ComplianceManagementHome';
-import { ComplianceView } from './screens/compliance/ComplianceView';
+// import { ComplianceManagementHome } from './screens/compliance/ComplianceManagementHome';
+// import { ComplianceView } from './screens/compliance/ComplianceView';
 import { AdminSettings } from './screens/settings/AdminSettings';
 import { Dashboard as SuperAdminDashboard } from './screens/super-admin/Dashboard';
 import { OrganizationList } from './screens/super-admin/organizations/OrganizationList';
@@ -29,9 +29,9 @@ import { OrganizationDetail } from './screens/super-admin/organizations/Organiza
 import { OrganizationForm } from './screens/super-admin/organizations/OrganizationForm';
 import { DocumentTemplateList } from './screens/super-admin/document-templates/DocumentTemplateList';
 import { DocumentTemplateForm } from './screens/super-admin/document-templates/DocumentTemplateForm';
-import { ComplianceList } from './screens/super-admin/compliance/ComplianceList';
-import { ComplianceForm } from './screens/super-admin/compliance/ComplianceForm';
-import { AdminComplianceForm } from './screens/admin/compliance/AdminComplianceForm';
+// import { ComplianceList } from './screens/super-admin/compliance/ComplianceList';
+// import { ComplianceForm } from './screens/super-admin/compliance/ComplianceForm';
+// import { AdminComplianceForm } from './screens/admin/compliance/AdminComplianceForm';
 import { TaskMonitoring } from './screens/super-admin/tasks/TaskMonitoring';
 import { TestSuperAdmin } from './screens/super-admin/TestSuperAdmin';
 import { UserList } from './screens/super-admin/users/UserList';
@@ -214,6 +214,14 @@ function App() {
               }
             />
             <Route
+              path="/tasks/task-group/:conversationId"
+              element={
+                <ProtectedRoute>
+                  <TaskGroupChatConversation />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/tasks"
               element={
                 <ProtectedRoute>
@@ -233,7 +241,7 @@ function App() {
               path="/tasks/:taskId"
               element={
                 <ProtectedRoute>
-                  <TaskChatScreen />
+                  <TaskDetailsScreen />
                 </ProtectedRoute>
               }
             />
@@ -269,7 +277,7 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            <Route
+            {/* <Route
               path="/compliance"
               element={
                 <ProtectedRoute>
@@ -284,7 +292,7 @@ function App() {
                   <ComplianceView />
                 </ProtectedRoute>
               }
-            />
+            /> */}
             <Route
               path="/settings"
               element={
@@ -411,6 +419,8 @@ function App() {
                 </SuperAdminProtectedRoute>
               }
             />
+            {/* Compliance routes disabled in web */}
+            {/*
             <Route
               path="/super-admin/compliance"
               element={
@@ -443,6 +453,7 @@ function App() {
                 </AdminOrSuperAdminProtectedRoute>
               }
             />
+            */}
             <Route
               path="/super-admin/tasks"
               element={
@@ -503,6 +514,14 @@ function App() {
               }
             />
             <Route
+              path="/admin/tasks/task-group/:conversationId"
+              element={
+                <AdminProtectedRoute>
+                  <TaskGroupChatConversation />
+                </AdminProtectedRoute>
+              }
+            />
+            <Route
               path="/admin/tasks"
               element={
                 <AdminProtectedRoute>
@@ -522,7 +541,7 @@ function App() {
               path="/admin/tasks/:taskId"
               element={
                 <AdminProtectedRoute>
-                  <TaskChatScreen />
+                  <TaskDetailsScreen />
                 </AdminProtectedRoute>
               }
             />
@@ -558,7 +577,7 @@ function App() {
                 </AdminProtectedRoute>
               }
             />
-            <Route
+            {/* <Route
               path="/admin/compliance"
               element={
                 <AdminProtectedRoute>
@@ -589,7 +608,7 @@ function App() {
                   <AdminComplianceForm />
                 </AdminProtectedRoute>
               }
-            />
+            /> */}
             <Route
               path="/admin/users"
               element={

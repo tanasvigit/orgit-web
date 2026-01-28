@@ -15,6 +15,7 @@ export const TaskDetailsScreen: React.FC = () => {
   const [showRejectModal, setShowRejectModal] = useState(location.state?.showReject || false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [verifyingUserId, setVerifyingUserId] = useState<string | null>(null);
   const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
 
   // Fetch task
@@ -44,6 +45,55 @@ export const TaskDetailsScreen: React.FC = () => {
   // Normalize task with assignees array
   const normalizedTask = task ? { ...task, assignees } : null;
 
+  const currentUserId = user?.id || (user as any)?.userId;
+
+  const rejectedStorageKey = React.useMemo(() => {
+    const uid = currentUserId || 'unknown';
+    return `orgit.rejectedTaskIds.${uid}`;
+  }, [currentUserId]);
+
+  const addRejectedTaskId = React.useCallback(
+    (tid: string) => {
+      try {
+        const raw = localStorage.getItem(rejectedStorageKey);
+        const existing = raw ? (JSON.parse(raw) as string[]) : [];
+        const next = Array.from(new Set([...(existing || []), tid]));
+        localStorage.setItem(rejectedStorageKey, JSON.stringify(next));
+      } catch {
+        // ignore storage failures
+      }
+    },
+    [rejectedStorageKey]
+  );
+
+  const removeRejectedTaskId = React.useCallback(
+    (tid: string) => {
+      try {
+        const raw = localStorage.getItem(rejectedStorageKey);
+        const existing = raw ? (JSON.parse(raw) as string[]) : [];
+        const next = (existing || []).filter((id) => id !== tid);
+        localStorage.setItem(rejectedStorageKey, JSON.stringify(next));
+      } catch {
+        // ignore storage failures
+      }
+    },
+    [rejectedStorageKey]
+  );
+
+  const removeTaskFromCachedLists = React.useCallback(
+    (tid: string) => {
+      // Our task list screen uses query keys ['tasks', 'one_time'] and ['tasks', 'recurring'].
+      (['one_time', 'recurring'] as const).forEach((type) => {
+        queryClient.setQueryData(['tasks', type], (old: any) => {
+          if (!old) return old;
+          if (Array.isArray(old)) return old.filter((t: any) => t?.id !== tid);
+          return old;
+        });
+      });
+    },
+    [queryClient]
+  );
+
   // Accept task mutation
   const acceptTaskMutation = useMutation(
     () => taskService.acceptTask(taskId!),
@@ -51,6 +101,9 @@ export const TaskDetailsScreen: React.FC = () => {
       onSuccess: () => {
         queryClient.invalidateQueries(['task', taskId]);
         queryClient.invalidateQueries(['tasks']);
+        if (taskId) {
+          removeRejectedTaskId(taskId);
+        }
         // Navigate to task chat if conversation_id exists
         const currentTask = normalizedTask || task;
         if (currentTask?.conversation_id) {
@@ -71,8 +124,15 @@ export const TaskDetailsScreen: React.FC = () => {
         queryClient.invalidateQueries(['tasks']);
         queryClient.invalidateQueries(['dashboard']);
         queryClient.invalidateQueries(['dashboard-statistics']);
+        if (taskId) {
+          // Persist + optimistically remove from lists (no backend changes needed)
+          addRejectedTaskId(taskId);
+          removeTaskFromCachedLists(taskId);
+        }
         setShowRejectModal(false);
         setRejectionReason('');
+        // Take user back to task list after rejecting
+        navigate(isAdmin ? '/admin/tasks' : '/tasks');
       }
     }
   );
@@ -114,16 +174,6 @@ export const TaskDetailsScreen: React.FC = () => {
     }
   };
 
-  // Get priority color
-  const getPriorityColor = (priority?: string) => {
-    switch (priority) {
-      case 'high': return '#EF4444';
-      case 'medium': return '#F59E0B';
-      case 'low': return '#10B981';
-      default: return '#6B7280';
-    }
-  };
-
   // Get status color
   const getStatusColor = (status?: string) => {
     switch (status) {
@@ -135,7 +185,7 @@ export const TaskDetailsScreen: React.FC = () => {
     }
   };
 
-  // Get status label
+  // Get global status label
   const getStatusLabel = (status?: string) => {
     switch (status) {
       case 'pending': return 'Pending Approval';
@@ -152,8 +202,98 @@ export const TaskDetailsScreen: React.FC = () => {
   const hasAccepted = currentUserStatus?.has_accepted || false;
   const hasRejected = currentUserStatus?.has_rejected || false;
   
-  const canAccept = isAssigned && !hasAccepted && !hasRejected;
-  const canReject = isAssigned && !hasRejected && !hasAccepted;
+  // Per-member completion (EXACT mobile logic replication)
+  const currentUserAssignee = normalizedTask?.assignees?.find((a: any) => {
+    const assigneeId = a.id || a.user_id || a.userId;
+    return assigneeId === currentUserId;
+  });
+
+  // EXACT mobile logic: hasCompleted checks completed_at (NOT verified_at)
+  const hasCompleted =
+    !!currentUserAssignee &&
+    (currentUserAssignee.completed_at ||
+      currentUserAssignee.completion_status === 'completed' ||
+      currentUserAssignee.status === 'completed');
+
+  const canMarkComplete =
+    isAssigned &&
+    hasAccepted &&
+    !hasCompleted &&
+    normalizedTask?.status !== 'completed';
+
+  // EXACT mobile logic: getMemberStats counts completed_at (NOT verified_at)
+  const getMemberStats = () => {
+    if (!normalizedTask?.assignees || !Array.isArray(normalizedTask.assignees)) return null;
+    const total = normalizedTask.assignees.length;
+    const completed = normalizedTask.assignees.filter((a: any) => 
+      a.completed_at || a.completion_status === 'completed' || a.status === 'completed'
+    ).length;
+    return { total, completed, progress: total > 0 ? Math.round((completed / total) * 100) : 0 };
+  };
+
+  const memberStats = getMemberStats();
+
+  // EXACT mobile logic: getMemberStatusLabel shows "Completed" if completed_at exists
+  const getMemberStatusLabel = (member: any) => {
+    if (member.completed_at || member.completion_status === 'completed' || member.status === 'completed') {
+      return 'Completed';
+    }
+    if (member.accepted_at || member.has_accepted) {
+      return 'In Progress';
+    }
+    return 'Pending';
+  };
+
+  // EXACT mobile logic: getMemberStatusColor shows green if completed_at exists
+  const getMemberStatusColor = (member: any) => {
+    if (member.completed_at || member.completion_status === 'completed' || member.status === 'completed') {
+      return '#2E7D32'; // Green for completed
+    }
+    if (member.accepted_at || member.has_accepted) {
+      return '#F57C00'; // Orange for in progress
+    }
+    return '#9CA3AF'; // Gray for pending
+  };
+
+  const isCreator =
+    !!normalizedTask &&
+    (normalizedTask.created_by === currentUserId ||
+      normalizedTask.creator_id === currentUserId);
+
+  const isReportingMember =
+    !!normalizedTask && normalizedTask.reporting_member_id === currentUserId;
+
+  // For the header badge, prefer showing the current viewer's own status
+  // (Completed / Pending Review / In Progress / Pending) rather than only global status.
+  const getDisplayStatusLabelForViewer = () => {
+    if (currentUserAssignee) {
+      const verified =
+        currentUserAssignee.verified_at ||
+        (currentUserAssignee.verifiedAt as any) ||
+        currentUserAssignee.is_verified;
+
+      const completed =
+        currentUserAssignee.completed_at ||
+        currentUserAssignee.completion_status === 'completed' ||
+        currentUserAssignee.status === 'completed';
+
+      const accepted =
+        currentUserAssignee.accepted_at ||
+        currentUserAssignee.has_accepted;
+
+      if (verified) return 'Completed';
+      if (completed) return 'Pending for Review';
+      if (accepted) return 'In Progress';
+      return 'Pending';
+    }
+
+    // Fallback: show global task status
+    return getStatusLabel((normalizedTask || task)?.status);
+  };
+
+  // Creator is always considered "in" the task; they never see Accept/Reject.
+  const canAccept = !isCreator && isAssigned && !hasAccepted && !hasRejected;
+  const canReject = !isCreator && isAssigned && !hasRejected && !hasAccepted;
 
   // Handle accept
   const handleAccept = async () => {
@@ -181,6 +321,85 @@ export const TaskDetailsScreen: React.FC = () => {
       alert(error.response?.data?.error || 'Failed to reject task');
     } finally {
       setProcessing(false);
+    }
+  };
+
+  // Mark current user's assignment as complete
+  const markCompleteMutation = useMutation(
+    () => {
+      if (!taskId || !currentUserId) {
+        throw new Error('Missing taskId or userId');
+      }
+      return taskService.markMemberComplete(taskId, currentUserId);
+    },
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+      },
+    }
+  );
+
+  const handleMarkComplete = async () => {
+    if (!taskId || !currentUserId) return;
+    try {
+      setProcessing(true);
+      await markCompleteMutation.mutateAsync();
+      alert('Your completion has been marked and sent for approval.');
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.error ||
+        error?.message ||
+        'Failed to mark completion';
+      alert(message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Verify another member's completion
+  const verifyCompletionMutation = useMutation(
+    (memberUserId: string) => {
+      if (!taskId) {
+        throw new Error('Missing taskId');
+      }
+      return taskService.verifyMemberCompletion(taskId, memberUserId);
+    },
+    {
+      onSuccess: (result: any) => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+
+        if (result?.allCompleted) {
+          alert('All members have been verified. Task is now completed.');
+        } else {
+          alert('Member completion verified successfully.');
+        }
+      },
+      onError: (error: any) => {
+        const message =
+          error?.response?.data?.error ||
+          error?.message ||
+          'Failed to verify completion';
+        alert(message);
+      },
+    }
+  );
+
+  const handleVerifyMember = async (memberUserId: string, memberName: string) => {
+    if (!window.confirm(`Verify that ${memberName} has completed their part of the task?`)) {
+      return;
+    }
+
+    try {
+      setVerifyingUserId(memberUserId);
+      await verifyCompletionMutation.mutateAsync(memberUserId);
+    } finally {
+      setVerifyingUserId(null);
     }
   };
 
@@ -234,7 +453,6 @@ export const TaskDetailsScreen: React.FC = () => {
   const displayTask = normalizedTask || task;
   
   const statusColor = getStatusColor(displayTask.status);
-  const priorityColor = getPriorityColor(displayTask.priority);
   const isOverdue = displayTask.due_date && new Date(displayTask.due_date) < new Date() && displayTask.status !== 'completed';
 
   const content = (
@@ -295,30 +513,6 @@ export const TaskDetailsScreen: React.FC = () => {
                   Rejected
                 </span>
               )}
-              {displayTask.priority === 'high' && (
-                <span 
-                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-                  style={{ backgroundColor: priorityColor }}
-                >
-                  High Priority
-                </span>
-              )}
-              {displayTask.priority === 'medium' && (
-                <span 
-                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-                  style={{ backgroundColor: priorityColor }}
-                >
-                  Medium Priority
-                </span>
-              )}
-              {displayTask.priority === 'low' && (
-                <span 
-                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-                  style={{ backgroundColor: priorityColor }}
-                >
-                  Low Priority
-                </span>
-              )}
             </div>
             <div className="flex items-center gap-3">
               {isOverdue && (
@@ -327,28 +521,37 @@ export const TaskDetailsScreen: React.FC = () => {
                   Overdue
                 </div>
               )}
-              {/* Status Change Dropdown */}
-              <div className="relative">
-                <select
-                  value={displayTask.status || 'pending'}
-                  onChange={(e) => {
-                    const newStatus = e.target.value;
-                    if (newStatus !== displayTask.status) {
-                      updateStatusMutation.mutate(newStatus);
-                    }
-                  }}
-                  disabled={updateStatusMutation.isLoading}
-                  className="appearance-none bg-white dark:bg-slate-700 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <option value="pending">Pending</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500 dark:text-gray-400">
-                  <span className="material-symbols-outlined text-base">arrow_drop_down</span>
-                </span>
-              </div>
+              {/* Status Change Dropdown – only task creator can change global status */}
+              {isCreator ? (
+                <div className="relative">
+                  <select
+                    value={displayTask.status || 'pending'}
+                    onChange={(e) => {
+                      const newStatus = e.target.value;
+                      if (newStatus !== displayTask.status) {
+                        updateStatusMutation.mutate(newStatus);
+                      }
+                    }}
+                    disabled={updateStatusMutation.isLoading}
+                    className="appearance-none bg-white dark:bg-slate-700 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="pending">Pending</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="completed">Completed</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500 dark:text-gray-400">
+                    <span className="material-symbols-outlined text-base">arrow_drop_down</span>
+                  </span>
+                </div>
+              ) : (
+                <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 font-medium">
+                  Status:&nbsp;
+                  <span className="text-gray-900 dark:text-gray-100">
+                    {getDisplayStatusLabelForViewer()}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
           <h2 className="text-2xl md:text-3xl font-bold leading-tight text-gray-900 dark:text-white mb-3">{displayTask.title}</h2>
@@ -409,7 +612,7 @@ export const TaskDetailsScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Assigned To Card - Full Details */}
+        {/* Assigned To Card - Full Details + Member Completion Flow */}
         <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-sm mb-6 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold uppercase tracking-wider text-primary dark:text-purple-400">
@@ -420,6 +623,24 @@ export const TaskDetailsScreen: React.FC = () => {
             </span>
           </div>
 
+          {/* Progress Bar - EXACT mobile logic */}
+          {memberStats && (
+            <div className="mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Team Progress</span>
+                <span className="text-sm font-semibold text-gray-600 dark:text-gray-400">
+                  {memberStats.completed}/{memberStats.total} completed
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
+                <div 
+                  className="bg-green-500 h-2.5 rounded-full transition-all duration-300"
+                  style={{ width: `${memberStats.progress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           {/* Assignees List with Full Details */}
           {assignees && assignees.length > 0 ? (
             <div className="space-y-3">
@@ -427,6 +648,45 @@ export const TaskDetailsScreen: React.FC = () => {
                 const assigneeId = assignee.id || assignee.user_id || assignee.userId;
                 const currentUserId = user?.id || user?.userId;
                 const isCurrentUser = assigneeId === currentUserId;
+                // EXACT mobile logic: memberCompleted checks completed_at (NOT verified_at)
+                const memberCompleted =
+                  assignee.completed_at ||
+                  assignee.completion_status === 'completed' ||
+                  assignee.status === 'completed';
+                const memberVerified = assignee.verified_at;
+                const statusLabel = getMemberStatusLabel(assignee);
+                const statusColor = getMemberStatusColor(assignee);
+                const isReportingMemberForTask = normalizedTask?.reporting_member_id === assigneeId;
+                const taskCreatorId = normalizedTask?.created_by || normalizedTask?.creator_id;
+                const reportingMemberId = normalizedTask?.reporting_member_id;
+
+                // EXACT mobile logic: canVerifyMember function
+                const canVerifyThisMember = (() => {
+                  if (isCurrentUser) return false; // Cannot verify yourself
+                  if (!memberCompleted || memberVerified) return false; // Must be completed and not verified
+                  
+                  const isTargetCreator = assigneeId === taskCreatorId;
+                  const isTargetReportingMember = assigneeId === reportingMemberId;
+                  
+                  // Creator can verify reporting member (or all assignees if no reporting member)
+                  if (isCreator) {
+                    if (reportingMemberId) {
+                      // If there's a reporting member, creator can only verify the reporting member
+                      return isTargetReportingMember;
+                    } else {
+                      // If no reporting member, creator can verify all assignees
+                      return true;
+                    }
+                  }
+                  
+                  // Reporting member can verify non-reporting assignees (but not creator or themselves)
+                  if (isReportingMember) {
+                    return !isTargetCreator && !isTargetReportingMember && !isCurrentUser;
+                  }
+                  
+                  // Regular assignees cannot verify anyone
+                  return false;
+                })();
                 return (
                   <div
                     key={assigneeId || assignee.id || assignee.userId}
@@ -436,7 +696,7 @@ export const TaskDetailsScreen: React.FC = () => {
                         : 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600'
                     } ${isCurrentUser ? 'ring-2 ring-primary/30' : ''}`}
                   >
-                    {/* Profile Photo */}
+                    {/* Profile Photo - EXACT mobile logic */}
                     <div className="relative flex-shrink-0">
                       {assignee.profile_photo_url || assignee.profile_photo ? (
                         <img
@@ -449,9 +709,22 @@ export const TaskDetailsScreen: React.FC = () => {
                           {(assignee.name || '?').charAt(0).toUpperCase()}
                         </div>
                       )}
-                      {assignee.has_accepted && (
-                        <div className="absolute -bottom-1 -right-1 size-5 bg-green-500 rounded-full border-2 border-white dark:border-slate-800 flex items-center justify-center shadow-sm">
+                      {/* EXACT mobile logic: Show checkmark badge if completed */}
+                      {memberCompleted && (
+                        <div 
+                          className="absolute -bottom-1 -right-1 size-5 rounded-full border-2 border-white dark:border-slate-800 flex items-center justify-center shadow-sm"
+                          style={{ backgroundColor: statusColor }}
+                        >
                           <span className="material-symbols-outlined text-white text-xs">check</span>
+                        </div>
+                      )}
+                      {/* EXACT mobile logic: Show reporting member badge */}
+                      {isReportingMemberForTask && (
+                        <div 
+                          className="absolute -top-1 -right-1 size-5 rounded-full border-2 border-white dark:border-slate-800 flex items-center justify-center shadow-sm"
+                          style={{ backgroundColor: '#7C3AED' }}
+                        >
+                          <span className="material-symbols-outlined text-white text-[10px]">shield</span>
                         </div>
                       )}
                     </div>
@@ -460,21 +733,34 @@ export const TaskDetailsScreen: React.FC = () => {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <h4 className="text-base font-bold text-gray-900 dark:text-white truncate">
                               {assignee.name || 'Unknown User'}
                             </h4>
                             {isCurrentUser && (
                               <span className="px-2 py-0.5 bg-primary/20 text-primary text-xs font-semibold rounded-full whitespace-nowrap">
-                                You
+                                (You)
                               </span>
                             )}
-                            {assignee.has_accepted && (
-                              <span className="px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-semibold rounded-full whitespace-nowrap flex items-center gap-1">
-                                <span className="material-symbols-outlined text-xs">check_circle</span>
-                                Accepted
+                            {isReportingMemberForTask && (
+                              <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-semibold rounded-full whitespace-nowrap">
+                                - Reporting Member
                               </span>
                             )}
+                          </div>
+                          {/* EXACT mobile logic: Status row with dot and label */}
+                          <div className="flex items-center gap-2 mb-2">
+                            <div 
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: statusColor }}
+                            />
+                            <span 
+                              className="text-sm font-medium"
+                              style={{ color: statusColor }}
+                            >
+                              {statusLabel}
+                              {memberVerified && ' ✓ Verified'}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -484,7 +770,12 @@ export const TaskDetailsScreen: React.FC = () => {
                         {assignee.mobile || assignee.phone ? (
                           <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
                             <span className="material-symbols-outlined text-base text-gray-400">phone</span>
-                            <span className="font-medium">{assignee.mobile || assignee.phone}</span>
+                            <span className="font-medium">{(assignee.mobile || assignee.phone).replace(/^\+91/, '')}</span>
+                          </div>
+                        ) : assignee.email ? (
+                          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                            <span className="material-symbols-outlined text-base text-gray-400">email</span>
+                            <span className="font-medium">{assignee.email}</span>
                           </div>
                         ) : null}
 
@@ -504,20 +795,48 @@ export const TaskDetailsScreen: React.FC = () => {
                           </div>
                         ) : null}
                       </div>
+                    </div>
 
-                      {/* Status */}
-                      {assignee.status && (
-                        <div className="mt-2">
-                          <span
-                            className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${
-                              assignee.status === 'active'
-                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                                : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                            }`}
-                          >
-                            {assignee.status === 'active' ? 'Active' : assignee.status}
-                          </span>
+                    {/* EXACT mobile logic: Verified indicator and Verify button */}
+                    <div className="flex flex-col items-end justify-center gap-2">
+                      {memberCompleted && memberVerified && (
+                        <div className="flex items-center justify-center">
+                          <span className="material-symbols-outlined text-green-500 text-xl">check_circle</span>
                         </div>
+                      )}
+                      {canVerifyThisMember && (
+                        <>
+                          <button
+                            type="button"
+                            disabled={verifyingUserId === assigneeId}
+                            onClick={() =>
+                              handleVerifyMember(
+                                assigneeId,
+                                assignee.name || 'User'
+                              )
+                            }
+                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            {verifyingUserId === assigneeId ? (
+                              <>
+                                <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" />
+                                <span>Verifying…</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="material-symbols-outlined text-sm">
+                                  verified
+                                </span>
+                                <span>Verify</span>
+                              </>
+                            )}
+                          </button>
+                          {assignee.completed_at && !memberVerified && (
+                            <span className="text-[11px] text-amber-600 dark:text-amber-400">
+                              Waiting for your approval
+                            </span>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -608,7 +927,7 @@ export const TaskDetailsScreen: React.FC = () => {
       </main>
 
       {/* Action Bar */}
-      {(canAccept || canReject) && (
+      {(canAccept || canReject || canMarkComplete) && (
         <div className="max-w-4xl mx-auto mt-6">
           <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-gray-200 dark:border-gray-700">
             <div className="flex gap-3">
@@ -637,6 +956,27 @@ export const TaskDetailsScreen: React.FC = () => {
                     <>
                       <span className="material-symbols-outlined text-[20px]">check</span>
                       <span>Accept Task</span>
+                    </>
+                  )}
+                </button>
+              )}
+              {canMarkComplete && (
+                <button
+                  onClick={handleMarkComplete}
+                  disabled={processing}
+                  className="flex-[2] rounded-lg bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {processing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[20px]">
+                        check_circle
+                      </span>
+                      <span>Mark Complete</span>
                     </>
                   )}
                 </button>

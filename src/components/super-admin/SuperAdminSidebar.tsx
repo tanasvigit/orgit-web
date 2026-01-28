@@ -13,7 +13,7 @@ const navItems: NavItem[] = [
   { path: '/super-admin/organizations', icon: 'domain', label: 'Organisations' },
   { path: '/super-admin/users', icon: 'people', label: 'Users' },
   { path: '/super-admin/document-templates', icon: 'description', label: 'Document Templates' },
-  { path: '/super-admin/compliance', icon: 'verified_user', label: 'Compliance Management' },
+  // { path: '/super-admin/compliance', icon: 'verified_user', label: 'Compliance Management' },
 ];
 
 interface SuperAdminSidebarProps {

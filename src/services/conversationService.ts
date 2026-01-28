@@ -207,6 +207,9 @@ export const conversationService = {
       other_members: otherMembers.length > 0 ? otherMembers : (conv.other_members || conv.otherMembers || []),
       isTaskGroup: conv.is_task_group ?? conv.isTaskGroup ?? false,
       is_task_group: conv.is_task_group ?? conv.isTaskGroup ?? false,
+      // Preserve any task linkage so task UIs (Task module) can navigate to the task
+      taskId: (conv as any).task_id ?? (conv as any).taskId,
+      task_id: (conv as any).task_id ?? (conv as any).taskId,
       role: conv.role,
       createdAt: conv.created_at || conv.createdAt,
       created_at: conv.created_at || conv.createdAt,

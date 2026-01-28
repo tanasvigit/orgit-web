@@ -28,13 +28,11 @@ export const taskService = {
     status?: string;
     category?: string;
     type?: string; // Mobile uses 'type', not 'taskType'
-    priority?: string;
   }) => {
     const params = new URLSearchParams();
     if (filters?.status) params.append('status', filters.status);
     if (filters?.category) params.append('category', filters.category);
     if (filters?.type) params.append('type', filters.type); // Mobile uses 'type'
-    if (filters?.priority) params.append('priority', filters.priority);
 
     // Note: api baseURL already includes /api, so use /tasks not /api/tasks
     const response = await api.get(`/tasks?${params.toString()}`);
@@ -107,6 +105,26 @@ export const taskService = {
 
   getTaskCompliances: async (taskId: string) => {
     const response = await api.get(`/tasks/${taskId}/compliance`);
+    return response.data;
+  },
+
+  /**
+   * Mark the current user's task assignment as completed.
+   * Mirrors the mobile implementation:
+   * POST /tasks/:taskId/members/:userId/complete
+   */
+  markMemberComplete: async (taskId: string, userId: string) => {
+    const response = await api.post(`/tasks/${taskId}/members/${userId}/complete`);
+    return response.data;
+  },
+
+  /**
+   * Verify another member's completion for a task.
+   * Mirrors the mobile implementation:
+   * POST /tasks/:taskId/members/:userId/verify
+   */
+  verifyMemberCompletion: async (taskId: string, userId: string) => {
+    const response = await api.post(`/tasks/${taskId}/members/${userId}/verify`);
     return response.data;
   },
 };

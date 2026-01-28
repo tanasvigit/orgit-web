@@ -16,7 +16,7 @@ export const BottomNav: React.FC = () => {
     { path: '/messages', icon: 'chat_bubble', label: 'Chat', badge: 4 },
     { path: '/tasks', icon: 'check_circle', label: 'Task' },
     { path: '/documents', icon: 'description', label: 'Document' },
-    { path: '/compliance', icon: 'policy', label: 'Compliance' },
+    // { path: '/compliance', icon: 'policy', label: 'Compliance' },
     { path: '/settings', icon: 'settings', label: 'Settings' },
   ];
 

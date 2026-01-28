@@ -85,7 +85,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         {description && (
           <p className="text-text-muted dark:text-white/60 text-sm mb-3">
             {category && `${category} • `}
-            {priority && `${priority} Priority`}
+            {description}
           </p>
         )}
         {progress !== undefined && status === 'inprogress' && (

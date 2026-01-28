@@ -187,17 +187,7 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
     return colors[status] || '#6B7280';
   };
 
-  const getPriorityColor = (priority: string) => {
-    const colors: { [key: string]: string } = {
-      high: '#EF4444',
-      medium: '#F59E0B',
-      low: '#10B981',
-    };
-    return colors[priority] || '#6B7280';
-  };
-
   const statusColor = getStatusColor(displayTask.status || 'pending');
-  const priorityColor = getPriorityColor(displayTask.priority || 'medium');
   const dueDate = displayTask.due_date ? new Date(displayTask.due_date) : null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -241,30 +231,6 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
                   style={{ backgroundColor: statusColor }}
                 >
                   Rejected
-                </span>
-              )}
-              {displayTask.priority === 'high' && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-                  style={{ backgroundColor: priorityColor }}
-                >
-                  High Priority
-                </span>
-              )}
-              {displayTask.priority === 'medium' && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-                  style={{ backgroundColor: priorityColor }}
-                >
-                  Medium Priority
-                </span>
-              )}
-              {displayTask.priority === 'low' && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-                  style={{ backgroundColor: priorityColor }}
-                >
-                  Low Priority
                 </span>
               )}
             </div>

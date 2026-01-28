@@ -137,19 +137,6 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
     );
   };
 
-  const getPriorityColor = (priority?: string) => {
-    switch (priority?.toLowerCase()) {
-      case 'high':
-        return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
-      case 'medium':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300';
-      case 'low':
-        return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
-    }
-  };
-
   const getStatusColor = (status?: string) => {
     switch (status?.toLowerCase()) {
       case 'completed':
@@ -315,33 +302,19 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
                 </div>
               </div>
 
-              {/* Status and Priority - Optional but visible if available */}
-              {(task.status || task.priority) && (
+              {/* Status - Optional but visible if available */}
+              {task.status && (
                 <div className="flex items-center gap-4 flex-wrap pt-2">
-                  {task.status && (
-                    <div>
-                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Status</label>
-                      <span
-                        className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(
-                          task.status
-                        )}`}
-                      >
-                        {task.status.replace('_', ' ').toUpperCase()}
-                      </span>
-                    </div>
-                  )}
-                  {task.priority && (
-                    <div>
-                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Priority</label>
-                      <span
-                        className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getPriorityColor(
-                          task.priority
-                        )}`}
-                      >
-                        {task.priority.toUpperCase()}
-                      </span>
-                    </div>
-                  )}
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Status</label>
+                    <span
+                      className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(
+                        task.status
+                      )}`}
+                    >
+                      {task.status.replace('_', ' ').toUpperCase()}
+                    </span>
+                  </div>
                 </div>
               )}
 

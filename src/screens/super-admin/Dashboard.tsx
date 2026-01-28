@@ -115,13 +115,13 @@ export const Dashboard: React.FC = () => {
                 <span className="material-symbols-outlined text-super-admin-primary">description</span>
                 <span className="text-sm font-medium text-gray-900 dark:text-white">Manage Document Templates</span>
               </a>
-              <a
+              {/* <a
                 href="/super-admin/compliance"
                 className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
               >
                 <span className="material-symbols-outlined text-super-admin-primary">verified_user</span>
                 <span className="text-sm font-medium text-gray-900 dark:text-white">Manage Compliance</span>
-              </a>
+              </a> */}
             </div>
           </div>
         </div>
