@@ -13,6 +13,8 @@ interface TaskCardProps {
   priority?: string;
   assignees?: Array<{ id: string; name: string; photoUrl?: string }>;
   progress?: number;
+  /** Optional finance info (amount + type) to show a small row; mirrors mobile semantics. */
+  finance?: { amount?: number | null; type?: 'income' | 'expense' | string | null };
   onClick?: () => void;
 }
 
@@ -25,6 +27,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   priority,
   assignees = [],
   progress,
+  finance,
   onClick,
 }) => {
   // Status color mapping with full Tailwind classes (required for build-time class detection)
@@ -87,6 +90,29 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             {category && `${category} • `}
             {description}
           </p>
+        )}
+        {finance && (finance.amount != null || finance.type) && (
+          <div className="flex items-center justify-between gap-2 text-sm mb-3">
+            {finance.type && (
+              <span className="text-text-muted dark:text-white/60 uppercase tracking-wide text-xs">
+                {finance.type === 'income' ? 'Income' : finance.type === 'expense' ? 'Expense' : finance.type}
+              </span>
+            )}
+            {finance.amount != null && (
+              <span
+                className={`font-bold text-sm ${
+                  finance.type === 'income'
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : finance.type === 'expense'
+                    ? 'text-rose-600 dark:text-rose-400'
+                    : 'text-text-main dark:text-white'
+                }`}
+              >
+                {finance.type === 'expense' ? '-' : '+'}
+                {Number(finance.amount).toFixed(2)}
+              </span>
+            )}
+          </div>
         )}
         {progress !== undefined && status === 'inprogress' && (
           <div className="w-full bg-gray-100 dark:bg-white/10 rounded-full h-1.5 mb-4">

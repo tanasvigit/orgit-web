@@ -1,5 +1,19 @@
 import api from './api';
+import { setTaskFinancial } from '../utils/taskFinancialStorage';
 import { Task, TaskType, TaskCategory, TaskFrequency } from '../../../shared/src/types';
+
+function ingestTaskFinancial(task: any) {
+  if (!task?.id) return;
+  const hasValue = task.financial_value != null;
+  const hasType = !!task.finance_type;
+  if (hasValue || hasType) {
+    setTaskFinancial(task.id, {
+      financial_value: task.financial_value ?? null,
+      finance_type: task.finance_type ?? null,
+      source: 'mobile',
+    });
+  }
+}
 
 export interface CreateTaskRequest {
   title: string;
@@ -37,14 +51,18 @@ export const taskService = {
     // Note: api baseURL already includes /api, so use /tasks not /api/tasks
     const response = await api.get(`/tasks?${params.toString()}`);
     // Backend returns: { tasks: [...] } or { data: [...] }
-    return response.data.tasks || response.data.data || [];
+    const tasks = response.data.tasks || response.data.data || [];
+    if (Array.isArray(tasks)) tasks.forEach(ingestTaskFinancial);
+    return tasks;
   },
 
   getTask: async (taskId: string) => {
     // Note: api baseURL already includes /api, so use /tasks not /api/tasks
     const response = await api.get(`/tasks/${taskId}`);
     // Backend returns: { task: {...} } - extract the task object
-    return response.data.task || response.data;
+    const task = response.data.task || response.data;
+    ingestTaskFinancial(task);
+    return task;
   },
 
   getTaskAssignments: async (taskId: string) => {

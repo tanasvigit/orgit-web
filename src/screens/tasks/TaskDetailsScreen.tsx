@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { taskService } from '../../services/taskService';
+import { mergeTaskWithFinancial } from '../../utils/taskFinancialStorage';
 import { useAuth } from '../../context/AuthContext';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
@@ -449,8 +450,8 @@ export const TaskDetailsScreen: React.FC = () => {
     return <EmployeeLayout>{errorContent}</EmployeeLayout>;
   }
 
-  // Use normalizedTask if available, fallback to task
-  const displayTask = normalizedTask || task;
+  // Use normalizedTask if available, fallback to task; merge finance from API/localStorage
+  const displayTask = mergeTaskWithFinancial(normalizedTask || task);
   
   const statusColor = getStatusColor(displayTask.status);
   const isOverdue = displayTask.due_date && new Date(displayTask.due_date) < new Date() && displayTask.status !== 'completed';
@@ -554,7 +555,23 @@ export const TaskDetailsScreen: React.FC = () => {
               )}
             </div>
           </div>
-          <h2 className="text-2xl md:text-3xl font-bold leading-tight text-gray-900 dark:text-white mb-3">{displayTask.title}</h2>
+          <div className="flex items-center gap-2 flex-wrap mb-3">
+            <h2 className="text-2xl md:text-3xl font-bold leading-tight text-gray-900 dark:text-white">{displayTask.title}</h2>
+            {(displayTask.financial_value != null || displayTask.finance_type) && isCreator && (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                  displayTask.finance_type === 'income'
+                    ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
+                    : displayTask.finance_type === 'expense'
+                    ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                }`}
+              >
+                {displayTask.finance_type === 'income' ? 'Income' : displayTask.finance_type === 'expense' ? 'Expense' : 'Finance'}
+                {displayTask.financial_value != null && ` · ${displayTask.finance_type === 'expense' ? '-' : '+'}${Number(displayTask.financial_value).toFixed(2)}`}
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-base">calendar_today</span>
@@ -876,6 +893,36 @@ export const TaskDetailsScreen: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Finance section - amount and type (only if task has finance data) */}
+        {(displayTask.financial_value != null || displayTask.finance_type) && (
+          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-sm mb-6 border border-gray-200 dark:border-gray-700">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-primary dark:text-purple-400 mb-3">
+              Finance
+            </h3>
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              {displayTask.finance_type && (
+                <span className="text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                  {displayTask.finance_type === 'income' ? 'Income' : displayTask.finance_type === 'expense' ? 'Expense' : displayTask.finance_type}
+                </span>
+              )}
+              {displayTask.financial_value != null && (
+                <span
+                  className={`text-lg font-bold ${
+                    displayTask.finance_type === 'income'
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : displayTask.finance_type === 'expense'
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : 'text-gray-900 dark:text-white'
+                  }`}
+                >
+                  {displayTask.finance_type === 'expense' ? '-' : '+'}
+                  {Number(displayTask.financial_value).toFixed(2)}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Auto Escalation Rules */}
         {displayTask.auto_escalate && (

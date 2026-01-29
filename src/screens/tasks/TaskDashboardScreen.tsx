@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { taskService } from '../../services/taskService';
 import { conversationService } from '../../services/conversationService';
+import { mergeTaskWithFinancial } from '../../utils/taskFinancialStorage';
 import { useAuth } from '../../context/AuthContext';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
@@ -333,6 +334,31 @@ export const TaskDashboardScreen: React.FC = () => {
           </p>
         )}
 
+        {/* Finance row (amount + type) - mirrors mobile */}
+        {(task.financial_value != null || task.finance_type) && (
+          <div className="flex items-center justify-between gap-2 text-sm">
+            {task.finance_type && (
+              <span className="text-gray-500 dark:text-gray-400 uppercase tracking-wide text-xs">
+                {task.finance_type === 'income' ? 'Income' : task.finance_type === 'expense' ? 'Expense' : task.finance_type}
+              </span>
+            )}
+            {task.financial_value != null && (
+              <span
+                className={`font-bold text-sm ${
+                  task.finance_type === 'income'
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : task.finance_type === 'expense'
+                    ? 'text-rose-600 dark:text-rose-400'
+                    : 'text-gray-700 dark:text-gray-300'
+                }`}
+              >
+                {task.finance_type === 'expense' ? '-' : '+'}
+                {Number(task.financial_value).toFixed(2)}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Acceptance Status */}
         {isPending && totalAssignees > 1 && (
           <div className="flex items-center justify-between gap-2 text-gray-500 dark:text-gray-400 text-sm pt-2 border-t border-gray-100 dark:border-gray-700">
@@ -529,7 +555,7 @@ export const TaskDashboardScreen: React.FC = () => {
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {pendingTasks.map((task: any) => renderTask(task))}
+                {pendingTasks.map((task: any) => renderTask(mergeTaskWithFinancial(task)))}
               </div>
             </div>
           )}
@@ -548,7 +574,7 @@ export const TaskDashboardScreen: React.FC = () => {
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {allTasks.map((task: any) => renderTask(task))}
+                {allTasks.map((task: any) => renderTask(mergeTaskWithFinancial(task)))}
               </div>
             </div>
           )}

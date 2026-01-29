@@ -1,23 +1,29 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from 'react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { TaskCard } from '../../components/shared';
 import { dashboardService } from '../../services/dashboardService';
 import { useAuth } from '../../context/AuthContext';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
+import { taskService } from '../../services/taskService';
+import { mergeTaskWithFinancial } from '../../utils/taskFinancialStorage';
 
 export const EmployeeDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   // Expand/collapse state for D.M. and C.M. sections (combined for both self and assigned)
   const [expandedDM, setExpandedDM] = useState(false);
   // const [expandedCM, setExpandedCM] = useState(false);
+  const [taskDetails, setTaskDetails] = useState<Record<string, any>>({});
 
-  const { data: dashboardData, isLoading } = useQuery(
+  const { data: dashboardData, isLoading, refetch: refetchDashboard } = useQuery(
     ['dashboard'],
     () => dashboardService.getDashboard(3),
     { 
       refetchInterval: 30000, // Refetch every 30 seconds
+      refetchOnMount: 'always',
+      refetchOnWindowFocus: true,
       onSuccess: (data) => {
         // Debug logging
         console.log('[Dashboard Frontend] Received data:', data);
@@ -27,11 +33,13 @@ export const EmployeeDashboard: React.FC = () => {
     }
   );
 
-  const { data: statistics } = useQuery(
+  const { data: statistics, refetch: refetchStatistics } = useQuery(
     ['dashboard-statistics'],
     () => dashboardService.getStatistics(),
     {
       refetchInterval: 30000, // Refetch every 30 seconds
+      refetchOnMount: 'always',
+      refetchOnWindowFocus: true,
       onSuccess: (data) => {
         // Debug logging
         console.log('[Dashboard Statistics] Received data:', data);
@@ -44,6 +52,83 @@ export const EmployeeDashboard: React.FC = () => {
   const assignedTasks = dashboardData?.data?.assignedTasks;
 
   const currentUserId = user?.id || (user as any)?.userId;
+
+  // Mobile behavior: refresh dashboard when coming back into focus.
+  // In web, we do this by refetching when route becomes /dashboard and on window focus.
+  useEffect(() => {
+    if (location.pathname === '/dashboard') {
+      refetchDashboard();
+      refetchStatistics();
+    }
+  }, [location.pathname, refetchDashboard, refetchStatistics]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      if (location.pathname === '/dashboard') {
+        refetchDashboard();
+        refetchStatistics();
+      }
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [location.pathname, refetchDashboard, refetchStatistics]);
+
+  const flattenTasksStructure = (tasks: any): any[] => {
+    const result: any[] = [];
+    if (!tasks) return result;
+    if (Array.isArray(tasks)) return tasks;
+    if (typeof tasks === 'object') {
+      Object.values(tasks).forEach((category: any) => {
+        if (Array.isArray(category)) {
+          result.push(...category);
+        } else if (category && typeof category === 'object') {
+          Object.values(category).forEach((statusGroup: any) => {
+            if (Array.isArray(statusGroup)) {
+              result.push(...statusGroup);
+            } else if (statusGroup && typeof statusGroup === 'object') {
+              Object.values(statusGroup).forEach((taskArray: any) => {
+                if (Array.isArray(taskArray)) result.push(...taskArray);
+              });
+            }
+          });
+        }
+      });
+    }
+    return result;
+  };
+
+  // Mobile behavior: fetch full task details for a small set so assignees/progress stays accurate.
+  useEffect(() => {
+    const selfFlat = flattenTasksStructure(selfTasks);
+    const assignedFlat = flattenTasksStructure(assignedTasks);
+    const allFlat = [...selfFlat, ...assignedFlat].filter((t) => t && t.id);
+    const uniqueIds: string[] = [];
+    for (const t of allFlat) {
+      if (t?.id && !uniqueIds.includes(t.id)) uniqueIds.push(t.id);
+      if (uniqueIds.length >= 5) break;
+    }
+
+    if (uniqueIds.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      await Promise.all(
+        uniqueIds.map(async (id) => {
+          try {
+            const full = await taskService.getTask(id);
+            if (cancelled) return;
+            setTaskDetails((prev) => ({ ...prev, [id]: full }));
+          } catch {
+            // ignore
+          }
+        })
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selfTasks, assignedTasks]);
 
   // Flatten all self tasks collections into a single task array
   const flattenedSelfTasksForUser = useMemo(() => {
@@ -115,11 +200,102 @@ export const EmployeeDashboard: React.FC = () => {
     [flattenedSelfTasksForUser, currentUserId]
   );
 
+  // If dashboard payload doesn't include assignees (common), compute self counts from fresh task details
+  // (mobile fetches full task details for a few tasks and uses those for status/progress).
+  const selfUserStatusCountsFromDetails = useMemo(() => {
+    const counts = { inprogress: 0, completed: 0 };
+    if (!currentUserId || !selfTasks) return counts;
+
+    const selfFlat = flattenTasksStructure(selfTasks).filter((t) => t && t.id);
+    if (selfFlat.length === 0) return counts;
+
+    selfFlat.forEach((t: any) => {
+      const full = taskDetails[t.id];
+      const assignees = Array.isArray(full?.assignees) ? full.assignees : [];
+      if (!assignees.length) return;
+
+      const me = assignees.find((a: any) => {
+        const assigneeId = a.id || a.user_id || a.userId;
+        return assigneeId === currentUserId;
+      });
+      if (!me) return;
+
+      // Mobile-style member status:
+      // - completed if verified_at exists
+      // - pending_verification (completed_at but not verified) counts as inprogress
+      // - accepted counts as inprogress
+      const isVerified = !!me.verified_at;
+      if (isVerified) {
+        counts.completed += 1;
+        return;
+      }
+      counts.inprogress += 1;
+    });
+
+    return counts;
+  }, [currentUserId, selfTasks, taskDetails]);
+
+  // Compute To-Do tasks (recurring, due today, not completed) for self or assigned - mirrors mobile getToDoTasks
+  // Mobile: getCurrentTasks = self + assigned, deduplicated
+  const getCurrentTasks = useMemo(() => {
+    const selfFlat = flattenTasksStructure(selfTasks).filter((t) => t && t.id);
+    const assignedFlat = flattenTasksStructure(assignedTasks).filter((t) => t && t.id);
+    const all = selfFlat.map((t: any) => mergeTaskWithFinancial({ ...t, ...taskDetails[t.id] }));
+    const fromAssigned = assignedFlat.map((t: any) => mergeTaskWithFinancial({ ...t, ...taskDetails[t.id] }));
+    const seen = new Set<string>();
+    const out: any[] = [];
+    [...all, ...fromAssigned].forEach((task) => {
+      if (!task?.id || seen.has(task.id)) return;
+      seen.add(task.id);
+      out.push(task);
+    });
+    return out;
+  }, [selfTasks, assignedTasks, taskDetails]);
+
+  const getToDoTasks = (view: 'self' | 'assigned') => {
+    const source = view === 'assigned' ? assignedTasks : selfTasks;
+    if (!source) return [] as any[];
+
+    const flat = flattenTasksStructure(source).filter((t) => t && t.id);
+    if (flat.length === 0) return [] as any[];
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return flat.filter((task: any) => {
+      const full = taskDetails[task.id];
+      const merged = full ? { ...task, ...full } : task;
+
+      const type = merged.task_type || merged.taskType;
+      if (type !== 'recurring') return false;
+
+      const due = merged.due_date || merged.dueDate;
+      if (!due) return false;
+      const dueDate = new Date(due);
+      dueDate.setHours(0, 0, 0, 0);
+      const isToday = dueDate.getTime() === today.getTime();
+      if (!isToday) return false;
+
+      const status = (merged.status || '').toLowerCase();
+      if (status === 'completed') return false;
+
+      return true;
+    });
+  };
+
   const getStatusCount = (status: 'overdue' | 'duesoon' | 'inprogress' | 'completed', view: 'self' | 'assigned') => {
     // For self view, override In Progress / Completed counts with member-based view
     if (view === 'self') {
-      if (status === 'completed') return selfUserStatusCounts.completed;
-      if (status === 'inprogress') return selfUserStatusCounts.inprogress;
+      // Prefer dashboard+assignees derived counts when available; otherwise use taskDetails-derived counts;
+      // otherwise fall back to backend statistics (mobile uses backend statistics for counts).
+      if (status === 'completed') {
+        if (selfUserStatusCounts.completed > 0) return selfUserStatusCounts.completed;
+        if (selfUserStatusCountsFromDetails.completed > 0) return selfUserStatusCountsFromDetails.completed;
+      }
+      if (status === 'inprogress') {
+        if (selfUserStatusCounts.inprogress > 0) return selfUserStatusCounts.inprogress;
+        if (selfUserStatusCountsFromDetails.inprogress > 0) return selfUserStatusCountsFromDetails.inprogress;
+      }
     }
     if (!statistics?.data) {
       console.log('[Dashboard] No statistics data available');
@@ -177,15 +353,33 @@ export const EmployeeDashboard: React.FC = () => {
     return (
       <>
         {tasks.map((task) => {
+          const full = taskDetails[task.id];
+          const merged = mergeTaskWithFinancial(full ? { ...task, ...full, id: task.id || full.id } : task);
+          const assignees = Array.isArray(merged?.assignees) ? merged.assignees : [];
+          const totalMembers = assignees.length;
+          const verifiedCompleted = assignees.filter((a: any) => !!a?.verified_at).length;
+          const progress = totalMembers > 0 ? Math.round((verifiedCompleted / totalMembers) * 100) : 0;
+          const cardAssignees = assignees
+            .map((a: any) => ({
+              id: a.id || a.user_id || a.userId,
+              name: a.name || a.mobile || a.phone || 'User',
+              photoUrl: a.profile_photo_url || a.profile_photo || a.profilePhotoUrl || a.photoUrl,
+            }))
+            .filter((a: any) => !!a.id);
+          const hasFinance = merged.financial_value != null || merged.finance_type;
+
           return (
             <TaskCard
               key={task.id}
               id={task.id}
-              title={task.title}
-              description={task.description}
+              title={merged.title}
+              description={merged.description}
               status={status}
-              dueDate={task.due_date || task.dueDate}
-              category={task.category}
+              dueDate={merged.due_date || merged.dueDate}
+              category={merged.category}
+              assignees={cardAssignees}
+              progress={status === 'inprogress' ? progress : undefined}
+              finance={hasFinance ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
               onClick={() => navigate(`/tasks/${task.id}`)}
             />
           );
@@ -204,16 +398,16 @@ export const EmployeeDashboard: React.FC = () => {
 
         {/* Statistics Cards for this section */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-6">
-          {/* Total Tasks Card */}
+          {/* To-Do Card (Today’s recurring, not completed) */}
           <div className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-primary/30 hover:shadow-md transition-all">
             <div className="mb-2 p-2 rounded-full bg-primary/10 text-primary">
-              <span className="material-symbols-outlined text-xl">task</span>
+              <span className="material-symbols-outlined text-xl">today</span>
             </div>
             <span className="text-2xl font-bold text-primary mb-1">
-              {getTotalCount(viewType)}
+              {getToDoTasks(viewType).length}
             </span>
             <span className="text-xs font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
-              Total Tasks
+              TO DO
             </span>
           </div>
           
@@ -348,6 +542,153 @@ export const EmployeeDashboard: React.FC = () => {
               )}
             </div>
           )}
+
+          {/* Financial Report (Created by Me) - from getCurrentTasks (self+assigned), merged finance from API/localStorage */}
+          {(() => {
+            const uid = user?.id || (user as any)?.userId;
+            const financialTasks = getCurrentTasks.filter((t: any) => {
+              const createdBy = t.created_by || t.creator_id;
+              const hasFinance = t.financial_value != null || !!t.finance_type;
+              return createdBy === uid && hasFinance;
+            });
+
+            if (!financialTasks.length) return null;
+
+            const formatDate = (dateString?: string) => {
+              if (!dateString) return '';
+              const date = new Date(dateString);
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              const due = new Date(date);
+              due.setHours(0, 0, 0, 0);
+              const diffTime = due.getTime() - today.getTime();
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              if (diffDays < 0) {
+                if (diffDays === -1) return 'Yesterday';
+                return `${Math.abs(diffDays)} days ago`;
+              }
+              if (diffDays === 0) return 'Today';
+              if (diffDays === 1) return 'Tomorrow';
+              if (diffDays <= 3) return `In ${diffDays} days`;
+              return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+            };
+
+            return (
+              <div className="space-y-4">
+                <h2 className="text-2xl font-bold text-text-main dark:text-white">
+                  Financial Report (Created by Me)
+                </h2>
+                <div className="bg-white dark:bg-background-dark-subtle rounded-xl shadow-sm border border-gray-100 dark:border-white/5 divide-y divide-gray-100 dark:divide-white/10">
+                  {financialTasks.map((task: any) => {
+                    const amount = Number(task.financial_value || 0);
+                    const type = task.finance_type;
+                    const isIncome = type === 'income';
+                    const isExpense = type === 'expense';
+                    if (!amount && !type) return null;
+                    return (
+                      <div
+                        key={task.id}
+                        className="flex items-center justify-between px-4 py-3"
+                      >
+                        <div className="min-w-0 pr-4">
+                          <div className="font-semibold text-text-main dark:text-white truncate">
+                            {task.title}
+                          </div>
+                          {task.due_date && (
+                            <div className="text-xs text-text-muted dark:text-white/60">
+                              {formatDate(task.due_date)}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right space-y-1">
+                          {amount ? (
+                            <div
+                              className={`text-sm font-bold ${
+                                isIncome
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : isExpense
+                                  ? 'text-rose-600 dark:text-rose-400'
+                                  : 'text-text-main dark:text-white'
+                              }`}
+                            >
+                              {isExpense ? '-' : '+'}
+                              {amount.toFixed(2)}
+                            </div>
+                          ) : null}
+                          {type && (
+                            <div className="text-[11px] uppercase tracking-wide text-text-muted dark:text-white/60">
+                              {type === 'income'
+                                ? 'Income'
+                                : type === 'expense'
+                                ? 'Expense'
+                                : type}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* To-Do List for Recurring Tasks (Self) - top 5, navigate to Task Chat if conversation_id else Task Detail */}
+          {(() => {
+            const todoSelf = getToDoTasks('self').slice(0, 5);
+            if (!todoSelf.length) return null;
+            return (
+              <div className="space-y-4">
+                <h2 className="text-2xl font-bold text-text-main dark:text-white">
+                  To-Do (Today&apos;s Recurring Tasks)
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {todoSelf.map((task: any) => {
+                    const full = taskDetails[task.id];
+                    const merged = mergeTaskWithFinancial(full ? { ...task, ...full } : task);
+                    const convId = merged.conversation_id || merged.conversationId;
+                    const assignees = Array.isArray(merged?.assignees) ? merged.assignees : [];
+                    const totalMembers = assignees.length;
+                    const verifiedCompleted = assignees.filter((a: any) => !!a?.verified_at).length;
+                    const progress =
+                      totalMembers > 0 ? Math.round((verifiedCompleted / totalMembers) * 100) : 0;
+                    const cardAssignees = assignees
+                      .map((a: any) => ({
+                        id: a.id || a.user_id || a.userId,
+                        name: a.name || a.mobile || a.phone || 'User',
+                        photoUrl:
+                          a.profile_photo_url ||
+                          a.profile_photo ||
+                          a.profilePhotoUrl ||
+                          a.photoUrl,
+                      }))
+                      .filter((a: any) => !!a.id);
+
+                    const hasFinance = merged.financial_value != null || merged.finance_type;
+                    return (
+                      <TaskCard
+                        key={task.id}
+                        id={task.id}
+                        title={merged.title}
+                        description={merged.description}
+                        status="inprogress"
+                        dueDate={merged.due_date || merged.dueDate}
+                        category={merged.category}
+                        assignees={cardAssignees}
+                        progress={progress}
+                        finance={hasFinance ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
+                        onClick={() =>
+                          convId
+                            ? navigate(`/tasks/task-group/${convId}`)
+                            : navigate(`/tasks/${task.id}`)
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Compliance Management Section - Combined for both self and assigned */}
           {/* {isLoading ? null : (

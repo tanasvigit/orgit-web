@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from 'react-query';
 import { taskService } from '../../services/taskService';
+import { setTaskFinancial } from '../../utils/taskFinancialStorage';
 import { conversationService } from '../../services/conversationService';
 import { CustomDatePicker } from '../../components/shared/CustomDatePicker';
 import { useAuth } from '../../context/AuthContext';
@@ -13,6 +14,10 @@ export const TaskCreationScreen: React.FC = () => {
   const [taskType, setTaskType] = useState<'one_time' | 'recurring'>('one_time');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [taskOwner, setTaskOwner] = useState<'self' | 'contacts'>('self');
+  const [taskOwnerUserId, setTaskOwnerUserId] = useState<string | null>(null);
+  const [financialValue, setFinancialValue] = useState<string>('');
+  const [financeType, setFinanceType] = useState<'income' | 'expense'>('income');
   const [selectedAssignees, setSelectedAssignees] = useState<any[]>([]);
   const [startDate, setStartDate] = useState(new Date());
   const [targetDate, setTargetDate] = useState(new Date());
@@ -21,7 +26,7 @@ export const TaskCreationScreen: React.FC = () => {
   const [showTargetPicker, setShowTargetPicker] = useState(false);
   const [showDuePicker, setShowDuePicker] = useState(false);
   const [showAssigneeModal, setShowAssigneeModal] = useState(false);
-  const [recurrenceType, setRecurrenceType] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
+  const [recurrenceType, setRecurrenceType] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>('weekly');
   const [autoEscalate, setAutoEscalate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [reportingMemberId, setReportingMemberId] = useState<string | null>(null);
@@ -76,10 +81,16 @@ export const TaskCreationScreen: React.FC = () => {
 
     setLoading(true);
     try {
+      const parsedFinancialValue =
+        financialValue.trim().length > 0 ? Number.parseFloat(financialValue) : null;
+
       const taskData = {
         title: title.trim(),
         description: description.trim(),
         task_type: taskType,
+        task_owner: taskOwner,
+        financial_value: Number.isFinite(parsedFinancialValue as number) ? parsedFinancialValue : null,
+        finance_type: financialValue.trim().length > 0 ? financeType : null,
         assignee_ids: selectedAssignees.map(a => a.id),
         start_date: startDate.toISOString(),
         target_date: targetDate.toISOString(),
@@ -87,9 +98,20 @@ export const TaskCreationScreen: React.FC = () => {
         recurrence_type: taskType === 'recurring' ? recurrenceType : null,
         recurrence_interval: 1,
         auto_escalate: autoEscalate,
+        reporting_member_id: reportingMemberId || undefined,
+        metadata: {
+          ...(taskOwner === 'contacts' && taskOwnerUserId ? { taskOwnerUserId } : {}),
+        },
       };
 
-      await taskService.createTask(taskData);
+      const created = await taskService.createTask(taskData);
+      const taskId = (created && typeof created === 'object' && (created as any).id) ? (created as any).id : null;
+      if (taskId && (taskData.financial_value != null || taskData.finance_type)) {
+        setTaskFinancial(taskId, {
+          financial_value: taskData.financial_value ?? null,
+          finance_type: taskData.finance_type ?? null,
+        });
+      }
       navigate('/tasks');
     } catch (error: any) {
       console.error('Create task error:', error);
@@ -295,12 +317,120 @@ export const TaskCreationScreen: React.FC = () => {
               Recurrence
             </label>
             <div className="flex gap-2">
-              {(['weekly', 'monthly', 'daily'] as const).map((type) => (
+              {(['weekly', 'monthly', 'quarterly', 'yearly'] as const).map((type) => (
                 <button
                   key={type}
                   onClick={() => setRecurrenceType(type)}
                   className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
                     recurrenceType === type
+                      ? 'bg-primary text-white'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Task Owner */}
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+            Task Owner
+          </label>
+          <div className="flex gap-2">
+            {(['self', 'contacts'] as const).map((owner) => (
+              <button
+                key={owner}
+                onClick={() => {
+                  setTaskOwner(owner);
+                  if (owner !== 'contacts') setTaskOwnerUserId(null);
+                }}
+                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                  taskOwner === owner
+                    ? 'bg-primary text-white'
+                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                }`}
+              >
+                {owner === 'self' ? 'Self' : 'Contacts'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Task Owner Member (only when task owner = contacts) */}
+        {taskOwner === 'contacts' && selectedAssignees.length > 0 && (
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+              Task Owner Member
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              Choose which selected member should be considered the owner.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {selectedAssignees.map((assignee) => {
+                const isSelected = taskOwnerUserId === assignee.id;
+                return (
+                  <button
+                    key={assignee.id}
+                    onClick={() => setTaskOwnerUserId(isSelected ? null : assignee.id)}
+                    className={`flex items-center gap-2 p-3 rounded-lg border-2 transition-colors ${
+                      isSelected
+                        ? 'bg-primary/10 border-primary dark:bg-primary/20'
+                        : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    <div className="size-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                      <span className="text-primary text-xs font-semibold">
+                        {assignee.name?.charAt(0).toUpperCase() || '?'}
+                      </span>
+                    </div>
+                    <span className={`text-sm font-medium truncate flex-1 text-left ${
+                      isSelected
+                        ? 'text-primary dark:text-purple-300'
+                        : 'text-gray-700 dark:text-gray-300'
+                    }`}>
+                      {assignee.name || assignee.mobile}
+                    </span>
+                    {isSelected && (
+                      <span className="material-symbols-outlined text-primary text-lg">check_circle</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Financial Value (Optional) */}
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+            Financial Value (Optional)
+          </label>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={financialValue}
+            onChange={(e) => setFinancialValue(e.target.value)}
+            placeholder="Enter amount"
+            className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+        </div>
+
+        {/* Finance Type (only show if financial value entered) */}
+        {financialValue.trim().length > 0 && (
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+              Type of Finance
+            </label>
+            <div className="flex gap-2">
+              {(['income', 'expense'] as const).map((type) => (
+                <button
+                  key={type}
+                  onClick={() => setFinanceType(type)}
+                  className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                    financeType === type
                       ? 'bg-primary text-white'
                       : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                   }`}
