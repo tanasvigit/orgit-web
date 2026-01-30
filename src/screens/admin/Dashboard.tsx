@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useQuery } from 'react-query';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { useQuery, useQueryClient } from 'react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { TaskCard } from '../../components/shared';
 import { AdminLayout } from '../../components/admin/AdminLayout';
@@ -12,6 +12,8 @@ export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const prevPathRef = useRef<string>(location.pathname);
   // Expand/collapse state for D.M. and C.M. sections (combined for both self and assigned)
   const [expandedDM, setExpandedDM] = useState(false);
   // const [expandedCM, setExpandedCM] = useState(false);
@@ -20,12 +22,12 @@ export const AdminDashboard: React.FC = () => {
   const { data: dashboardData, isLoading, refetch: refetchDashboard } = useQuery(
     ['admin-dashboard'],
     () => dashboardService.getDashboard(3),
-    { 
-      refetchInterval: 30000, // Refetch every 30 seconds
+    {
+      staleTime: 0, // Match mobile: always refetch on focus so counts stay in sync
+      refetchInterval: 30000,
       refetchOnMount: 'always',
       refetchOnWindowFocus: true,
       onSuccess: (data) => {
-        // Debug logging
         console.log('[Admin Dashboard Frontend] Received data:', data);
         console.log('[Admin Dashboard Frontend] Self tasks:', data?.data?.selfTasks);
         console.log('[Admin Dashboard Frontend] Assigned tasks:', data?.data?.assignedTasks);
@@ -37,11 +39,11 @@ export const AdminDashboard: React.FC = () => {
     ['admin-dashboard-statistics'],
     () => dashboardService.getStatistics(),
     {
-      refetchInterval: 30000, // Refetch every 30 seconds
+      staleTime: 0, // Match mobile: always refetch on focus so counts stay in sync
+      refetchInterval: 30000,
       refetchOnMount: 'always',
       refetchOnWindowFocus: true,
       onSuccess: (data) => {
-        // Debug logging
         console.log('[Admin Dashboard Statistics] Received data:', data);
         console.log('[Admin Dashboard Statistics] Statistics:', data?.data);
       }
@@ -53,24 +55,34 @@ export const AdminDashboard: React.FC = () => {
 
   const currentUserId = user?.id || (user as any)?.userId;
 
-  // Mobile behavior: refresh dashboard when coming back into focus.
+  // Match mobile useFocusEffect: refresh dashboard whenever screen comes into focus.
   useEffect(() => {
-    if (location.pathname === '/admin') {
-      refetchDashboard();
+    const pathname = location.pathname;
+    const isAdminDashboard = pathname === '/admin';
+
+    if (isAdminDashboard) {
+      prevPathRef.current = pathname;
+      queryClient.invalidateQueries(['admin-dashboard-statistics']);
+      queryClient.invalidateQueries(['admin-dashboard']);
       refetchStatistics();
+      refetchDashboard();
+    } else {
+      prevPathRef.current = pathname;
     }
-  }, [location.pathname, refetchDashboard, refetchStatistics]);
+  }, [location.pathname, queryClient, refetchDashboard, refetchStatistics]);
 
   useEffect(() => {
     const onFocus = () => {
       if (location.pathname === '/admin') {
-        refetchDashboard();
+        queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        queryClient.invalidateQueries(['admin-dashboard']);
         refetchStatistics();
+        refetchDashboard();
       }
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [location.pathname, refetchDashboard, refetchStatistics]);
+  }, [location.pathname, queryClient, refetchDashboard, refetchStatistics]);
 
   const flattenTasksStructure = (tasks: any): any[] => {
     const result: any[] = [];
@@ -159,7 +171,16 @@ export const AdminDashboard: React.FC = () => {
       if (!flattenedSelfTasksForUser.length) return counts;
 
       flattenedSelfTasksForUser.forEach((task: any) => {
-        const assignees = Array.isArray(task?.assignees) ? task.assignees : [];
+        const full = taskDetails[task.id];
+        const merged = full ? { ...task, ...full } : task;
+        const taskStatus = (merged.status || '').toLowerCase();
+
+        if (taskStatus === 'completed') {
+          counts.completed += 1;
+          return;
+        }
+
+        const assignees = Array.isArray(merged?.assignees) ? merged.assignees : [];
         const assignee = assignees.find((a: any) => {
           const assigneeId = a.id || a.user_id || a.userId;
           return assigneeId === currentUserId;
@@ -192,7 +213,7 @@ export const AdminDashboard: React.FC = () => {
 
       return counts;
     },
-    [flattenedSelfTasksForUser, currentUserId]
+    [flattenedSelfTasksForUser, currentUserId, taskDetails]
   );
 
   const selfUserStatusCountsFromDetails = useMemo(() => {
@@ -212,6 +233,12 @@ export const AdminDashboard: React.FC = () => {
         return assigneeId === currentUserId;
       });
       if (!me) return;
+
+      const taskStatus = (full?.status || t?.status || '').toLowerCase();
+      if (taskStatus === 'completed') {
+        counts.completed += 1;
+        return;
+      }
 
       if (me.verified_at) {
         counts.completed += 1;
@@ -270,16 +297,7 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const getStatusCount = (status: 'overdue' | 'duesoon' | 'inprogress' | 'completed', view: 'self' | 'assigned') => {
-    if (view === 'self') {
-      if (status === 'completed') {
-        if (selfUserStatusCounts.completed > 0) return selfUserStatusCounts.completed;
-        if (selfUserStatusCountsFromDetails.completed > 0) return selfUserStatusCountsFromDetails.completed;
-      }
-      if (status === 'inprogress') {
-        if (selfUserStatusCounts.inprogress > 0) return selfUserStatusCounts.inprogress;
-        if (selfUserStatusCountsFromDetails.inprogress > 0) return selfUserStatusCountsFromDetails.inprogress;
-      }
-    }
+    // Match mobile: use backend statistics so counts match API (no local override)
     if (!statistics?.data) {
       console.log('[Admin Dashboard] No statistics data available');
       return 0;
@@ -300,11 +318,6 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const getTotalCount = (view: 'self' | 'assigned') => {
-    if (view === 'self') {
-      const localTotal =
-        selfUserStatusCounts.completed + selfUserStatusCounts.inprogress;
-      if (localTotal > 0) return localTotal;
-    }
     if (!statistics?.data) return 0;
     const prefix = view === 'self' ? 'selfTasks' : 'assignedTasks';
     const total = (

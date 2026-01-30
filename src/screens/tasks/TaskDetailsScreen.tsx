@@ -216,9 +216,15 @@ export const TaskDetailsScreen: React.FC = () => {
       currentUserAssignee.completion_status === 'completed' ||
       currentUserAssignee.status === 'completed');
 
+  const isCreator =
+    !!normalizedTask &&
+    (normalizedTask.created_by === currentUserId ||
+      normalizedTask.creator_id === currentUserId);
+
+  // Mirror mobile: creator can mark complete without accepting; entire task completes when creator marks complete
   const canMarkComplete =
     isAssigned &&
-    hasAccepted &&
+    (isCreator || hasAccepted) &&
     !hasCompleted &&
     normalizedTask?.status !== 'completed';
 
@@ -255,11 +261,6 @@ export const TaskDetailsScreen: React.FC = () => {
     }
     return '#9CA3AF'; // Gray for pending
   };
-
-  const isCreator =
-    !!normalizedTask &&
-    (normalizedTask.created_by === currentUserId ||
-      normalizedTask.creator_id === currentUserId);
 
   const isReportingMember =
     !!normalizedTask && normalizedTask.reporting_member_id === currentUserId;
@@ -325,7 +326,7 @@ export const TaskDetailsScreen: React.FC = () => {
     }
   };
 
-  // Mark current user's assignment as complete
+  // Mark current user's assignment as complete (creator: entire task completes; assignee: pending verification)
   const markCompleteMutation = useMutation(
     () => {
       if (!taskId || !currentUserId) {
@@ -334,21 +335,37 @@ export const TaskDetailsScreen: React.FC = () => {
       return taskService.markMemberComplete(taskId, currentUserId);
     },
     {
-      onSuccess: () => {
+      onSuccess: (data: any) => {
         queryClient.invalidateQueries(['task', taskId]);
         queryClient.invalidateQueries(['tasks']);
         queryClient.invalidateQueries(['dashboard']);
         queryClient.invalidateQueries(['dashboard-statistics']);
+        if (isAdmin) {
+          queryClient.invalidateQueries(['admin-dashboard']);
+          queryClient.invalidateQueries(['admin-dashboard-statistics']);
+          void queryClient.refetchQueries({ queryKey: ['admin-dashboard-statistics'] });
+          void queryClient.refetchQueries({ queryKey: ['admin-dashboard'] });
+        } else {
+          void queryClient.refetchQueries({ queryKey: ['dashboard-statistics'] });
+          void queryClient.refetchQueries({ queryKey: ['dashboard'] });
+        }
+        const message = data?.taskCompleted
+          ? 'Task completed. The entire task has been marked as completed.'
+          : 'Your completion has been marked and sent for approval.';
+        alert(message);
       },
     }
   );
 
   const handleMarkComplete = async () => {
     if (!taskId || !currentUserId) return;
+    const confirmMessage = isCreator
+      ? 'As the creator, marking complete will complete the entire task for everyone. Continue?'
+      : 'Have you completed your part of this task? Your completion will need to be verified.';
+    if (!window.confirm(confirmMessage)) return;
     try {
       setProcessing(true);
       await markCompleteMutation.mutateAsync();
-      alert('Your completion has been marked and sent for approval.');
     } catch (error: any) {
       const message =
         error?.response?.data?.error ||
@@ -374,6 +391,15 @@ export const TaskDetailsScreen: React.FC = () => {
         queryClient.invalidateQueries(['tasks']);
         queryClient.invalidateQueries(['dashboard']);
         queryClient.invalidateQueries(['dashboard-statistics']);
+        if (isAdmin) {
+          queryClient.invalidateQueries(['admin-dashboard']);
+          queryClient.invalidateQueries(['admin-dashboard-statistics']);
+          void queryClient.refetchQueries({ queryKey: ['admin-dashboard-statistics'] });
+          void queryClient.refetchQueries({ queryKey: ['admin-dashboard'] });
+        } else {
+          void queryClient.refetchQueries({ queryKey: ['dashboard-statistics'] });
+          void queryClient.refetchQueries({ queryKey: ['dashboard'] });
+        }
 
         if (result?.allCompleted) {
           alert('All members have been verified. Task is now completed.');

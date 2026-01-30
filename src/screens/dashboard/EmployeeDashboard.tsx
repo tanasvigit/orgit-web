@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useQuery } from 'react-query';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { useQuery, useQueryClient } from 'react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { TaskCard } from '../../components/shared';
 import { dashboardService } from '../../services/dashboardService';
@@ -12,6 +12,8 @@ export const EmployeeDashboard: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const prevPathRef = useRef<string>(location.pathname);
   // Expand/collapse state for D.M. and C.M. sections (combined for both self and assigned)
   const [expandedDM, setExpandedDM] = useState(false);
   // const [expandedCM, setExpandedCM] = useState(false);
@@ -20,12 +22,12 @@ export const EmployeeDashboard: React.FC = () => {
   const { data: dashboardData, isLoading, refetch: refetchDashboard } = useQuery(
     ['dashboard'],
     () => dashboardService.getDashboard(3),
-    { 
-      refetchInterval: 30000, // Refetch every 30 seconds
+    {
+      staleTime: 0, // Always consider stale so focus/mount refetch gets fresh data (match mobile)
+      refetchInterval: 30000,
       refetchOnMount: 'always',
       refetchOnWindowFocus: true,
       onSuccess: (data) => {
-        // Debug logging
         console.log('[Dashboard Frontend] Received data:', data);
         console.log('[Dashboard Frontend] Self tasks:', data?.data?.selfTasks);
         console.log('[Dashboard Frontend] Assigned tasks:', data?.data?.assignedTasks);
@@ -37,11 +39,11 @@ export const EmployeeDashboard: React.FC = () => {
     ['dashboard-statistics'],
     () => dashboardService.getStatistics(),
     {
-      refetchInterval: 30000, // Refetch every 30 seconds
+      staleTime: 0, // Always consider stale so focus/mount refetch gets fresh data (match mobile)
+      refetchInterval: 30000,
       refetchOnMount: 'always',
       refetchOnWindowFocus: true,
       onSuccess: (data) => {
-        // Debug logging
         console.log('[Dashboard Statistics] Received data:', data);
         console.log('[Dashboard Statistics] Statistics:', data?.data);
       }
@@ -53,25 +55,35 @@ export const EmployeeDashboard: React.FC = () => {
 
   const currentUserId = user?.id || (user as any)?.userId;
 
-  // Mobile behavior: refresh dashboard when coming back into focus.
-  // In web, we do this by refetching when route becomes /dashboard and on window focus.
+  // Match mobile useFocusEffect: refresh dashboard whenever screen comes into focus (navigate to /dashboard or window focus).
   useEffect(() => {
-    if (location.pathname === '/dashboard') {
-      refetchDashboard();
+    const pathname = location.pathname;
+    const isDashboard = pathname === '/dashboard';
+
+    if (isDashboard) {
+      prevPathRef.current = pathname;
+      // Invalidate so cached data is not shown; then refetch (like mobile loadDashboardData(true)).
+      queryClient.invalidateQueries(['dashboard-statistics']);
+      queryClient.invalidateQueries(['dashboard']);
       refetchStatistics();
+      refetchDashboard();
+    } else {
+      prevPathRef.current = pathname;
     }
-  }, [location.pathname, refetchDashboard, refetchStatistics]);
+  }, [location.pathname, queryClient, refetchDashboard, refetchStatistics]);
 
   useEffect(() => {
     const onFocus = () => {
       if (location.pathname === '/dashboard') {
-        refetchDashboard();
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        queryClient.invalidateQueries(['dashboard']);
         refetchStatistics();
+        refetchDashboard();
       }
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [location.pathname, refetchDashboard, refetchStatistics]);
+  }, [location.pathname, queryClient, refetchDashboard, refetchStatistics]);
 
   const flattenTasksStructure = (tasks: any): any[] => {
     const result: any[] = [];
@@ -156,15 +168,25 @@ export const EmployeeDashboard: React.FC = () => {
     });
   }, [selfTasks, currentUserId]);
 
-  // Compute per-user completed vs in-progress counts for dashboard cards,
-  // mirroring mobile's getMemberStatus (verified_at => completed).
+  // Compute per-user completed vs in-progress counts for dashboard cards.
+  // Task-level status = 'completed' (e.g. after all verified) takes precedence so counts stay in sync with API.
   const selfUserStatusCounts = useMemo(
     () => {
       const counts = { overdue: 0, duesoon: 0, inprogress: 0, completed: 0 };
       if (!flattenedSelfTasksForUser.length) return counts;
 
       flattenedSelfTasksForUser.forEach((task: any) => {
-        const assignees = Array.isArray(task?.assignees) ? task.assignees : [];
+        const full = taskDetails[task.id];
+        const merged = full ? { ...task, ...full } : task;
+        const taskStatus = (merged.status || '').toLowerCase();
+
+        // When API marks task completed (e.g. all members verified), count as completed for current user
+        if (taskStatus === 'completed') {
+          counts.completed += 1;
+          return;
+        }
+
+        const assignees = Array.isArray(merged?.assignees) ? merged.assignees : [];
         const assignee = assignees.find((a: any) => {
           const assigneeId = a.id || a.user_id || a.userId;
           return assigneeId === currentUserId;
@@ -197,11 +219,11 @@ export const EmployeeDashboard: React.FC = () => {
 
       return counts;
     },
-    [flattenedSelfTasksForUser, currentUserId]
+    [flattenedSelfTasksForUser, currentUserId, taskDetails]
   );
 
-  // If dashboard payload doesn't include assignees (common), compute self counts from fresh task details
-  // (mobile fetches full task details for a few tasks and uses those for status/progress).
+  // If dashboard payload doesn't include assignees (common), compute self counts from fresh task details.
+  // Task-level status = 'completed' takes precedence so verified tasks move to completed count.
   const selfUserStatusCountsFromDetails = useMemo(() => {
     const counts = { inprogress: 0, completed: 0 };
     if (!currentUserId || !selfTasks) return counts;
@@ -220,10 +242,14 @@ export const EmployeeDashboard: React.FC = () => {
       });
       if (!me) return;
 
-      // Mobile-style member status:
-      // - completed if verified_at exists
-      // - pending_verification (completed_at but not verified) counts as inprogress
-      // - accepted counts as inprogress
+      // When API marks task completed (all verified), count as completed
+      const taskStatus = (full?.status || t?.status || '').toLowerCase();
+      if (taskStatus === 'completed') {
+        counts.completed += 1;
+        return;
+      }
+
+      // Member-level: completed if verified_at exists; else inprogress
       const isVerified = !!me.verified_at;
       if (isVerified) {
         counts.completed += 1;
@@ -284,19 +310,7 @@ export const EmployeeDashboard: React.FC = () => {
   };
 
   const getStatusCount = (status: 'overdue' | 'duesoon' | 'inprogress' | 'completed', view: 'self' | 'assigned') => {
-    // For self view, override In Progress / Completed counts with member-based view
-    if (view === 'self') {
-      // Prefer dashboard+assignees derived counts when available; otherwise use taskDetails-derived counts;
-      // otherwise fall back to backend statistics (mobile uses backend statistics for counts).
-      if (status === 'completed') {
-        if (selfUserStatusCounts.completed > 0) return selfUserStatusCounts.completed;
-        if (selfUserStatusCountsFromDetails.completed > 0) return selfUserStatusCountsFromDetails.completed;
-      }
-      if (status === 'inprogress') {
-        if (selfUserStatusCounts.inprogress > 0) return selfUserStatusCounts.inprogress;
-        if (selfUserStatusCountsFromDetails.inprogress > 0) return selfUserStatusCountsFromDetails.inprogress;
-      }
-    }
+    // Match mobile: use backend statistics for In Progress / Completed so counts match API (no local override)
     if (!statistics?.data) {
       console.log('[Dashboard] No statistics data available');
       return 0;
@@ -317,11 +331,6 @@ export const EmployeeDashboard: React.FC = () => {
   };
 
   const getTotalCount = (view: 'self' | 'assigned') => {
-    if (view === 'self') {
-      const localTotal =
-        selfUserStatusCounts.completed + selfUserStatusCounts.inprogress;
-      if (localTotal > 0) return localTotal;
-    }
     if (!statistics?.data) return 0;
     const prefix = view === 'self' ? 'selfTasks' : 'assignedTasks';
     const total = (
