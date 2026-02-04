@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { getDesignations, createDesignation, updateDesignation, deleteDesignation } from '../../../services/settingsService';
 import { AdminLayout } from '../../../components/admin/AdminLayout';
+import { useToast } from '../../../context/ToastContext';
 
 interface Designation {
   id?: string;
@@ -14,6 +15,7 @@ interface Designation {
 export const Designations: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingDesignation, setEditingDesignation] = useState<Designation | null>(null);
   const [formData, setFormData] = useState({ name: '', description: '', level: '' });
@@ -27,10 +29,10 @@ export const Designations: React.FC = () => {
       setModalVisible(false);
       setEditingDesignation(null);
       setFormData({ name: '', description: '', level: '' });
-      alert('Designation created successfully');
+      toast.success('Designation created successfully');
     },
     onError: (error: any) => {
-      alert(error.response?.data?.error || 'Failed to create designation');
+      toast.error(error.response?.data?.error || 'Failed to create designation');
     },
   });
 
@@ -42,10 +44,10 @@ export const Designations: React.FC = () => {
         setModalVisible(false);
         setEditingDesignation(null);
         setFormData({ name: '', description: '', level: '' });
-        alert('Designation updated successfully');
+        toast.success('Designation updated successfully');
       },
       onError: (error: any) => {
-        alert(error.response?.data?.error || 'Failed to update designation');
+        toast.error(error.response?.data?.error || 'Failed to update designation');
       },
     }
   );
@@ -53,16 +55,16 @@ export const Designations: React.FC = () => {
   const deleteMutation = useMutation(deleteDesignation, {
     onSuccess: () => {
       queryClient.invalidateQueries('designations');
-      alert('Designation deleted successfully');
+      toast.success('Designation deleted successfully');
     },
     onError: (error: any) => {
-      alert(error.response?.data?.error || 'Failed to delete designation');
+      toast.error(error.response?.data?.error || 'Failed to delete designation');
     },
   });
 
   const handleSave = () => {
     if (!formData.name.trim()) {
-      alert('Designation name is required');
+      toast.error('Designation name is required');
       return;
     }
 
@@ -81,13 +83,15 @@ export const Designations: React.FC = () => {
 
   const handleDelete = (desig: Designation) => {
     if (!desig.id) {
-      alert('This designation cannot be deleted as it is stored in user records');
+      toast.error('This designation cannot be deleted as it is stored in user records');
       return;
     }
 
-    if (confirm(`Are you sure you want to delete "${desig.name}"?`)) {
-      deleteMutation.mutate(desig.id);
-    }
+    toast.confirm(`Are you sure you want to delete "${desig.name}"?`, {
+      onConfirm: () => deleteMutation.mutate(desig.id!),
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+    });
   };
 
   const openEditModal = (desig: Designation | null = null) => {

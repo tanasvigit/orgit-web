@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { TopAppBar, Button } from '../../components/shared';
 import { authService } from '../../services/authService';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 
 const passwordLoginSchema = z.object({
   mobile: z.string().min(10, 'Mobile number must be at least 10 digits'),
@@ -24,6 +25,7 @@ type LoginTab = 'password' | 'otp';
 export const Login: React.FC = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<LoginTab>('password');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -223,7 +225,7 @@ export const Login: React.FC = () => {
                 type="button"
                 onClick={() => {
                   // TODO: Implement forgot password flow
-                  alert('Forgot password feature coming soon');
+                  toast.info('Forgot password feature coming soon');
                 }}
                 className="text-sm text-primary hover:text-primary/80 underline decoration-primary/30 underline-offset-2 transition-colors"
               >

@@ -6,11 +6,13 @@ import { documentTemplateService } from '../../../services/documentTemplateServi
 import { DocumentBuilderContent } from '../../../components/document-builder/DocumentBuilderLayout';
 import { DocumentBuilderProvider, useDocumentBuilder } from '../../../components/document-builder/DocumentBuilderProvider';
 import { serializeDocumentState } from '../../../components/document-builder/serializer';
+import { useToast } from '../../../context/ToastContext';
 
 // Wrapper to bridge the Router/Service with the Builder Context
 const BuilderIntegration: React.FC<{ templateId?: string }> = ({ templateId }) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { state, dispatch } = useDocumentBuilder();
 
   // Fetch existing data
@@ -71,7 +73,7 @@ const BuilderIntegration: React.FC<{ templateId?: string }> = ({ templateId }) =
       },
       onError: (err: any) => {
         console.error('DEBUG: Failed to save template:', err);
-        alert('Failed to save template: ' + (err.response?.data?.error || err.message));
+        toast.error('Failed to save template: ' + (err.response?.data?.error || err.message));
       }
     }
   );
@@ -86,7 +88,7 @@ const BuilderIntegration: React.FC<{ templateId?: string }> = ({ templateId }) =
       },
       onError: (err: any) => {
         console.error('DEBUG: Failed to delete template:', err);
-        alert('Failed to delete template: ' + (err.response?.data?.error || err.message));
+        toast.error('Failed to delete template: ' + (err.response?.data?.error || err.message));
       }
     }
   );
@@ -108,7 +110,7 @@ const BuilderIntegration: React.FC<{ templateId?: string }> = ({ templateId }) =
       mutation.mutate(payload);
     } catch (e) {
       console.error('DEBUG: Error in handleSave serialization:', e);
-      alert('Error preparing template data: ' + (e as Error).message);
+      toast.error('Error preparing template data: ' + (e as Error).message);
     }
   };
 
@@ -136,9 +138,11 @@ const BuilderIntegration: React.FC<{ templateId?: string }> = ({ templateId }) =
           {templateId && (
             <button
               onClick={() => {
-                if (window.confirm('Are you sure you want to delete this template? This action cannot be undone.')) {
-                  deleteMutation.mutate(templateId);
-                }
+                toast.confirm('Are you sure you want to delete this template? This action cannot be undone.', {
+                  onConfirm: () => deleteMutation.mutate(templateId!),
+                  confirmLabel: 'Delete',
+                  cancelLabel: 'Cancel',
+                });
               }}
               disabled={deleteMutation.isLoading}
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-transparent rounded-lg transition-all"

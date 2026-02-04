@@ -3,8 +3,10 @@ import { useQuery, useQueryClient } from 'react-query';
 import { SuperAdminLayout } from '../../../components/super-admin/SuperAdminLayout';
 import { userService } from '../../../services/userService';
 import { useAuth } from '../../../context/AuthContext';
+import { useToast } from '../../../context/ToastContext';
 
 export const UserList: React.FC = () => {
+  const { toast } = useToast();
   const [filters, setFilters] = useState({ role: '', status: '', search: '', page: 1, limit: 20 });
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
   const [roleUpdate, setRoleUpdate] = useState<{ id: string; name: string; currentRole: string } | null>(null);
@@ -30,7 +32,7 @@ export const UserList: React.FC = () => {
 
     // Prevent deleting yourself
     if (deleteConfirm.id === currentUser?.id) {
-      alert('You cannot delete your own account');
+      toast.error('You cannot delete your own account');
       setDeleteConfirm(null);
       return;
     }
@@ -41,7 +43,7 @@ export const UserList: React.FC = () => {
       queryClient.invalidateQueries(['users']);
       setDeleteConfirm(null);
     } catch (error: any) {
-      alert(`Error deleting user: ${error.response?.data?.error || error.message}`);
+      toast.error(`Error deleting user: ${error.response?.data?.error || error.message}`);
     } finally {
       setIsDeleting(false);
     }
@@ -52,7 +54,7 @@ export const UserList: React.FC = () => {
 
     // Prevent changing your own role
     if (roleUpdate.id === currentUser?.id) {
-      alert('You cannot change your own role');
+      toast.error('You cannot change your own role');
       setRoleUpdate(null);
       return;
     }
@@ -62,9 +64,9 @@ export const UserList: React.FC = () => {
       await userService.updateRole(roleUpdate.id, newRole);
       queryClient.invalidateQueries(['users']);
       setRoleUpdate(null);
-      alert('Role updated successfully');
+      toast.success('Role updated successfully');
     } catch (error: any) {
-      alert(`Error updating role: ${error.response?.data?.error || error.message}`);
+      toast.error(`Error updating role: ${error.response?.data?.error || error.message}`);
     } finally {
       setIsUpdatingRole(false);
     }

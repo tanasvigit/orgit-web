@@ -55,35 +55,44 @@ export const EmployeeDashboard: React.FC = () => {
 
   const currentUserId = user?.id || (user as any)?.userId;
 
-  // Match mobile useFocusEffect: refresh dashboard whenever screen comes into focus (navigate to /dashboard or window focus).
+  const refetchDashboardData = React.useCallback(() => {
+    queryClient.invalidateQueries(['dashboard-statistics']);
+    queryClient.invalidateQueries(['dashboard']);
+    refetchStatistics();
+    refetchDashboard();
+  }, [queryClient, refetchDashboard, refetchStatistics]);
+
+  // Match mobile useFocusEffect: refresh dashboard whenever screen comes into focus.
   useEffect(() => {
     const pathname = location.pathname;
     const isDashboard = pathname === '/dashboard';
 
     if (isDashboard) {
       prevPathRef.current = pathname;
-      // Invalidate so cached data is not shown; then refetch (like mobile loadDashboardData(true)).
-      queryClient.invalidateQueries(['dashboard-statistics']);
-      queryClient.invalidateQueries(['dashboard']);
-      refetchStatistics();
-      refetchDashboard();
+      refetchDashboardData();
     } else {
       prevPathRef.current = pathname;
     }
-  }, [location.pathname, queryClient, refetchDashboard, refetchStatistics]);
+  }, [location.pathname, refetchDashboardData]);
 
   useEffect(() => {
     const onFocus = () => {
-      if (location.pathname === '/dashboard') {
-        queryClient.invalidateQueries(['dashboard-statistics']);
-        queryClient.invalidateQueries(['dashboard']);
-        refetchStatistics();
-        refetchDashboard();
-      }
+      if (location.pathname === '/dashboard') refetchDashboardData();
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [location.pathname, queryClient, refetchDashboard, refetchStatistics]);
+  }, [location.pathname, refetchDashboardData]);
+
+  // Refetch when tab becomes visible (more reliable than focus for tab switching)
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && location.pathname === '/dashboard') {
+        refetchDashboardData();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [location.pathname, refetchDashboardData]);
 
   const flattenTasksStructure = (tasks: any): any[] => {
     const result: any[] = [];
@@ -310,13 +319,10 @@ export const EmployeeDashboard: React.FC = () => {
   };
 
   const getStatusCount = (status: 'overdue' | 'duesoon' | 'inprogress' | 'completed', view: 'self' | 'assigned') => {
-    // Match mobile: use backend statistics for In Progress / Completed so counts match API (no local override)
-    if (!statistics?.data) {
-      console.log('[Dashboard] No statistics data available');
-      return 0;
-    }
+    // Match mobile: statsResponse?.data || statsResponse for stats object
+    const stats = statistics?.data ?? statistics;
+    if (!stats) return 0;
     const prefix = view === 'self' ? 'selfTasks' : 'assignedTasks';
-    // Map status to correct key format matching backend response
     const statusKeyMap: Record<string, string> = {
       overdue: 'Overdue',
       duesoon: 'DueSoon',
@@ -325,22 +331,19 @@ export const EmployeeDashboard: React.FC = () => {
     };
     const statusKey = statusKeyMap[status] || status.charAt(0).toUpperCase() + status.slice(1);
     const key = `${prefix}${statusKey}`;
-    const value = statistics.data[key] || 0;
-    console.log(`[Dashboard] ${key}:`, value);
-    return value;
+    return (stats[key] ?? stats[key.toLowerCase()] ?? 0) as number;
   };
 
   const getTotalCount = (view: 'self' | 'assigned') => {
-    if (!statistics?.data) return 0;
+    const stats = statistics?.data ?? statistics;
+    if (!stats) return 0;
     const prefix = view === 'self' ? 'selfTasks' : 'assignedTasks';
-    const total = (
-      (statistics.data[`${prefix}Overdue`] || 0) +
-      (statistics.data[`${prefix}DueSoon`] || 0) +
-      (statistics.data[`${prefix}InProgress`] || 0) +
-      (statistics.data[`${prefix}Completed`] || 0)
+    return (
+      (stats[`${prefix}Overdue`] ?? 0) +
+      (stats[`${prefix}DueSoon`] ?? 0) +
+      (stats[`${prefix}InProgress`] ?? 0) +
+      (stats[`${prefix}Completed`] ?? 0)
     );
-    console.log(`[Dashboard] Total ${prefix}:`, total);
-    return total;
   };
 
   const renderTaskSection = (
@@ -376,6 +379,7 @@ export const EmployeeDashboard: React.FC = () => {
             }))
             .filter((a: any) => !!a.id);
           const hasFinance = merged.financial_value != null || merged.finance_type;
+          const isCreator = (merged.created_by || merged.creator_id) === currentUserId;
 
           return (
             <TaskCard
@@ -388,7 +392,7 @@ export const EmployeeDashboard: React.FC = () => {
               category={merged.category}
               assignees={cardAssignees}
               progress={status === 'inprogress' ? progress : undefined}
-              finance={hasFinance ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
+              finance={hasFinance && isCreator ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
               onClick={() => navigate(`/tasks/${task.id}`)}
             />
           );
@@ -420,8 +424,12 @@ export const EmployeeDashboard: React.FC = () => {
             </span>
           </div>
           
-          {/* Overdue Card */}
-          <div className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-overdue/30 hover:shadow-md transition-all">
+          {/* Overdue Card - clickable */}
+          <button
+            type="button"
+            onClick={() => navigate('/tasks?status=overdue')}
+            className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-overdue/30 hover:shadow-md transition-all cursor-pointer text-left"
+          >
             <div className="mb-2 p-2 rounded-full bg-status-overdue/10 text-status-overdue">
               <span className="material-symbols-outlined text-xl">priority_high</span>
             </div>
@@ -431,10 +439,14 @@ export const EmployeeDashboard: React.FC = () => {
             <span className="text-xs font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
               Overdue
             </span>
-          </div>
+          </button>
           
-          {/* Due Soon Card */}
-          <div className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-duesoon/30 hover:shadow-md transition-all">
+          {/* Due Soon Card - clickable */}
+          <button
+            type="button"
+            onClick={() => navigate('/tasks?status=duesoon')}
+            className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-duesoon/30 hover:shadow-md transition-all cursor-pointer text-left"
+          >
             <div className="mb-2 p-2 rounded-full bg-status-duesoon/10 text-status-duesoon">
               <span className="material-symbols-outlined text-xl">hourglass_top</span>
             </div>
@@ -444,10 +456,14 @@ export const EmployeeDashboard: React.FC = () => {
             <span className="text-xs font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
               Due Soon
             </span>
-          </div>
+          </button>
           
-          {/* In Progress Card */}
-          <div className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-inprogress/30 hover:shadow-md transition-all">
+          {/* In Progress Card - clickable */}
+          <button
+            type="button"
+            onClick={() => navigate('/tasks?status=inprogress')}
+            className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-inprogress/30 hover:shadow-md transition-all cursor-pointer text-left"
+          >
             <div className="mb-2 p-2 rounded-full bg-status-inprogress/10 text-status-inprogress">
               <span className="material-symbols-outlined text-xl">pending_actions</span>
             </div>
@@ -457,10 +473,14 @@ export const EmployeeDashboard: React.FC = () => {
             <span className="text-xs font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
               In Progress
             </span>
-          </div>
+          </button>
           
-          {/* Completed Card */}
-          <div className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-completed/30 hover:shadow-md transition-all">
+          {/* Completed Card - clickable */}
+          <button
+            type="button"
+            onClick={() => navigate('/tasks?status=completed')}
+            className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-completed/30 hover:shadow-md transition-all cursor-pointer text-left"
+          >
             <div className="mb-2 p-2 rounded-full bg-status-completed/10 text-status-completed">
               <span className="material-symbols-outlined text-xl">task_alt</span>
             </div>
@@ -470,7 +490,7 @@ export const EmployeeDashboard: React.FC = () => {
             <span className="text-xs font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
               Completed
             </span>
-          </div>
+          </button>
         </div>
       </div>
     );
@@ -497,7 +517,7 @@ export const EmployeeDashboard: React.FC = () => {
             <div>
               <button
                 onClick={() => setExpandedDM(!expandedDM)}
-                className="w-full flex items-center justify-between p-5 bg-white dark:bg-background-dark-subtle rounded-xl shadow-sm border border-gray-100 dark:border-white/5 group hover:shadow-md hover:border-primary/30 transition-all"
+                className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800/90 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 group hover:shadow-xl hover:border-primary/40 transition-all duration-200"
               >
                 <div className="flex items-center gap-4">
                   <div className="p-3 bg-primary/10 rounded-lg text-primary">
@@ -674,6 +694,7 @@ export const EmployeeDashboard: React.FC = () => {
                       .filter((a: any) => !!a.id);
 
                     const hasFinance = merged.financial_value != null || merged.finance_type;
+                    const isCreator = (merged.created_by || merged.creator_id) === currentUserId;
                     return (
                       <TaskCard
                         key={task.id}
@@ -685,7 +706,7 @@ export const EmployeeDashboard: React.FC = () => {
                         category={merged.category}
                         assignees={cardAssignees}
                         progress={progress}
-                        finance={hasFinance ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
+                        finance={hasFinance && isCreator ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
                         onClick={() =>
                           convId
                             ? navigate(`/tasks/task-group/${convId}`)
@@ -704,7 +725,7 @@ export const EmployeeDashboard: React.FC = () => {
             <div>
               <button
                 onClick={() => setExpandedCM(!expandedCM)}
-                className="w-full flex items-center justify-between p-5 bg-white dark:bg-background-dark-subtle rounded-xl shadow-sm border border-gray-100 dark:border-white/5 group hover:shadow-md hover:border-primary/30 transition-all"
+                className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800/90 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 group hover:shadow-xl hover:border-primary/40 transition-all duration-200"
               >
                 <div className="flex items-center gap-4">
                   <div className="p-3 bg-primary/10 rounded-lg text-primary">

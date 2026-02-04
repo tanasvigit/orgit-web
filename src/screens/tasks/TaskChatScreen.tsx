@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { taskService } from '../../services/taskService';
 import { conversationService } from '../../services/conversationService';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { TaskGroupChatConversation } from '../messaging/TaskGroupChatConversation';
 
 export const TaskChatScreen: React.FC = () => {
@@ -11,6 +12,7 @@ export const TaskChatScreen: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const { toast } = useToast();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -98,7 +100,7 @@ export const TaskChatScreen: React.FC = () => {
     } catch (error: any) {
       const message =
         error?.response?.data?.error || error?.message || 'Failed to accept task';
-      alert(message);
+      toast.error(message);
     } finally {
       setProcessing(false);
     }
@@ -106,7 +108,7 @@ export const TaskChatScreen: React.FC = () => {
 
   const handleReject = async () => {
     if (!rejectionReason.trim()) {
-      alert('Please enter a reason for rejection');
+      toast.error('Please enter a reason for rejection');
       return;
     }
     try {
@@ -115,7 +117,7 @@ export const TaskChatScreen: React.FC = () => {
     } catch (error: any) {
       const message =
         error?.response?.data?.error || error?.message || 'Failed to reject task';
-      alert(message);
+      toast.error(message);
     } finally {
       setProcessing(false);
     }
@@ -174,7 +176,7 @@ export const TaskChatScreen: React.FC = () => {
       },
       onError: (error: any) => {
         console.error('Failed to create task group conversation:', error);
-        alert(error.response?.data?.error || 'Failed to create task group conversation');
+        toast.error(error.response?.data?.error || 'Failed to create task group conversation');
       }
     }
   );

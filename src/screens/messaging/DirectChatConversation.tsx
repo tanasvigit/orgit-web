@@ -6,6 +6,7 @@ import { messageService } from '../../services/messageService';
 import { conversationService } from '../../services/conversationService';
 import { waitForSocketConnection, joinConversationRoom, leaveConversationRoom, onSocketEvent, offSocketEvent, sendMessageViaSocket, getSocket } from '../../services/socketService';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { ConversationList } from '../../components/messaging/ConversationList';
@@ -28,6 +29,7 @@ export const DirectChatConversation: React.FC = () => {
   const { conversationId } = useParams<{ conversationId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { toast } = useToast();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin';
   const [message, setMessage] = useState('');
@@ -1127,7 +1129,7 @@ export const DirectChatConversation: React.FC = () => {
     } catch (error) {
       console.error('Send message error:', error);
       // Show user-friendly error message
-      alert('Failed to send message. Please try again.');
+      toast.error('Failed to send message. Please try again.');
       // Don't crash - ensure state is still valid
     }
   };
@@ -1307,7 +1309,7 @@ export const DirectChatConversation: React.FC = () => {
       setReplyingTo(null);
     } catch (error) {
       console.error('Media upload error:', error);
-      alert('Failed to upload media. Please try again.');
+      toast.error('Failed to upload media. Please try again.');
     } finally {
       setUploadingMedia(false);
     }
@@ -1342,7 +1344,7 @@ export const DirectChatConversation: React.FC = () => {
       setReplyingTo(null);
     } catch (error) {
       console.error('Voice note upload error:', error);
-      alert('Failed to upload voice note. Please try again.');
+      toast.error('Failed to upload voice note. Please try again.');
     } finally {
       setUploadingMedia(false);
     }
@@ -1364,7 +1366,7 @@ export const DirectChatConversation: React.FC = () => {
       setReplyingTo(null);
     } catch (error) {
       console.error('Location share error:', error);
-      alert('Failed to share location. Please try again.');
+      toast.error('Failed to share location. Please try again.');
     }
   };
 

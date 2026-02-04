@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { SuperAdminLayout } from '../../../components/super-admin/SuperAdminLayout';
 import { complianceService } from '../../../services/complianceService';
 import { useAuth } from '../../../context/AuthContext';
+import { useToast } from '../../../context/ToastContext';
 import { ComplianceMaster } from '../../../../shared/src/types';
 
 export const ComplianceForm: React.FC = () => {
@@ -11,6 +12,7 @@ export const ComplianceForm: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { toast } = useToast();
   const isEdit = !!id;
   const isSuperAdmin = user?.role === 'super_admin';
 
@@ -63,7 +65,7 @@ export const ComplianceForm: React.FC = () => {
         navigate('/super-admin/compliance');
       },
       onError: (error: any) => {
-        alert(`Error: ${error.response?.data?.error || error.message}`);
+        toast.error(`Error: ${error.response?.data?.error || error.message}`);
       },
     }
   );
@@ -76,7 +78,7 @@ export const ComplianceForm: React.FC = () => {
         navigate('/super-admin/compliance');
       },
       onError: (error: any) => {
-        alert(`Error: ${error.response?.data?.error || error.message}`);
+        toast.error(`Error: ${error.response?.data?.error || error.message}`);
       },
     }
   );
@@ -84,7 +86,7 @@ export const ComplianceForm: React.FC = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (isReadOnly) {
-      alert('You do not have permission to edit this Global compliance');
+      toast.error('You do not have permission to edit this Global compliance');
       return;
     }
 

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { getDepartments, createDepartment, updateDepartment, deleteDepartment } from '../../../services/settingsService';
 import { AdminLayout } from '../../../components/admin/AdminLayout';
+import { useToast } from '../../../context/ToastContext';
 
 interface Department {
   id?: string;
@@ -13,6 +14,7 @@ interface Department {
 export const Departments: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
   const [formData, setFormData] = useState({ name: '', description: '' });
@@ -26,10 +28,10 @@ export const Departments: React.FC = () => {
       setModalVisible(false);
       setEditingDepartment(null);
       setFormData({ name: '', description: '' });
-      alert('Department created successfully');
+      toast.success('Department created successfully');
     },
     onError: (error: any) => {
-      alert(error.response?.data?.error || 'Failed to create department');
+      toast.error(error.response?.data?.error || 'Failed to create department');
     },
   });
 
@@ -41,10 +43,10 @@ export const Departments: React.FC = () => {
         setModalVisible(false);
         setEditingDepartment(null);
         setFormData({ name: '', description: '' });
-        alert('Department updated successfully');
+        toast.success('Department updated successfully');
       },
       onError: (error: any) => {
-        alert(error.response?.data?.error || 'Failed to update department');
+        toast.error(error.response?.data?.error || 'Failed to update department');
       },
     }
   );
@@ -52,16 +54,16 @@ export const Departments: React.FC = () => {
   const deleteMutation = useMutation(deleteDepartment, {
     onSuccess: () => {
       queryClient.invalidateQueries('departments');
-      alert('Department deleted successfully');
+      toast.success('Department deleted successfully');
     },
     onError: (error: any) => {
-      alert(error.response?.data?.error || 'Failed to delete department');
+      toast.error(error.response?.data?.error || 'Failed to delete department');
     },
   });
 
   const handleSave = () => {
     if (!formData.name.trim()) {
-      alert('Department name is required');
+      toast.error('Department name is required');
       return;
     }
 
@@ -74,13 +76,15 @@ export const Departments: React.FC = () => {
 
   const handleDelete = (dept: Department) => {
     if (!dept.id) {
-      alert('This department cannot be deleted as it is stored in user records');
+      toast.error('This department cannot be deleted as it is stored in user records');
       return;
     }
 
-    if (confirm(`Are you sure you want to delete "${dept.name}"?`)) {
-      deleteMutation.mutate(dept.id);
-    }
+    toast.confirm(`Are you sure you want to delete "${dept.name}"?`, {
+      onConfirm: () => deleteMutation.mutate(dept.id!),
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+    });
   };
 
   const openEditModal = (dept: Department | null = null) => {

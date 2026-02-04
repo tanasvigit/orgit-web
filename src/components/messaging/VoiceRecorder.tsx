@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useToast } from '../../context/ToastContext';
 
 interface VoiceRecorderProps {
   onRecordComplete: (audioBlob: Blob) => void;
@@ -51,7 +52,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onRecordComplete, 
       }, 1000);
     } catch (error) {
       console.error('Error starting recording:', error);
-      alert('Could not access microphone. Please check permissions.');
+      toast.error('Could not access microphone. Please check permissions.');
     }
   };
 

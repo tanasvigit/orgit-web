@@ -4,12 +4,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { SuperAdminLayout } from '../../../components/super-admin/SuperAdminLayout';
 import { complianceService, getScopeBadge } from '../../../services/complianceService';
 import { useAuth } from '../../../context/AuthContext';
+import { useToast } from '../../../context/ToastContext';
 import { ComplianceMaster } from '../../../../shared/src/types';
 import { ComplianceExcelGrid } from './ComplianceExcelGrid';
 
 export const ComplianceList: React.FC = () => {
   const [filters, setFilters] = useState({ category: '', status: '', scope: '', search: '', page: 1, limit: 20 });
   const { user } = useAuth();
+  const { toast } = useToast();
   const isSuperAdmin = user?.role === 'super_admin';
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -23,18 +25,23 @@ export const ComplianceList: React.FC = () => {
 
   const handleDelete = async (id: string, scope: 'GLOBAL' | 'ORG') => {
     if (!isSuperAdmin && scope === 'GLOBAL') {
-      alert('You cannot delete Global compliances');
+      toast.error('You cannot delete Global compliances');
       return;
     }
 
-    if (confirm('Are you sure you want to delete this compliance?')) {
-      try {
-        await complianceService.delete(id);
-        queryClient.invalidateQueries('compliance');
-      } catch (error: any) {
-        alert(`Error: ${error.response?.data?.error || error.message}`);
-      }
-    }
+    toast.confirm('Are you sure you want to delete this compliance?', {
+      onConfirm: async () => {
+        try {
+          await complianceService.delete(id);
+          queryClient.invalidateQueries('compliance');
+          toast.success('Compliance deleted successfully');
+        } catch (error: any) {
+          toast.error(`Error: ${error.response?.data?.error || error.message}`);
+        }
+      },
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+    });
   };
 
   const canEdit = (item: ComplianceMaster): boolean => {

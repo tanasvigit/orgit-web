@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { SuperAdminLayout } from '../../../components/super-admin/SuperAdminLayout';
+import { useToast } from '../../../context/ToastContext';
 import { platformSettingsService } from '../../../services/platformSettingsService';
 import { PlatformSettings as PlatformSettingsType } from '../../../../shared/src/types';
 
@@ -47,10 +48,10 @@ export const PlatformSettings: React.FC = () => {
     {
       onSuccess: () => {
         queryClient.invalidateQueries('platformSettings');
-        alert('Auto-escalation configuration saved successfully');
+        toast.success('Auto-escalation configuration saved successfully');
       },
       onError: (error: any) => {
-        alert(`Error: ${error.response?.data?.error || error.message}`);
+        toast.error(`Error: ${error.response?.data?.error || error.message}`);
       },
     }
   );
@@ -60,10 +61,10 @@ export const PlatformSettings: React.FC = () => {
     {
       onSuccess: () => {
         queryClient.invalidateQueries('platformSettings');
-        alert('Reminder configuration saved successfully');
+        toast.success('Reminder configuration saved successfully');
       },
       onError: (error: any) => {
-        alert(`Error: ${error.response?.data?.error || error.message}`);
+        toast.error(`Error: ${error.response?.data?.error || error.message}`);
       },
     }
   );
@@ -73,10 +74,10 @@ export const PlatformSettings: React.FC = () => {
     {
       onSuccess: () => {
         queryClient.invalidateQueries('platformSettings');
-        alert('Recurring task settings saved successfully');
+        toast.success('Recurring task settings saved successfully');
       },
       onError: (error: any) => {
-        alert(`Error: ${error.response?.data?.error || error.message}`);
+        toast.error(`Error: ${error.response?.data?.error || error.message}`);
       },
     }
   );
@@ -86,10 +87,10 @@ export const PlatformSettings: React.FC = () => {
     {
       onSuccess: () => {
         queryClient.invalidateQueries('platformSettings');
-        alert('System settings saved successfully');
+        toast.success('System settings saved successfully');
       },
       onError: (error: any) => {
-        alert(`Error: ${error.response?.data?.error || error.message}`);
+        toast.error(`Error: ${error.response?.data?.error || error.message}`);
       },
     }
   );

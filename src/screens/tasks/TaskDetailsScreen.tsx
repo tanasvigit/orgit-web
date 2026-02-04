@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { taskService } from '../../services/taskService';
 import { mergeTaskWithFinancial } from '../../utils/taskFinancialStorage';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 
@@ -12,6 +13,7 @@ export const TaskDetailsScreen: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showRejectModal, setShowRejectModal] = useState(location.state?.showReject || false);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -153,7 +155,7 @@ export const TaskDetailsScreen: React.FC = () => {
         console.error('Failed to update task status:', error);
         console.error('Error response:', error.response);
         const errorMessage = error.response?.data?.error || error.message || 'Failed to update task status';
-        alert(errorMessage);
+        toast.error(errorMessage);
       }
     }
   );
@@ -216,17 +218,21 @@ export const TaskDetailsScreen: React.FC = () => {
       currentUserAssignee.completion_status === 'completed' ||
       currentUserAssignee.status === 'completed');
 
+  // Normalize to string so creator check works when ownership was given to another user (e.g. task owner)
+  const taskOwnerId = normalizedTask?.created_by ?? normalizedTask?.creator_id;
   const isCreator =
     !!normalizedTask &&
-    (normalizedTask.created_by === currentUserId ||
-      normalizedTask.creator_id === currentUserId);
+    !!currentUserId &&
+    !!taskOwnerId &&
+    String(taskOwnerId) === String(currentUserId);
 
-  // Mirror mobile: creator can mark complete without accepting; entire task completes when creator marks complete
+  // Mirror mobile: creator can mark complete without accepting; entire task completes when creator marks complete.
+  // After verify, task.status is 'completed' (so assignees see Completed) but creator still needs to mark complete — show button for creator.
   const canMarkComplete =
     isAssigned &&
     (isCreator || hasAccepted) &&
     !hasCompleted &&
-    normalizedTask?.status !== 'completed';
+    (normalizedTask?.status !== 'completed' || isCreator);
 
   // EXACT mobile logic: getMemberStats counts completed_at (NOT verified_at)
   const getMemberStats = () => {
@@ -303,7 +309,7 @@ export const TaskDetailsScreen: React.FC = () => {
       setProcessing(true);
       await acceptTaskMutation.mutateAsync();
     } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to accept task');
+      toast.error(error.response?.data?.error || 'Failed to accept task');
     } finally {
       setProcessing(false);
     }
@@ -312,7 +318,7 @@ export const TaskDetailsScreen: React.FC = () => {
   // Handle reject
   const handleReject = async () => {
     if (!rejectionReason.trim()) {
-      alert('Please enter a reason for rejection');
+      toast.error('Please enter a reason for rejection');
       return;
     }
 
@@ -320,7 +326,7 @@ export const TaskDetailsScreen: React.FC = () => {
       setProcessing(true);
       await rejectTaskMutation.mutateAsync(rejectionReason.trim());
     } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to reject task');
+      toast.error(error.response?.data?.error || 'Failed to reject task');
     } finally {
       setProcessing(false);
     }
@@ -352,29 +358,34 @@ export const TaskDetailsScreen: React.FC = () => {
         const message = data?.taskCompleted
           ? 'Task completed. The entire task has been marked as completed.'
           : 'Your completion has been marked and sent for approval.';
-        alert(message);
+        toast.error(message);
       },
     }
   );
 
-  const handleMarkComplete = async () => {
+  const handleMarkComplete = () => {
     if (!taskId || !currentUserId) return;
     const confirmMessage = isCreator
       ? 'As the creator, marking complete will complete the entire task for everyone. Continue?'
       : 'Have you completed your part of this task? Your completion will need to be verified.';
-    if (!window.confirm(confirmMessage)) return;
-    try {
-      setProcessing(true);
-      await markCompleteMutation.mutateAsync();
-    } catch (error: any) {
-      const message =
-        error?.response?.data?.error ||
-        error?.message ||
-        'Failed to mark completion';
-      alert(message);
-    } finally {
-      setProcessing(false);
-    }
+    toast.confirm(confirmMessage, {
+      onConfirm: async () => {
+        try {
+          setProcessing(true);
+          await markCompleteMutation.mutateAsync();
+        } catch (error: any) {
+          const message =
+            error?.response?.data?.error ||
+            error?.message ||
+            'Failed to mark completion';
+          toast.error(message);
+        } finally {
+          setProcessing(false);
+        }
+      },
+      confirmLabel: 'Yes',
+      cancelLabel: 'Cancel',
+    });
   };
 
   // Verify another member's completion
@@ -402,9 +413,9 @@ export const TaskDetailsScreen: React.FC = () => {
         }
 
         if (result?.allCompleted) {
-          alert('All members have been verified. Task is now completed.');
+          toast.success('All members have been verified. Task is now completed.');
         } else {
-          alert('Member completion verified successfully.');
+          toast.success('Member completion verified successfully.');
         }
       },
       onError: (error: any) => {
@@ -412,22 +423,24 @@ export const TaskDetailsScreen: React.FC = () => {
           error?.response?.data?.error ||
           error?.message ||
           'Failed to verify completion';
-        alert(message);
+        toast.error(message);
       },
     }
   );
 
-  const handleVerifyMember = async (memberUserId: string, memberName: string) => {
-    if (!window.confirm(`Verify that ${memberName} has completed their part of the task?`)) {
-      return;
-    }
-
-    try {
-      setVerifyingUserId(memberUserId);
-      await verifyCompletionMutation.mutateAsync(memberUserId);
-    } finally {
-      setVerifyingUserId(null);
-    }
+  const handleVerifyMember = (memberUserId: string, memberName: string) => {
+    toast.confirm(`Verify that ${memberName} has completed their part of the task?`, {
+      onConfirm: async () => {
+        try {
+          setVerifyingUserId(memberUserId);
+          await verifyCompletionMutation.mutateAsync(memberUserId);
+        } finally {
+          setVerifyingUserId(null);
+        }
+      },
+      confirmLabel: 'Verify',
+      cancelLabel: 'Cancel',
+    });
   };
 
   // Loading state
@@ -699,17 +712,17 @@ export const TaskDetailsScreen: React.FC = () => {
                 const memberVerified = assignee.verified_at;
                 const statusLabel = getMemberStatusLabel(assignee);
                 const statusColor = getMemberStatusColor(assignee);
-                const isReportingMemberForTask = normalizedTask?.reporting_member_id === assigneeId;
-                const taskCreatorId = normalizedTask?.created_by || normalizedTask?.creator_id;
+                const isReportingMemberForTask = String(normalizedTask?.reporting_member_id ?? '') === String(assigneeId ?? '');
+                const taskCreatorId = normalizedTask?.created_by ?? normalizedTask?.creator_id;
                 const reportingMemberId = normalizedTask?.reporting_member_id;
 
-                // EXACT mobile logic: canVerifyMember function
+                // EXACT mobile logic: canVerifyMember function (task owner can verify assignees who completed)
                 const canVerifyThisMember = (() => {
                   if (isCurrentUser) return false; // Cannot verify yourself
                   if (!memberCompleted || memberVerified) return false; // Must be completed and not verified
                   
-                  const isTargetCreator = assigneeId === taskCreatorId;
-                  const isTargetReportingMember = assigneeId === reportingMemberId;
+                  const isTargetCreator = String(assigneeId ?? '') === String(taskCreatorId ?? '');
+                  const isTargetReportingMember = String(assigneeId ?? '') === String(reportingMemberId ?? '');
                   
                   // Creator can verify reporting member (or all assignees if no reporting member)
                   if (isCreator) {
@@ -920,8 +933,8 @@ export const TaskDetailsScreen: React.FC = () => {
           )}
         </div>
 
-        {/* Finance section - amount and type (only if task has finance data) */}
-        {(displayTask.financial_value != null || displayTask.finance_type) && (
+        {/* Finance section - amount and type (only visible to task creator) */}
+        {(displayTask.financial_value != null || displayTask.finance_type) && isCreator && (
           <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-sm mb-6 border border-gray-200 dark:border-gray-700">
             <h3 className="text-sm font-bold uppercase tracking-wider text-primary dark:text-purple-400 mb-3">
               Finance

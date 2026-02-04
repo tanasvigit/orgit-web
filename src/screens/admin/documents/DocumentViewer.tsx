@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { AdminLayout } from '../../../components/admin/AdminLayout';
 import { EmployeeLayout } from '../../../components/employee/EmployeeLayout';
 import { useAuth } from '../../../context/AuthContext';
+import { useToast } from '../../../context/ToastContext';
 import { documentInstanceService } from '../../../services/documentInstanceService';
 import { documentTemplateService } from '../../../services/documentTemplateService';
 import { getDocumentById as getLocalDocumentById, getDocumentBlobUrl, downloadDocument as downloadLocalDocument, viewDocument as viewLocalDocument } from '../../../services/localDocumentService';
@@ -15,6 +16,7 @@ const DocumentEditorIntegration: React.FC<{ instance: any, id: string, onBack: (
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { state, dispatch } = useDocumentBuilder();
+  const { toast } = useToast();
   const [title, setTitle] = useState(instance.title);
 
   // Load existing data into builder
@@ -36,7 +38,7 @@ const DocumentEditorIntegration: React.FC<{ instance: any, id: string, onBack: (
         navigate(`/admin/documents/${id}`);
       },
       onError: (err: any) => {
-        alert('Failed to save changes: ' + (err.response?.data?.error || err.message));
+        toast.error('Failed to save changes: ' + (err.response?.data?.error || err.message));
       }
     }
   );
@@ -87,6 +89,7 @@ const DocumentEditorIntegration: React.FC<{ instance: any, id: string, onBack: (
 export const DocumentViewer: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { toast } = useToast();
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const isEditMode = searchParams.get('edit') === 'true';
@@ -160,10 +163,10 @@ export const DocumentViewer: React.FC = () => {
       onSuccess: () => {
         queryClient.invalidateQueries(['documentInstance', id]);
         queryClient.invalidateQueries('documentInstances');
-        alert('Document status updated successfully!');
+        toast.success('Document status updated successfully!');
       },
       onError: (error: any) => {
-        alert(`Failed to update status: ${error.response?.data?.error || error.message}`);
+        toast.error(`Failed to update status: ${error.response?.data?.error || error.message}`);
       },
     }
   );
@@ -204,24 +207,28 @@ export const DocumentViewer: React.FC = () => {
         }, 150);
       }
     } catch (error) {
-      alert('Failed to download document');
+      toast.error('Failed to download document');
     }
   };
 
-  const handleDelete = async () => {
-    if (window.confirm('Are you sure you want to delete this document?')) {
-      if (isLocal) {
-        try {
-          const { deleteDocument } = await import('../../../services/localDocumentService');
-          await deleteDocument(id!);
-          navigate(isAdmin ? '/admin/documents' : '/documents');
-        } catch (error) {
-          alert('Failed to delete local document');
+  const handleDelete = () => {
+    toast.confirm('Are you sure you want to delete this document?', {
+      onConfirm: async () => {
+        if (isLocal) {
+          try {
+            const { deleteDocument } = await import('../../../services/localDocumentService');
+            await deleteDocument(id!);
+            navigate(isAdmin ? '/admin/documents' : '/documents');
+          } catch (error) {
+            toast.error('Failed to delete local document');
+          }
+        } else {
+          deleteMutation.mutate();
         }
-      } else {
-        deleteMutation.mutate();
-      }
-    }
+      },
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+    });
   };
 
   const Layout = isAdmin ? AdminLayout : EmployeeLayout;
@@ -322,9 +329,11 @@ export const DocumentViewer: React.FC = () => {
                 <Button
                   variant="primary"
                   onClick={() => {
-                    if (window.confirm('Are you sure you want to mark this document as Final? This action cannot be undone.')) {
-                      updateStatusMutation.mutate('final');
-                    }
+                    toast.confirm('Are you sure you want to mark this document as Final? This action cannot be undone.', {
+                      onConfirm: () => updateStatusMutation.mutate('final'),
+                      confirmLabel: 'Mark Final',
+                      cancelLabel: 'Cancel',
+                    });
                   }}
                   disabled={updateStatusMutation.isLoading}
                 >

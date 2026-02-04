@@ -9,6 +9,7 @@ import { Button } from '../../../components/shared';
 import { DocumentBuilderProvider, useDocumentBuilder } from '../../../components/document-builder/DocumentBuilderProvider';
 import { DocumentBuilderContent } from '../../../components/document-builder/DocumentBuilderLayout';
 import { useAuth } from '../../../context/AuthContext';
+import { useToast } from '../../../context/ToastContext';
 import { organizationService } from '../../../services/organizationService';
 
 const DocumentFillerIntegration: React.FC<{ templateId: string | null; onBack: () => void; isAdmin: boolean }> = ({ templateId, onBack, isAdmin }) => {
@@ -17,6 +18,7 @@ const DocumentFillerIntegration: React.FC<{ templateId: string | null; onBack: (
   const queryClient = useQueryClient();
   const { state, dispatch } = useDocumentBuilder();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [title, setTitle] = useState('');
   const [templateLoaded, setTemplateLoaded] = useState(false);
 
@@ -86,14 +88,14 @@ const DocumentFillerIntegration: React.FC<{ templateId: string | null; onBack: (
           setTemplateLoaded(true);
         } else {
           console.error('DEBUG: No valid config found for template');
-          alert('This template is not supported by the new document builder.');
+          toast.error('This template is not supported by the new document builder.');
           onBack();
         }
         setTitle(`${data.name} - ${new Date().toLocaleDateString()}`);
       },
       onError: (err: any) => {
         console.error('DEBUG: Failed to fetch template:', err);
-        alert('Failed to load template structure: ' + (err.response?.data?.error || err.message));
+        toast.error('Failed to load template structure: ' + (err.response?.data?.error || err.message));
         onBack();
       }
     }
@@ -109,14 +111,29 @@ const DocumentFillerIntegration: React.FC<{ templateId: string | null; onBack: (
   // Auto-fill header from Entity Master Data when template loads and org data is available
   useEffect(() => {
     if (templateLoaded && orgData && state.header && templateId) {
+      const formatOrgAddress = () => {
+        // Prefer structured address if available
+        const parts = [
+          orgData.addressLine1,
+          orgData.addressLine2,
+          orgData.city?.name,
+          orgData.state?.name,
+          orgData.country?.name,
+          orgData.pinCode,
+        ].filter(Boolean);
+        if (parts.length) return parts.join(', ');
+        return orgData.address || '';
+      };
+
       // Only auto-fill if fields are empty (don't overwrite template defaults)
       const updates: any = {};
       
       if (!state.header.orgName && orgData.name) {
         updates.orgName = orgData.name;
       }
-      if (!state.header.orgAddress && orgData.address) {
-        updates.orgAddress = orgData.address;
+      if (!state.header.orgAddress) {
+        const addr = formatOrgAddress();
+        if (addr) updates.orgAddress = addr;
       }
       if (!state.header.orgGstin && orgData.gst) {
         updates.orgGstin = orgData.gst;
@@ -157,7 +174,7 @@ const DocumentFillerIntegration: React.FC<{ templateId: string | null; onBack: (
         if (err.response) {
           console.error('DEBUG: Error response data:', JSON.stringify(err.response.data, null, 2));
         }
-        alert('Failed to save document: ' + (err.response?.data?.error || err.response?.data?.message || err.message));
+        toast.error('Failed to save document: ' + (err.response?.data?.error || err.response?.data?.message || err.message));
       }
     }
   );

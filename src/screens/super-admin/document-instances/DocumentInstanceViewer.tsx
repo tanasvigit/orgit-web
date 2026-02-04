@@ -6,6 +6,7 @@ import { SuperAdminLayout } from '../../../components/super-admin/SuperAdminLayo
 import { documentInstanceService } from '../../../services/documentInstanceService';
 import { documentTemplateService } from '../../../services/documentTemplateService';
 import { Button } from '../../../components/shared';
+import { useToast } from '../../../context/ToastContext';
 
 export const DocumentInstanceViewer: React.FC = () => {
   const navigate = useNavigate();
@@ -13,6 +14,7 @@ export const DocumentInstanceViewer: React.FC = () => {
   const [searchParams] = useSearchParams();
   const isEditMode = searchParams.get('edit') === 'true';
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: instance, isLoading } = useQuery(
     ['documentInstance', id],
@@ -51,10 +53,10 @@ export const DocumentInstanceViewer: React.FC = () => {
       onSuccess: () => {
         queryClient.invalidateQueries(['documentInstance', id]);
         queryClient.invalidateQueries('documentInstances');
-        alert('Document status updated successfully!');
+        toast.success('Document status updated successfully!');
       },
       onError: (error: any) => {
-        alert(`Failed to update status: ${error.response?.data?.error || error.message}`);
+        toast.error(`Failed to update status: ${error.response?.data?.error || error.message}`);
       },
     }
   );
@@ -81,14 +83,16 @@ export const DocumentInstanceViewer: React.FC = () => {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (error) {
-      alert('Failed to download document');
+      toast.error('Failed to download document');
     }
   };
 
   const handleDelete = () => {
-    if (window.confirm('Are you sure you want to delete this document?')) {
-      deleteMutation.mutate();
-    }
+    toast.confirm('Are you sure you want to delete this document?', {
+      onConfirm: () => deleteMutation.mutate(),
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+    });
   };
 
   const onSubmit = (formData: any) => {
@@ -171,9 +175,11 @@ export const DocumentInstanceViewer: React.FC = () => {
               <Button
                 variant="primary"
                 onClick={() => {
-                  if (window.confirm('Are you sure you want to mark this document as Final? This action cannot be undone.')) {
-                    updateStatusMutation.mutate('final');
-                  }
+                  toast.confirm('Are you sure you want to mark this document as Final? This action cannot be undone.', {
+                    onConfirm: () => updateStatusMutation.mutate('final'),
+                    confirmLabel: 'Mark Final',
+                    cancelLabel: 'Cancel',
+                  });
                 }}
                 disabled={updateStatusMutation.isLoading}
               >

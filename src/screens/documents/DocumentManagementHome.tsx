@@ -6,6 +6,7 @@ import { documentInstanceService } from '../../services/documentInstanceService'
 import { documentTemplateService } from '../../services/documentTemplateService';
 import { getDocuments as getLocalDocuments, deleteDocument as deleteLocalDocument } from '../../services/localDocumentService';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { Button } from '../../components/shared';
 import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
 
@@ -13,6 +14,7 @@ export const DocumentManagementHome: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [filters, setFilters] = useState({
     status: '' as '' | 'draft' | 'final' | 'archived',
     templateId: '',
@@ -85,28 +87,32 @@ export const DocumentManagementHome: React.FC = () => {
     {
       onSuccess: () => {
         queryClient.invalidateQueries('documentInstances');
-        alert('Document status updated successfully!');
+        toast.success('Document status updated successfully!');
       },
       onError: (error: any) => {
-        alert(`Failed to update status: ${error.response?.data?.error || error.message}`);
+        toast.error(`Failed to update status: ${error.response?.data?.error || error.message}`);
       },
     }
   );
 
-  const handleDelete = async (id: string, isLocal: boolean = false) => {
-    if (window.confirm('Are you sure you want to delete this document?')) {
-      if (isLocal) {
-        try {
-          await deleteLocalDocument(id);
-          setLocalDocuments(prev => prev.filter(doc => doc.id !== id));
-          alert('Document deleted successfully!');
-        } catch (error) {
-          alert('Failed to delete local document');
+  const handleDelete = (id: string, isLocal: boolean = false) => {
+    toast.confirm('Are you sure you want to delete this document?', {
+      onConfirm: async () => {
+        if (isLocal) {
+          try {
+            await deleteLocalDocument(id);
+            setLocalDocuments(prev => prev.filter(doc => doc.id !== id));
+            toast.success('Document deleted successfully!');
+          } catch (error) {
+            toast.error('Failed to delete local document');
+          }
+        } else {
+          deleteMutation.mutate(id);
         }
-      } else {
-        deleteMutation.mutate(id);
-      }
-    }
+      },
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+    });
   };
 
   const handleDownload = async (id: string, isLocal: boolean = false) => {
@@ -128,7 +134,7 @@ export const DocumentManagementHome: React.FC = () => {
         }, 100);
       }
     } catch (error) {
-      alert('Failed to download document');
+      toast.error('Failed to download document');
     }
   };
 
@@ -379,9 +385,11 @@ export const DocumentManagementHome: React.FC = () => {
                       {instance.status === 'draft' && (
                         <button
                           onClick={() => {
-                            if (window.confirm('Mark this document as Final? This action cannot be undone.')) {
-                              updateStatusMutation.mutate({ id: instance.id, status: 'final' });
-                            }
+                            toast.confirm('Mark this document as Final? This action cannot be undone.', {
+                              onConfirm: () => updateStatusMutation.mutate({ id: instance.id, status: 'final' }),
+                              confirmLabel: 'Mark Final',
+                              cancelLabel: 'Cancel',
+                            });
                           }}
                           disabled={updateStatusMutation.isLoading}
                           className="text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20 p-1 rounded-full transition-colors disabled:opacity-50"

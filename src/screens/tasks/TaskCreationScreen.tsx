@@ -6,11 +6,13 @@ import { setTaskFinancial } from '../../utils/taskFinancialStorage';
 import { conversationService } from '../../services/conversationService';
 import { CustomDatePicker } from '../../components/shared/CustomDatePicker';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 
 export const TaskCreationScreen: React.FC = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [taskType, setTaskType] = useState<'one_time' | 'recurring'>('one_time');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -65,17 +67,17 @@ export const TaskCreationScreen: React.FC = () => {
   // Handle create task
   const handleCreate = async () => {
     if (!title.trim()) {
-      alert('Please enter a task title');
+      toast.error('Please enter a task title');
       return;
     }
 
     if (!dueDate) {
-      alert('Please select a due date');
+      toast.error('Please select a due date');
       return;
     }
 
     if (selectedAssignees.length === 0) {
-      alert('Please assign the task to at least one person');
+      toast.error('Please assign the task to at least one person');
       return;
     }
 
@@ -84,7 +86,7 @@ export const TaskCreationScreen: React.FC = () => {
       const parsedFinancialValue =
         financialValue.trim().length > 0 ? Number.parseFloat(financialValue) : null;
 
-      const taskData = {
+      const taskData: Record<string, unknown> = {
         title: title.trim(),
         description: description.trim(),
         task_type: taskType,
@@ -103,6 +105,10 @@ export const TaskCreationScreen: React.FC = () => {
           ...(taskOwner === 'contacts' && taskOwnerUserId ? { taskOwnerUserId } : {}),
         },
       };
+      // When task owner is another member, send creator_id so API sets them as owner and task is hidden from requester
+      if (taskOwner === 'contacts' && taskOwnerUserId) {
+        taskData.creator_id = taskOwnerUserId;
+      }
 
       const created = await taskService.createTask(taskData);
       const taskId = (created && typeof created === 'object' && (created as any).id) ? (created as any).id : null;
@@ -115,7 +121,7 @@ export const TaskCreationScreen: React.FC = () => {
       navigate('/tasks');
     } catch (error: any) {
       console.error('Create task error:', error);
-      alert(error.response?.data?.error || 'Failed to create task');
+      toast.error(error.response?.data?.error || 'Failed to create task');
     } finally {
       setLoading(false);
     }

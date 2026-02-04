@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { getReportingHierarchy, updateReportingHierarchy } from '../../../services/settingsService';
 import { AdminLayout } from '../../../components/admin/AdminLayout';
+import { useToast } from '../../../context/ToastContext';
 
 interface HierarchyData {
   [key: string]: any;
@@ -9,6 +10,7 @@ interface HierarchyData {
 
 export const ReportingHierarchy: React.FC = () => {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<HierarchyData>({});
   const [error, setError] = useState<string | null>(null);
@@ -28,11 +30,11 @@ export const ReportingHierarchy: React.FC = () => {
       queryClient.invalidateQueries('reportingHierarchy');
       setIsEditing(false);
       setError(null);
-      alert('Reporting hierarchy updated successfully');
+      toast.success('Reporting hierarchy updated successfully');
     },
     onError: (error: any) => {
       setError(error.response?.data?.error || 'Failed to update reporting hierarchy');
-      alert(error.response?.data?.error || 'Failed to update reporting hierarchy');
+      toast.error(error.response?.data?.error || 'Failed to update reporting hierarchy');
     },
   });
 

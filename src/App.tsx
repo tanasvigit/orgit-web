@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
 import ErrorBoundary from './components/ErrorBoundary';
 // import { BottomNav } from './components/shared'; // Not used in super admin routes
 import { MobileNumberRegistration } from './screens/auth/MobileNumberRegistration';
@@ -39,6 +40,8 @@ import { EmployeeList } from './screens/admin/employees/EmployeeList';
 import { PlatformSettings } from './screens/super-admin/settings/PlatformSettings';
 import { AdminDashboard } from './screens/admin/Dashboard';
 import { EntityMasterData } from './screens/admin/EntityMasterData';
+import { ServiceList } from './screens/admin/ServiceList';
+import { EntityList } from './screens/admin/EntityList';
 import { ProfileScreen } from './screens/profile/ProfileScreen';
 import { UserProfileScreen } from './screens/profile/UserProfileScreen';
 import { ProfileSettings } from './screens/settings/ProfileSettings';
@@ -165,6 +168,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <ToastProvider>
         <Router>
           <Routes>
             <Route path="/login" element={<Login />} />
@@ -626,6 +630,22 @@ function App() {
               }
             />
             <Route
+              path="/admin/services"
+              element={
+                <AdminProtectedRoute>
+                  <ServiceList />
+                </AdminProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/entities"
+              element={
+                <AdminProtectedRoute>
+                  <EntityList />
+                </AdminProtectedRoute>
+              }
+            />
+            <Route
               path="/admin/settings/organisation-structure"
               element={
                 <AdminProtectedRoute>
@@ -692,6 +712,7 @@ function App() {
             <Route path="/" element={<Navigate to="/login" replace />} />
           </Routes>
         </Router>
+        </ToastProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

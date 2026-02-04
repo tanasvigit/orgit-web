@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { taskService } from '../../services/taskService';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { format } from 'date-fns';
 
 interface TaskDetailsModalProps {
@@ -16,6 +17,7 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
   taskId,
 }) => {
   const { user } = useAuth();
+  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -55,10 +57,10 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
         queryClient.invalidateQueries(['task', taskId]);
         queryClient.invalidateQueries(['tasks']);
         queryClient.invalidateQueries(['dashboard']);
-        alert('Task accepted successfully!');
+        toast.success('Task accepted successfully!');
       },
       onError: (error: any) => {
-        alert(error.response?.data?.error || 'Failed to accept task');
+        toast.error(error.response?.data?.error || 'Failed to accept task');
       },
     }
   );
@@ -73,10 +75,10 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
         queryClient.invalidateQueries(['dashboard']);
         setShowRejectModal(false);
         setRejectionReason('');
-        alert('Task rejected successfully!');
+        toast.success('Task rejected successfully!');
       },
       onError: (error: any) => {
-        alert(error.response?.data?.error || 'Failed to reject task');
+        toast.error(error.response?.data?.error || 'Failed to reject task');
       },
     }
   );
@@ -91,7 +93,7 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
         queryClient.invalidateQueries(['dashboard']);
       },
       onError: (error: any) => {
-        alert(error.response?.data?.error || 'Failed to update task status');
+        toast.error(error.response?.data?.error || 'Failed to update task status');
       },
     }
   );
@@ -107,7 +109,7 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
 
   const handleReject = async () => {
     if (!rejectionReason.trim()) {
-      alert('Please provide a reason for rejection');
+      toast.error('Please provide a reason for rejection');
       return;
     }
     setProcessing(true);

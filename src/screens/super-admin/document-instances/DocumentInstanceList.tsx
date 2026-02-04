@@ -5,10 +5,12 @@ import { SuperAdminLayout } from '../../../components/super-admin/SuperAdminLayo
 import { documentInstanceService } from '../../../services/documentInstanceService';
 import { documentTemplateService } from '../../../services/documentTemplateService';
 import { Button } from '../../../components/shared';
+import { useToast } from '../../../context/ToastContext';
 
 export const DocumentInstanceList: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [filters, setFilters] = useState({
     status: '' as '' | 'draft' | 'final' | 'archived',
     templateId: '',
@@ -49,18 +51,20 @@ export const DocumentInstanceList: React.FC = () => {
     {
       onSuccess: () => {
         queryClient.invalidateQueries('documentInstances');
-        alert('Document status updated successfully!');
+        toast.success('Document status updated successfully!');
       },
       onError: (error: any) => {
-        alert(`Failed to update status: ${error.response?.data?.error || error.message}`);
+        toast.error(`Failed to update status: ${error.response?.data?.error || error.message}`);
       },
     }
   );
 
   const handleDelete = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this document?')) {
-      deleteMutation.mutate(id);
-    }
+    toast.confirm('Are you sure you want to delete this document?', {
+      onConfirm: () => deleteMutation.mutate(id),
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+    });
   };
 
   const handleDownload = async (id: string) => {
@@ -75,7 +79,7 @@ export const DocumentInstanceList: React.FC = () => {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (error) {
-      alert('Failed to download document');
+      toast.error('Failed to download document');
     }
   };
 
@@ -212,9 +216,11 @@ export const DocumentInstanceList: React.FC = () => {
                         {instance.status === 'draft' && (
                           <button
                             onClick={() => {
-                              if (window.confirm('Mark this document as Final? This action cannot be undone.')) {
-                                updateStatusMutation.mutate({ id: instance.id, status: 'final' });
-                              }
+                              toast.confirm('Mark this document as Final? This action cannot be undone.', {
+                                onConfirm: () => updateStatusMutation.mutate({ id: instance.id, status: 'final' }),
+                                confirmLabel: 'Mark Final',
+                                cancelLabel: 'Cancel',
+                              });
                             }}
                             disabled={updateStatusMutation.isLoading}
                             className="text-xs text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 font-medium disabled:opacity-50"

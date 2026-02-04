@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from 'react-query';
 import { SuperAdminLayout } from '../../../components/super-admin/SuperAdminLayout';
+import { useToast } from '../../../context/ToastContext';
 import { organizationService } from '../../../services/organizationService';
 
 export const OrganizationDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<'info' | 'users' | 'tasks' | 'stats'>('info');
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -45,7 +47,7 @@ export const OrganizationDetail: React.FC = () => {
       queryClient.invalidateQueries(['organizations']);
       navigate('/super-admin/organizations');
     } catch (error: any) {
-      alert(`Error deleting organization: ${error.response?.data?.error || error.message}`);
+      toast.error(`Error deleting organization: ${error.response?.data?.error || error.message}`);
     } finally {
       setIsDeleting(false);
       setDeleteConfirm(false);

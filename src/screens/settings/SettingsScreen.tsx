@@ -11,8 +11,6 @@ export const SettingsScreen: React.FC = () => {
 
   const commonSettings = [
     { icon: 'person', title: 'Profile', subtitle: 'Update your profile details', screen: '/settings/profile' },
-    { icon: 'lock', title: 'Change Password', subtitle: 'Update your password', screen: '/settings/change-password' },
-    { icon: 'palette', title: 'Theme', subtitle: 'Light or dark mode', screen: '/settings/theme' },
   ];
 
   const adminSettings = [
@@ -21,9 +19,18 @@ export const SettingsScreen: React.FC = () => {
       icon: 'account-tree',
       items: [
         { icon: 'business', title: 'Entity Master Data', subtitle: 'Name, logo, address, contact', screen: '/admin/entity-master' },
+        { icon: 'group', title: 'Employees', subtitle: 'Manage employees, reporting & levels', screen: '/admin/users' },
         { icon: 'domain', title: 'Departments', subtitle: 'Manage business units', screen: '/admin/settings/departments' },
         { icon: 'badge', title: 'Designations', subtitle: 'Job titles & levels', screen: '/admin/settings/designations' },
-        { icon: 'account-tree', title: 'Reporting Hierarchy', subtitle: 'Visual reporting structure', screen: '/admin/settings/reporting-hierarchy' },
+        { icon: 'account_tree', title: 'Organisation Structure', subtitle: 'Overall org structure view', screen: '/admin/settings/organisation-structure' },
+      ],
+    },
+    {
+      section: 'Master Data',
+      icon: 'dataset',
+      items: [
+        { icon: 'list_alt', title: 'Service List', subtitle: 'Recurring and one-time services', screen: '/admin/services' },
+        { icon: 'groups', title: 'Entity List', subtitle: 'Clients and services provided to them', screen: '/admin/entities' },
       ],
     },
     {
@@ -32,7 +39,6 @@ export const SettingsScreen: React.FC = () => {
       items: [
         { icon: 'schedule', title: 'Reminder Configuration', subtitle: 'Due soon days & intervals', screen: '/admin/settings/reminder-config' },
         { icon: 'trending_up', title: 'Auto Escalation Configuration', subtitle: 'Rules for task escalation', screen: '/admin/settings/auto-escalation' },
-        { icon: 'repeat', title: 'Recurring Task Settings', subtitle: 'Frequency options & due date calculation', screen: '/admin/settings/recurring-tasks' },
       ],
     },
   ];
@@ -43,7 +49,7 @@ export const SettingsScreen: React.FC = () => {
         console.log('Navigating to:', screen);
         navigate(screen);
       }}
-      className="w-full flex items-center justify-between p-5 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary/50 hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-md transition-all text-left group"
+      className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800/90 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 hover:border-primary/40 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 text-left group"
     >
       <div className="flex items-center gap-4">
         <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">

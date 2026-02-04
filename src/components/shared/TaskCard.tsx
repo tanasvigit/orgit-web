@@ -59,13 +59,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
   return (
     <div
-      className={`group relative bg-white dark:bg-background-dark-subtle rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-md transition-shadow overflow-hidden border border-gray-100 dark:border-white/5 ${
-        status === 'completed' ? 'opacity-70 hover:opacity-100' : ''
+      className={`group relative bg-white dark:bg-slate-800/80 rounded-2xl shadow-md hover:shadow-lg transition-all duration-200 overflow-hidden border border-slate-200/80 dark:border-slate-600/80 hover:border-slate-300 dark:hover:border-slate-500 ${
+        status === 'completed' ? 'opacity-75 hover:opacity-100' : ''
       } cursor-pointer`}
       onClick={onClick}
     >
-      <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${statusColorClasses[status]}`} />
-      <div className="p-4 pl-5">
+      <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl ${statusColorClasses[status]}`} />
+      <div className="p-5 pl-6">
         <div className="flex justify-between items-start mb-2">
           <StatusBadge status={status} />
           <button
@@ -115,14 +115,14 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           </div>
         )}
         {progress !== undefined && status === 'inprogress' && (
-          <div className="w-full bg-gray-100 dark:bg-white/10 rounded-full h-1.5 mb-4">
+          <div className="w-full bg-slate-100 dark:bg-slate-600/30 rounded-full h-2 mb-4">
             <div
-              className={`${statusColorClasses[status]} h-1.5 rounded-full`}
+              className={`${statusColorClasses[status]} h-2 rounded-full transition-all duration-300`}
               style={{ width: `${progress}%` }}
             />
           </div>
         )}
-        <div className="flex items-center justify-between border-t border-gray-50 dark:border-white/5 pt-3">
+        <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-600/50 pt-3 mt-1">
           <div className={`flex items-center gap-2 ${statusTextColorClasses[status]}`}>
             {dueDate && (
               <>

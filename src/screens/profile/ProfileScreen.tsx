@@ -1,15 +1,16 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { authService } from '../../services/authService';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { Avatar } from '../../components/shared';
-import { Toast } from '../../components/common/Toast';
 
 export const ProfileScreen: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout, updateUser } = useAuth();
+  const { toast } = useToast();
   const isAdmin = user?.role === 'admin';
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -18,7 +19,6 @@ export const ProfileScreen: React.FC = () => {
   const [contactNumber, setContactNumber] = useState(user?.mobile || user?.phone || user?.contact_number || '');
   const [localPhoto, setLocalPhoto] = useState<string | null>(user?.profilePhotoUrl || user?.profile_photo || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [toast, setToast] = useState({ message: '', type: 'success' as 'success' | 'error' | 'info', visible: false });
 
   // Sync local state with user context when user changes
   useEffect(() => {
@@ -56,12 +56,12 @@ export const ProfileScreen: React.FC = () => {
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert('Please select an image file');
+      toast.error('Please select an image file');
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      alert('Image size should be less than 5MB');
+      toast.error('Image size should be less than 5MB');
       return;
     }
 
@@ -80,7 +80,7 @@ export const ProfileScreen: React.FC = () => {
       }
     } catch (error) {
       console.error('Photo upload error:', error);
-      alert('Failed to upload photo. Please try again.');
+      toast.error('Failed to upload photo. Please try again.');
     }
   };
 
@@ -91,11 +91,7 @@ export const ProfileScreen: React.FC = () => {
       // Ensure name is provided (backend validation requires it)
       const profileName = name.trim() || user?.name || '';
       if (!profileName) {
-        setToast({
-          message: 'Name is required',
-          type: 'error',
-          visible: true,
-        });
+        toast.error('Name is required');
         setSaving(false);
         return;
       }
@@ -140,38 +136,28 @@ export const ProfileScreen: React.FC = () => {
         
         setIsEditing(false);
         
-        // Show success toast
-        setToast({
-          message: 'Profile updated successfully!',
-          type: 'success',
-          visible: true,
-        });
+        toast.success('Profile updated successfully!');
       } else {
-        // Show error toast if response is not successful
-        setToast({
-          message: response.error || 'Failed to update profile. Please try again.',
-          type: 'error',
-          visible: true,
-        });
+        toast.error(response.error || 'Failed to update profile. Please try again.');
       }
     } catch (error: any) {
       console.error('Profile save error:', error);
       const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message || 'Failed to update profile. Please try again.';
-      setToast({
-        message: errorMessage,
-        type: 'error',
-        visible: true,
-      });
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleLogout = async () => {
-    if (confirm('Are you sure you want to log out?')) {
-      await logout();
-      navigate('/login');
-    }
+  const handleLogout = () => {
+    toast.confirm('Are you sure you want to log out?', {
+      onConfirm: async () => {
+        await logout();
+        navigate('/login');
+      },
+      confirmLabel: 'Log out',
+      cancelLabel: 'Cancel',
+    });
   };
 
   const content = (
@@ -345,29 +331,9 @@ export const ProfileScreen: React.FC = () => {
   );
 
   if (isAdmin) {
-    return (
-      <>
-        <AdminLayout>{content}</AdminLayout>
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          visible={toast.visible}
-          onClose={() => setToast({ ...toast, visible: false })}
-        />
-      </>
-    );
+    return <AdminLayout>{content}</AdminLayout>;
   }
 
-  return (
-    <>
-      <EmployeeLayout>{content}</EmployeeLayout>
-      <Toast
-        message={toast.message}
-        type={toast.type}
-        visible={toast.visible}
-        onClose={() => setToast({ ...toast, visible: false })}
-      />
-    </>
-  );
+  return <EmployeeLayout>{content}</EmployeeLayout>;
 };
 

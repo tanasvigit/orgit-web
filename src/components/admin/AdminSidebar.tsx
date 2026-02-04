@@ -15,6 +15,8 @@ const navItems: NavItem[] = [
   { path: '/admin/documents', icon: 'description', label: 'Document Management' },
   // { path: '/admin/compliance', icon: 'verified_user', label: 'Compliance Management' },
   { path: '/admin/users', icon: 'group', label: 'Employees' },
+  { path: '/admin/services', icon: 'list_alt', label: 'Service List' },
+  { path: '/admin/entities', icon: 'groups', label: 'Entity List' },
 ];
 
 const ADMIN_STORAGE_KEY = 'admin-sidebar-minimized-by-messages';

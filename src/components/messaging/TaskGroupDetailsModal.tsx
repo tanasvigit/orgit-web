@@ -5,6 +5,7 @@ import { taskService } from '../../services/taskService';
 import { conversationService } from '../../services/conversationService';
 import { chatUserService } from '../../services/chatUserService';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { format } from 'date-fns';
 import { Avatar } from '../shared';
 import { User } from '../../../shared/src/types';
@@ -25,6 +26,7 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
   conversationData,
 }) => {
   const { user } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin';
@@ -90,10 +92,10 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
         setShowAddMembers(false);
         setSearchQuery('');
         setSelectedUserIds([]);
-        alert('Members added successfully!');
+        toast.success('Members added successfully!');
       },
       onError: (error: any) => {
-        alert(`Failed to add members: ${error.response?.data?.error || error.message}`);
+        toast.error(`Failed to add members: ${error.response?.data?.error || error.message}`);
       },
     }
   );
@@ -107,26 +109,28 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
         onClose();
         // Navigate back to messages list
         navigate(isAdmin ? '/admin/messages' : '/messages');
-        alert('You have left the group');
+        toast.success('You have left the group');
       },
       onError: (error: any) => {
-        alert(`Failed to exit group: ${error.response?.data?.error || error.message}`);
+        toast.error(`Failed to exit group: ${error.response?.data?.error || error.message}`);
       },
     }
   );
 
   const handleAddMembers = () => {
     if (selectedUserIds.length === 0) {
-      alert('Please select at least one member to add');
+      toast.error('Please select at least one member to add');
       return;
     }
     addMembersMutation.mutate(selectedUserIds);
   };
 
   const handleExitGroup = () => {
-    if (window.confirm('Are you sure you want to exit this group?')) {
-      exitGroupMutation.mutate();
-    }
+    toast.confirm('Are you sure you want to exit this group?', {
+      onConfirm: () => exitGroupMutation.mutate(),
+      confirmLabel: 'Exit',
+      cancelLabel: 'Cancel',
+    });
   };
 
   const toggleUserSelection = (userId: string) => {

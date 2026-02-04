@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from 'react-query';
 import { getReminderConfig, updateReminderConfig } from '../../../services/settingsService';
 import { AdminLayout } from '../../../components/admin/AdminLayout';
+import { useToast } from '../../../context/ToastContext';
 
 interface ReminderConfig {
   dueSoonDays?: number;
@@ -13,6 +14,7 @@ interface ReminderConfig {
 
 export const ReminderConfig: React.FC = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [config, setConfig] = useState<ReminderConfig>({
     dueSoonDays: 3,
     pushEnabled: true,
@@ -33,11 +35,11 @@ export const ReminderConfig: React.FC = () => {
 
   const updateMutation = useMutation(updateReminderConfig, {
     onSuccess: () => {
-      alert('Reminder configuration updated successfully');
+      toast.success('Reminder configuration updated successfully');
       navigate(-1);
     },
     onError: (error: any) => {
-      alert(error.response?.data?.error || 'Failed to update configuration');
+      toast.error(error.response?.data?.error || 'Failed to update configuration');
     },
   });
 

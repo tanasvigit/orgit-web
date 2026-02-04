@@ -1,10 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopAppBar, Button } from '../../components/shared';
+import { useToast } from '../../context/ToastContext';
 import { uploadDocument } from '../../services/localDocumentService';
 
 export const AddDocumentScreen: React.FC = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
@@ -18,13 +20,13 @@ export const AddDocumentScreen: React.FC = () => {
       // Validate file type
       const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
       if (!allowedTypes.includes(file.type)) {
-        alert('Please select a PDF, DOC, or DOCX file');
+        toast.error('Please select a PDF, DOC, or DOCX file');
         return;
       }
       
       // Validate file size (10MB max)
       if (file.size > 10 * 1024 * 1024) {
-        alert('File size must be less than 10MB');
+        toast.error('File size must be less than 10MB');
         return;
       }
 
@@ -37,22 +39,22 @@ export const AddDocumentScreen: React.FC = () => {
 
   const handleUpload = async () => {
     if (!selectedFile) {
-      alert('Please select a file');
+      toast.error('Please select a file');
       return;
     }
 
     if (!title.trim()) {
-      alert('Please enter a document title');
+      toast.error('Please enter a document title');
       return;
     }
 
     try {
       setUploading(true);
       await uploadDocument(title.trim(), selectedFile, category || undefined, description || undefined);
-      alert('Document uploaded successfully!');
+      toast.success('Document uploaded successfully!');
       navigate('/documents');
     } catch (error: any) {
-      alert(error.message || 'Failed to upload document');
+      toast.error(error.message || 'Failed to upload document');
     } finally {
       setUploading(false);
     }

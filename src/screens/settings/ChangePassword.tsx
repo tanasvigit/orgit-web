@@ -4,10 +4,12 @@ import { authService } from '../../services/authService';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 
 export const ChangePassword: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { toast } = useToast();
   const isAdmin = user?.role === 'admin';
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -19,22 +21,22 @@ export const ChangePassword: React.FC = () => {
 
   const handleChangePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
-      alert('Please fill in all fields');
+      toast.error('Please fill in all fields');
       return;
     }
 
     if (newPassword.length < 6) {
-      alert('New password must be at least 6 characters');
+      toast.error('New password must be at least 6 characters');
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      alert('New passwords do not match');
+      toast.error('New passwords do not match');
       return;
     }
 
     if (currentPassword === newPassword) {
-      alert('New password must be different from current password');
+      toast.error('New password must be different from current password');
       return;
     }
 
@@ -46,12 +48,12 @@ export const ChangePassword: React.FC = () => {
       });
 
       if (response.success) {
-        alert('Password changed successfully');
+        toast.success('Password changed successfully');
         navigate(-1);
       }
     } catch (error: any) {
       console.error('Change password error:', error);
-      alert(error.response?.data?.error || 'Failed to change password');
+      toast.error(error.response?.data?.error || 'Failed to change password');
     } finally {
       setLoading(false);
     }

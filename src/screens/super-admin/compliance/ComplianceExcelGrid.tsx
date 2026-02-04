@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { complianceService } from '../../../services/complianceService';
 import { ComplianceMaster } from '../../../../shared/src/types';
 import { useAuth } from '../../../context/AuthContext';
+import { useToast } from '../../../context/ToastContext';
 import { Toast } from '../../../components/common/Toast';
 
 interface GridCell {
@@ -53,6 +54,7 @@ const COLUMN_DEFINITIONS = [
 
 export const ComplianceExcelGrid: React.FC = () => {
   const { user } = useAuth();
+  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [rows, setRows] = useState<ComplianceMaster[]>([]);
   const [editingCell, setEditingCell] = useState<GridCell | null>(null);
@@ -169,7 +171,7 @@ export const ComplianceExcelGrid: React.FC = () => {
         setRows((prev) => prev.filter((r) => r.id !== id));
       },
       onError: (error: any) => {
-        alert(`Error deleting compliance: ${error.response?.data?.error || error.message}`);
+        toast.error(`Error deleting compliance: ${error.response?.data?.error || error.message}`);
       },
     }
   );

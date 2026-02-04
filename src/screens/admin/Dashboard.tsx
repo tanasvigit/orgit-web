@@ -55,6 +55,13 @@ export const AdminDashboard: React.FC = () => {
 
   const currentUserId = user?.id || (user as any)?.userId;
 
+  const refetchAdminDashboard = React.useCallback(() => {
+    queryClient.invalidateQueries(['admin-dashboard-statistics']);
+    queryClient.invalidateQueries(['admin-dashboard']);
+    refetchStatistics();
+    refetchDashboard();
+  }, [queryClient, refetchDashboard, refetchStatistics]);
+
   // Match mobile useFocusEffect: refresh dashboard whenever screen comes into focus.
   useEffect(() => {
     const pathname = location.pathname;
@@ -62,27 +69,29 @@ export const AdminDashboard: React.FC = () => {
 
     if (isAdminDashboard) {
       prevPathRef.current = pathname;
-      queryClient.invalidateQueries(['admin-dashboard-statistics']);
-      queryClient.invalidateQueries(['admin-dashboard']);
-      refetchStatistics();
-      refetchDashboard();
+      refetchAdminDashboard();
     } else {
       prevPathRef.current = pathname;
     }
-  }, [location.pathname, queryClient, refetchDashboard, refetchStatistics]);
+  }, [location.pathname, refetchAdminDashboard]);
 
   useEffect(() => {
     const onFocus = () => {
-      if (location.pathname === '/admin') {
-        queryClient.invalidateQueries(['admin-dashboard-statistics']);
-        queryClient.invalidateQueries(['admin-dashboard']);
-        refetchStatistics();
-        refetchDashboard();
-      }
+      if (location.pathname === '/admin') refetchAdminDashboard();
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [location.pathname, queryClient, refetchDashboard, refetchStatistics]);
+  }, [location.pathname, refetchAdminDashboard]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && location.pathname === '/admin') {
+        refetchAdminDashboard();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [location.pathname, refetchAdminDashboard]);
 
   const flattenTasksStructure = (tasks: any): any[] => {
     const result: any[] = [];
@@ -297,11 +306,8 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const getStatusCount = (status: 'overdue' | 'duesoon' | 'inprogress' | 'completed', view: 'self' | 'assigned') => {
-    // Match mobile: use backend statistics so counts match API (no local override)
-    if (!statistics?.data) {
-      console.log('[Admin Dashboard] No statistics data available');
-      return 0;
-    }
+    const stats = statistics?.data ?? statistics;
+    if (!stats) return 0;
     const prefix = view === 'self' ? 'selfTasks' : 'assignedTasks';
     // Map status to correct key format matching backend response
     const statusKeyMap: Record<string, string> = {
@@ -312,22 +318,19 @@ export const AdminDashboard: React.FC = () => {
     };
     const statusKey = statusKeyMap[status] || status.charAt(0).toUpperCase() + status.slice(1);
     const key = `${prefix}${statusKey}`;
-    const value = statistics.data[key] || 0;
-    console.log(`[Admin Dashboard] ${key}:`, value);
-    return value;
+    return (stats[key] ?? stats[key.toLowerCase()] ?? 0) as number;
   };
 
   const getTotalCount = (view: 'self' | 'assigned') => {
-    if (!statistics?.data) return 0;
+    const stats = statistics?.data ?? statistics;
+    if (!stats) return 0;
     const prefix = view === 'self' ? 'selfTasks' : 'assignedTasks';
-    const total = (
-      (statistics.data[`${prefix}Overdue`] || 0) +
-      (statistics.data[`${prefix}DueSoon`] || 0) +
-      (statistics.data[`${prefix}InProgress`] || 0) +
-      (statistics.data[`${prefix}Completed`] || 0)
+    return (
+      (stats[`${prefix}Overdue`] ?? 0) +
+      (stats[`${prefix}DueSoon`] ?? 0) +
+      (stats[`${prefix}InProgress`] ?? 0) +
+      (stats[`${prefix}Completed`] ?? 0)
     );
-    console.log(`[Admin Dashboard] Total ${prefix}:`, total);
-    return total;
   };
 
   const renderTaskSection = (
@@ -363,6 +366,7 @@ export const AdminDashboard: React.FC = () => {
             }))
             .filter((a: any) => !!a.id);
           const hasFinance = merged.financial_value != null || merged.finance_type;
+          const isCreator = (merged.created_by || merged.creator_id) === currentUserId;
 
           return (
             <TaskCard
@@ -375,7 +379,7 @@ export const AdminDashboard: React.FC = () => {
               category={merged.category}
               assignees={cardAssignees}
               progress={status === 'inprogress' ? progress : undefined}
-              finance={hasFinance ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
+              finance={hasFinance && isCreator ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
               onClick={() => navigate(`/admin/tasks/${task.id}`)}
             />
           );
@@ -393,71 +397,87 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         {/* Statistics Cards for this section */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-5 mb-6">
           {/* To-Do Card (Today’s recurring, not completed) */}
-          <div className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-primary/30 hover:shadow-md transition-all">
-            <div className="mb-2 p-2 rounded-full bg-primary/10 text-primary">
-              <span className="material-symbols-outlined text-xl">today</span>
+          <div className="bg-white dark:bg-slate-800/90 p-5 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 flex flex-col items-center text-center group hover:shadow-xl hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200">
+            <div className="mb-3 p-2.5 rounded-xl bg-primary/15 text-primary">
+              <span className="material-symbols-outlined text-2xl">today</span>
             </div>
             <span className="text-2xl font-bold text-primary mb-1">
               {getToDoTasks(viewType).length}
             </span>
-            <span className="text-xs font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
               TO DO
             </span>
           </div>
           
-          {/* Overdue Card */}
-          <div className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-overdue/30 hover:shadow-md transition-all">
-            <div className="mb-2 p-2 rounded-full bg-status-overdue/10 text-status-overdue">
-              <span className="material-symbols-outlined text-xl">priority_high</span>
+          {/* Overdue Card - clickable */}
+          <button
+            type="button"
+            onClick={() => navigate('/admin/tasks?status=overdue')}
+            className="bg-white dark:bg-slate-800/90 p-5 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 flex flex-col items-center text-center group hover:shadow-xl hover:border-status-overdue/50 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer text-left"
+          >
+            <div className="mb-3 p-2.5 rounded-xl bg-status-overdue/15 text-status-overdue">
+              <span className="material-symbols-outlined text-2xl">priority_high</span>
             </div>
             <span className="text-2xl font-bold text-status-overdue mb-1">
               {getStatusCount('overdue', viewType)}
             </span>
-            <span className="text-xs font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
               Overdue
             </span>
-          </div>
+          </button>
           
-          {/* Due Soon Card */}
-          <div className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-duesoon/30 hover:shadow-md transition-all">
-            <div className="mb-2 p-2 rounded-full bg-status-duesoon/10 text-status-duesoon">
-              <span className="material-symbols-outlined text-xl">hourglass_top</span>
+          {/* Due Soon Card - clickable */}
+          <button
+            type="button"
+            onClick={() => navigate('/admin/tasks?status=duesoon')}
+            className="bg-white dark:bg-slate-800/90 p-5 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 flex flex-col items-center text-center group hover:shadow-xl hover:border-status-duesoon/50 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer text-left"
+          >
+            <div className="mb-3 p-2.5 rounded-xl bg-status-duesoon/15 text-status-duesoon">
+              <span className="material-symbols-outlined text-2xl">hourglass_top</span>
             </div>
             <span className="text-2xl font-bold text-status-duesoon mb-1">
               {getStatusCount('duesoon', viewType)}
             </span>
-            <span className="text-xs font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
               Due Soon
             </span>
-          </div>
+          </button>
           
-          {/* In Progress Card */}
-          <div className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-inprogress/30 hover:shadow-md transition-all">
-            <div className="mb-2 p-2 rounded-full bg-status-inprogress/10 text-status-inprogress">
-              <span className="material-symbols-outlined text-xl">pending_actions</span>
+          {/* In Progress Card - clickable */}
+          <button
+            type="button"
+            onClick={() => navigate('/admin/tasks?status=inprogress')}
+            className="bg-white dark:bg-slate-800/90 p-5 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 flex flex-col items-center text-center group hover:shadow-xl hover:border-status-inprogress/50 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer text-left"
+          >
+            <div className="mb-3 p-2.5 rounded-xl bg-status-inprogress/15 text-status-inprogress">
+              <span className="material-symbols-outlined text-2xl">pending_actions</span>
             </div>
             <span className="text-2xl font-bold text-status-inprogress mb-1">
               {getStatusCount('inprogress', viewType)}
             </span>
-            <span className="text-xs font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
               In Progress
             </span>
-          </div>
+          </button>
           
-          {/* Completed Card */}
-          <div className="bg-white dark:bg-background-dark-subtle p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 dark:border-white/5 flex flex-col items-center text-center group hover:border-status-completed/30 hover:shadow-md transition-all">
-            <div className="mb-2 p-2 rounded-full bg-status-completed/10 text-status-completed">
-              <span className="material-symbols-outlined text-xl">task_alt</span>
+          {/* Completed Card - clickable */}
+          <button
+            type="button"
+            onClick={() => navigate('/admin/tasks?status=completed')}
+            className="bg-white dark:bg-slate-800/90 p-5 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 flex flex-col items-center text-center group hover:shadow-xl hover:border-status-completed/50 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer text-left"
+          >
+            <div className="mb-3 p-2.5 rounded-xl bg-status-completed/15 text-status-completed">
+              <span className="material-symbols-outlined text-2xl">task_alt</span>
             </div>
             <span className="text-2xl font-bold text-status-completed mb-1">
               {getStatusCount('completed', viewType)}
             </span>
-            <span className="text-xs font-semibold text-text-muted dark:text-white/60 uppercase tracking-wide">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
               Completed
             </span>
-          </div>
+          </button>
         </div>
       </div>
     );
@@ -484,7 +504,7 @@ export const AdminDashboard: React.FC = () => {
             <div>
               <button
                 onClick={() => setExpandedDM(!expandedDM)}
-                className="w-full flex items-center justify-between p-5 bg-white dark:bg-background-dark-subtle rounded-xl shadow-sm border border-gray-100 dark:border-white/5 group hover:shadow-md hover:border-primary/30 transition-all"
+                className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800/90 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 group hover:shadow-xl hover:border-primary/40 transition-all duration-200"
               >
                 <div className="flex items-center gap-4">
                   <div className="p-3 bg-primary/10 rounded-lg text-primary">
@@ -661,6 +681,7 @@ export const AdminDashboard: React.FC = () => {
                       .filter((a: any) => !!a.id);
 
                     const hasFinance = merged.financial_value != null || merged.finance_type;
+                    const isCreator = (merged.created_by || merged.creator_id) === currentUserId;
                     return (
                       <TaskCard
                         key={task.id}
@@ -672,7 +693,7 @@ export const AdminDashboard: React.FC = () => {
                         category={merged.category}
                         assignees={cardAssignees}
                         progress={progress}
-                        finance={hasFinance ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
+                        finance={hasFinance && isCreator ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
                         onClick={() =>
                           convId
                             ? navigate(`/admin/tasks/task-group/${convId}`)
@@ -691,7 +712,7 @@ export const AdminDashboard: React.FC = () => {
             <div>
               <button
                 onClick={() => setExpandedCM(!expandedCM)}
-                className="w-full flex items-center justify-between p-5 bg-white dark:bg-background-dark-subtle rounded-xl shadow-sm border border-gray-100 dark:border-white/5 group hover:shadow-md hover:border-primary/30 transition-all"
+                className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800/90 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 group hover:shadow-xl hover:border-primary/40 transition-all duration-200"
               >
                 <div className="flex items-center gap-4">
                   <div className="p-3 bg-primary/10 rounded-lg text-primary">

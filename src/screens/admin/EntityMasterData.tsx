@@ -4,23 +4,67 @@ import { useNavigate } from 'react-router-dom';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { organizationService } from '../../services/organizationService';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import api from '../../services/api';
+import { masterDataService } from '../../services/masterDataService';
 
 export const EntityMasterData: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [formData, setFormData] = useState({
     name: '',
+    shortName: '',
     email: '',
     mobile: '',
     address: '',
+    countryId: '',
+    stateId: '',
+    cityId: '',
+    pinCode: '',
+    addressLine1: '',
+    addressLine2: '',
+    website: '',
+    phoneNumber: '',
+    orgConstitution: '',
+    depotCount: 0,
+    warehouseCount: 0,
     gst: '',
     pan: '',
     cin: '',
     logoUrl: '',
     accountingYearStart: '',
+    costCentres: [] as Array<{ name: string; shortName?: string; displayOrder?: number }>,
+    branches: [] as Array<{ name: string; shortName?: string; address?: string; gstNumber?: string }>,
   });
+
+  const { data: countriesData } = useQuery(['master-countries'], async () => {
+    const res = await masterDataService.getCountries();
+    return res.data.data || res.data;
+  });
+  const { data: orgConstitutionsData } = useQuery(['master-org-constitutions'], async () => {
+    const res = await masterDataService.getOrgConstitutions();
+    return res.data.data || res.data;
+  });
+
+  const { data: statesData } = useQuery(
+    ['master-states', formData.countryId],
+    async () => {
+      const res = await masterDataService.getStates(formData.countryId);
+      return res.data.data || res.data;
+    },
+    { enabled: !!formData.countryId }
+  );
+
+  const { data: citiesData } = useQuery(
+    ['master-cities', formData.stateId],
+    async () => {
+      const res = await masterDataService.getCities(formData.stateId);
+      return res.data.data || res.data;
+    },
+    { enabled: !!formData.stateId }
+  );
 
   // Get user's organization
   const { data: orgData, isLoading } = useQuery(
@@ -43,14 +87,28 @@ export const EntityMasterData: React.FC = () => {
     if (orgData) {
       setFormData({
         name: orgData.name || '',
+        shortName: orgData.shortName || '',
         email: orgData.email || '',
         mobile: orgData.mobile || '',
         address: orgData.address || '',
+        countryId: orgData.countryId || '',
+        stateId: orgData.stateId || '',
+        cityId: orgData.cityId || '',
+        pinCode: orgData.pinCode || '',
+        addressLine1: orgData.addressLine1 || '',
+        addressLine2: orgData.addressLine2 || '',
+        website: orgData.website || '',
+        phoneNumber: orgData.phoneNumber || '',
+        orgConstitution: orgData.orgConstitution || '',
+        depotCount: orgData.depotCount ?? 0,
+        warehouseCount: orgData.warehouseCount ?? 0,
         gst: orgData.gst || '',
         pan: orgData.pan || '',
         cin: orgData.cin || '',
         logoUrl: orgData.logoUrl || '',
         accountingYearStart: orgData.accountingYearStart || '',
+        costCentres: Array.isArray(orgData.costCentres) ? orgData.costCentres : [],
+        branches: Array.isArray(orgData.branches) ? orgData.branches : [],
       });
     }
   }, [orgData]);
@@ -65,10 +123,10 @@ export const EntityMasterData: React.FC = () => {
     {
       onSuccess: () => {
         queryClient.invalidateQueries('admin-organization');
-        alert('Organization details updated successfully!');
+        toast.success('Organization details updated successfully!');
       },
       onError: (error: any) => {
-        alert(`Error: ${error.response?.data?.error || error.message}`);
+        toast.error(`Error: ${error.response?.data?.error || error.message}`);
       },
     }
   );
@@ -94,14 +152,14 @@ export const EntityMasterData: React.FC = () => {
     // Validate file type
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
     if (!allowedTypes.includes(file.type)) {
-      alert('Please upload a valid image file (JPEG, PNG, GIF, WEBP, or SVG)');
+      toast.error('Please upload a valid image file (JPEG, PNG, GIF, WEBP, or SVG)');
       return;
     }
 
     // Validate file size (max 2MB)
     const maxSize = 2 * 1024 * 1024; // 2MB
     if (file.size > maxSize) {
-      alert('File size must be less than 2MB');
+      toast.error('File size must be less than 2MB');
       return;
     }
 
@@ -127,7 +185,7 @@ export const EntityMasterData: React.FC = () => {
           imageUrl = `${apiUrl}${imageUrl}`;
         }
         setFormData(prev => ({ ...prev, logoUrl: imageUrl }));
-        alert('Logo uploaded successfully!');
+        toast.success('Logo uploaded successfully!');
       } else {
         console.error('Unexpected response format:', result);
         throw new Error(result.error || 'Failed to upload logo - invalid response');
@@ -135,7 +193,7 @@ export const EntityMasterData: React.FC = () => {
     } catch (error: any) {
       console.error('Logo upload error:', error);
       const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message || 'Please try again';
-      alert(`Error uploading logo: ${errorMessage}`);
+      toast.error(`Error uploading logo: ${errorMessage}`);
     } finally {
       setIsUploadingLogo(false);
       // Reset input so same file can be selected again
@@ -256,6 +314,34 @@ export const EntityMasterData: React.FC = () => {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgShortName">
+                        Short Name
+                      </label>
+                      <input
+                        id="orgShortName"
+                        type="text"
+                        value={formData.shortName}
+                        onChange={(e) => setFormData({ ...formData, shortName: e.target.value })}
+                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        placeholder="e.g. SNKFCA"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgPhone">
+                        Phone Number
+                      </label>
+                      <input
+                        id="orgPhone"
+                        type="tel"
+                        value={formData.phoneNumber}
+                        onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
+                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        placeholder="e.g. +91..."
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgEmail">
                         Email Address
                       </label>
@@ -292,6 +378,39 @@ export const EntityMasterData: React.FC = () => {
                       </div>
                     </div>
                   </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgWebsite">
+                        Website
+                      </label>
+                      <input
+                        id="orgWebsite"
+                        type="url"
+                        value={formData.website}
+                        onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        placeholder="https://..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgConstitution">
+                        Org Constitution
+                      </label>
+                      <select
+                        id="orgConstitution"
+                        value={formData.orgConstitution}
+                        onChange={(e) => setFormData({ ...formData, orgConstitution: e.target.value })}
+                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                      >
+                        <option value="">Select</option>
+                        {(orgConstitutionsData || []).map((o: any) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgAddress">
                       Registered Address
@@ -304,6 +423,100 @@ export const EntityMasterData: React.FC = () => {
                       placeholder="Enter full office address including zip code..."
                       rows={3}
                     />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Country</label>
+                      <select
+                        value={formData.countryId}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            countryId: e.target.value,
+                            stateId: '',
+                            cityId: '',
+                          })
+                        }
+                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                      >
+                        <option value="">Select</option>
+                        {(countriesData || []).map((c: any) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">State</label>
+                      <select
+                        value={formData.stateId}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            stateId: e.target.value,
+                            cityId: '',
+                          })
+                        }
+                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        disabled={!formData.countryId}
+                      >
+                        <option value="">Select</option>
+                        {(statesData || []).map((s: any) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">City</label>
+                      <select
+                        value={formData.cityId}
+                        onChange={(e) => setFormData({ ...formData, cityId: e.target.value })}
+                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        disabled={!formData.stateId}
+                      >
+                        <option value="">Select</option>
+                        {(citiesData || []).map((c: any) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Pin Code</label>
+                      <input
+                        type="text"
+                        value={formData.pinCode}
+                        onChange={(e) => setFormData({ ...formData, pinCode: e.target.value })}
+                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        placeholder="530003"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Address Line 1</label>
+                      <input
+                        type="text"
+                        value={formData.addressLine1}
+                        onChange={(e) => setFormData({ ...formData, addressLine1: e.target.value })}
+                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        placeholder="Address first line"
+                      />
+                    </div>
+                    <div className="md:col-span-3">
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Address Line 2</label>
+                      <input
+                        type="text"
+                        value={formData.addressLine2}
+                        onChange={(e) => setFormData({ ...formData, addressLine2: e.target.value })}
+                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        placeholder="Address second line"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -367,6 +580,166 @@ export const EntityMasterData: React.FC = () => {
                     className="w-full rounded-lg border-slate-200 bg-white text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3"
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Depot Count</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={formData.depotCount}
+                    onChange={(e) => setFormData({ ...formData, depotCount: Number(e.target.value || 0) })}
+                    className="w-full rounded-lg border-slate-200 bg-white text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Warehouse Count</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={formData.warehouseCount}
+                    onChange={(e) => setFormData({ ...formData, warehouseCount: Number(e.target.value || 0) })}
+                    className="w-full rounded-lg border-slate-200 bg-white text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Cost Centres */}
+            <div className="p-6 md:p-8 border-b border-slate-100">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-2xl">account_balance</span>
+                  Cost Centres
+                </h2>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      costCentres: [...formData.costCentres, { name: '', shortName: '' }],
+                    })
+                  }
+                  className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90"
+                >
+                  Add
+                </button>
+              </div>
+              <div className="space-y-3">
+                {formData.costCentres.map((cc, idx) => (
+                  <div key={idx} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-center">
+                    <input
+                      className="md:col-span-3 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      placeholder="Cost Centre Name"
+                      value={cc.name}
+                      onChange={(e) => {
+                        const next = [...formData.costCentres];
+                        next[idx] = { ...next[idx], name: e.target.value };
+                        setFormData({ ...formData, costCentres: next });
+                      }}
+                    />
+                    <input
+                      className="md:col-span-1 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      placeholder="Short Name"
+                      value={cc.shortName || ''}
+                      onChange={(e) => {
+                        const next = [...formData.costCentres];
+                        next[idx] = { ...next[idx], shortName: e.target.value };
+                        setFormData({ ...formData, costCentres: next });
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = formData.costCentres.filter((_, i) => i !== idx);
+                        setFormData({ ...formData, costCentres: next });
+                      }}
+                      className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                {formData.costCentres.length === 0 && (
+                  <div className="text-sm text-slate-500">No cost centres yet.</div>
+                )}
+              </div>
+            </div>
+
+            {/* Branches */}
+            <div className="p-6 md:p-8">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-2xl">apartment</span>
+                  Branches
+                </h2>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      branches: [...formData.branches, { name: '', shortName: '', address: '', gstNumber: '' }],
+                    })
+                  }
+                  className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90"
+                >
+                  Add
+                </button>
+              </div>
+              <div className="space-y-3">
+                {formData.branches.map((b, idx) => (
+                  <div key={idx} className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
+                    <input
+                      className="md:col-span-2 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      placeholder="Branch Name"
+                      value={b.name}
+                      onChange={(e) => {
+                        const next = [...formData.branches];
+                        next[idx] = { ...next[idx], name: e.target.value };
+                        setFormData({ ...formData, branches: next });
+                      }}
+                    />
+                    <input
+                      className="md:col-span-1 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      placeholder="Short"
+                      value={b.shortName || ''}
+                      onChange={(e) => {
+                        const next = [...formData.branches];
+                        next[idx] = { ...next[idx], shortName: e.target.value };
+                        setFormData({ ...formData, branches: next });
+                      }}
+                    />
+                    <input
+                      className="md:col-span-2 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      placeholder="Address"
+                      value={b.address || ''}
+                      onChange={(e) => {
+                        const next = [...formData.branches];
+                        next[idx] = { ...next[idx], address: e.target.value };
+                        setFormData({ ...formData, branches: next });
+                      }}
+                    />
+                    <input
+                      className="md:col-span-1 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      placeholder="GST"
+                      value={(b as any).gstNumber || ''}
+                      onChange={(e) => {
+                        const next = [...formData.branches];
+                        next[idx] = { ...next[idx], gstNumber: e.target.value.toUpperCase() } as any;
+                        setFormData({ ...formData, branches: next });
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = formData.branches.filter((_, i) => i !== idx);
+                        setFormData({ ...formData, branches: next });
+                      }}
+                      className="md:col-span-6 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                {formData.branches.length === 0 && <div className="text-sm text-slate-500">No branches yet.</div>}
               </div>
             </div>
 

@@ -7,6 +7,7 @@ import { conversationService } from '../../services/conversationService';
 import { taskService } from '../../services/taskService';
 import { waitForSocketConnection, joinConversationRoom, leaveConversationRoom, onSocketEvent, offSocketEvent, sendMessageViaSocket, getSocket } from '../../services/socketService';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { ConversationList } from '../../components/messaging/ConversationList';
@@ -34,6 +35,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const { toast } = useToast();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
   // Check if accessed from task module route (not from messages route)
@@ -891,31 +893,31 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const task = taskData;
   const currentUserId = user?.id || (user as any)?.userId;
 
-  // Check if current user is the task creator
+  // Check if current user is the task creator (task owner; use String so it works when owner was set by admin)
   const isTaskCreator = () => {
-    if (!task) return false;
-    const creatorId = task.created_by || task.creator_id;
-    return creatorId === currentUserId;
+    if (!task || !currentUserId) return false;
+    const creatorId = task.created_by ?? task.creator_id;
+    return !!creatorId && String(creatorId) === String(currentUserId);
   };
 
   // Check if current user is the reporting member
   const isReportingMember = () => {
-    if (!task) return false;
+    if (!task || !currentUserId) return false;
     const reportingMemberId = task.reporting_member_id;
-    return reportingMemberId === currentUserId;
+    return !!reportingMemberId && String(reportingMemberId) === String(currentUserId);
   };
 
-  // Check if current user can verify a specific member (EXACT mobile logic)
+  // Check if current user can verify a specific member (task owner can verify assignees who completed)
   const canVerifyMember = (targetMemberId: string) => {
     if (!task || !user) return false;
     
-    const taskCreatorId = task.created_by || task.creator_id;
+    const taskCreatorId = task.created_by ?? task.creator_id;
     const reportingMemberId = task.reporting_member_id;
-    const isCurrentUserCreator = currentUserId === taskCreatorId;
-    const isCurrentUserReportingMember = currentUserId === reportingMemberId;
-    const isTargetReportingMember = targetMemberId === reportingMemberId;
-    const isTargetCreator = targetMemberId === taskCreatorId;
-    const isTargetCurrentUser = targetMemberId === currentUserId;
+    const isCurrentUserCreator = !!taskCreatorId && !!currentUserId && String(taskCreatorId) === String(currentUserId);
+    const isCurrentUserReportingMember = !!reportingMemberId && !!currentUserId && String(reportingMemberId) === String(currentUserId);
+    const isTargetReportingMember = String(targetMemberId ?? '') === String(reportingMemberId ?? '');
+    const isTargetCreator = String(targetMemberId ?? '') === String(taskCreatorId ?? '');
+    const isTargetCurrentUser = String(targetMemberId ?? '') === String(currentUserId ?? '');
     
     // Cannot verify yourself
     if (isTargetCurrentUser) return false;
@@ -961,12 +963,104 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           error?.response?.data?.error ||
           error?.message ||
           'Failed to verify completion';
-        alert(message);
+        toast.error(message);
       },
     }
   );
 
   const [verifyingUserId, setVerifyingUserId] = useState<string | null>(null);
+  const [isCompleting, setIsCompleting] = useState(false);
+
+  // Get current user assignee (EXACT mobile logic)
+  const currentUserAssignee = React.useMemo(() => {
+    if (!task?.assignees || !Array.isArray(task.assignees)) return null;
+    return task.assignees.find((a: any) => {
+      const assigneeId = a.id || a.user_id || a.userId;
+      return assigneeId === currentUserId;
+    });
+  }, [task?.assignees, currentUserId]);
+
+  // Check if current user can mark complete. After verify, task.status is 'completed' but creator still needs to mark complete — show button for creator.
+  const canMarkComplete = React.useMemo(() => {
+    if (!currentUserAssignee || !task) return false;
+    const hasAccepted = currentUserAssignee.accepted_at || currentUserAssignee.has_accepted;
+    const hasCompleted =
+      !!currentUserAssignee.completed_at ||
+      currentUserAssignee.completion_status === 'completed' ||
+      currentUserAssignee.status === 'completed';
+    const taskOwnerId = task.created_by ?? task.creator_id;
+    const isCreator = !!taskOwnerId && !!currentUserId && String(taskOwnerId) === String(currentUserId);
+    return (isCreator || hasAccepted) && !hasCompleted && (task.status !== 'completed' || isCreator);
+  }, [currentUserAssignee, task, currentUserId]);
+
+  // Mark member complete mutation - sends to backend (EXACT mobile flow)
+  const markCompleteMutation = useMutation(
+    () => {
+      if (!taskId || !currentUserId) {
+        throw new Error('Missing taskId or userId');
+      }
+      return taskService.markMemberComplete(taskId, currentUserId);
+    },
+    {
+      onSuccess: async (data: any) => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        if (user?.role === 'admin') {
+          queryClient.invalidateQueries(['admin-dashboard']);
+          queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        }
+        // Send chat message (mirror mobile)
+        try {
+          const socket = await waitForSocketConnection();
+          const text =
+            data?.taskCompleted || isTaskCreator()
+              ? '✓ I have completed my part. Task is now completed!'
+              : 'I have completed my part of the task. Please verify.';
+          socket.emit('send_message', {
+            conversationId,
+            text,
+            messageType: 'text',
+          });
+        } catch (e) {
+          console.warn('Socket send after mark complete:', e);
+        }
+        const message =
+          data?.taskCompleted
+            ? 'Task completed. The entire task has been marked as completed.'
+            : 'Your completion has been marked and sent for approval.';
+        toast.success(message);
+      },
+      onError: (error: any) => {
+        toast.error(
+          error?.response?.data?.error ||
+            error?.message ||
+            'Failed to mark task as complete'
+        );
+      },
+    }
+  );
+
+  const handleMarkComplete = () => {
+    if (!taskId || !currentUserId) return;
+    const confirmMessage = isTaskCreator()
+      ? 'As the creator, marking complete will complete the entire task for everyone. Continue?'
+      : 'Have you completed your part of this task? Your completion will need to be verified.';
+    toast.confirm(confirmMessage, {
+      onConfirm: async () => {
+        try {
+          setIsCompleting(true);
+          await markCompleteMutation.mutateAsync();
+        } finally {
+          setIsCompleting(false);
+        }
+      },
+      confirmLabel: 'Yes',
+      cancelLabel: 'Cancel',
+    });
+  };
 
   const handleVerifyCompletion = async (memberUserId: string) => {
     if (!taskId) return;
@@ -977,24 +1071,24 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     });
     const memberName = member?.name || 'User';
     
-    if (!window.confirm(`Verify that ${memberName} has completed their part of the task?`)) {
-      return;
-    }
-
-    try {
-      setVerifyingUserId(memberUserId);
-      await verifyCompletionMutation.mutateAsync(memberUserId);
-      
-      // Send verification confirmation message via socket
-      const socket = await waitForSocketConnection();
-      socket.emit('send_message', {
-        conversationId,
-        text: `✓ Verified ${memberName}'s completion.`,
-        messageType: 'text',
-      });
-    } finally {
-      setVerifyingUserId(null);
-    }
+    toast.confirm(`Verify that ${memberName} has completed their part of the task?`, {
+      onConfirm: async () => {
+        try {
+          setVerifyingUserId(memberUserId);
+          await verifyCompletionMutation.mutateAsync(memberUserId);
+          const socket = await waitForSocketConnection();
+          socket.emit('send_message', {
+            conversationId,
+            text: `✓ Verified ${memberName}'s completion.`,
+            messageType: 'text',
+          });
+        } finally {
+          setVerifyingUserId(null);
+        }
+      },
+      confirmLabel: 'Verify',
+      cancelLabel: 'Cancel',
+    });
   };
 
   // Get assignees from task
@@ -1011,19 +1105,19 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     return [];
   }, [task?.assignees]);
 
-  // Check if member needs verification
+  // Check if member needs verification (completed but not verified; creator doesn't need verification from others)
   const needsVerification = (assignee: any) => {
     if (task?.status === 'completed') return false;
     if (!assignee.completed_at) return false;
     if (assignee.verified_at) return false;
     
     const assigneeId = assignee.id || assignee.user_id || assignee.userId;
-    const taskCreatorId = task?.created_by || task?.creator_id;
-    const isCreator = assigneeId === taskCreatorId;
+    const taskCreatorId = task?.created_by ?? task?.creator_id;
+    const isCreator = !!assigneeId && !!taskCreatorId && String(assigneeId) === String(taskCreatorId);
     
     if (isCreator) return false;
     
-    return assignee.completed_at && !assignee.verified_at;
+    return !!assignee.completed_at && !assignee.verified_at;
   };
 
   // Get pending verifications
@@ -1352,6 +1446,29 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           </button>
         </div>
       </header>
+
+      {/* Mark My Task Complete Section - EXACT mobile logic (assignee completion sends to backend) */}
+      {canMarkComplete && (
+        <div className="bg-emerald-50 dark:bg-emerald-900/20 border-b border-emerald-200 dark:border-emerald-800 px-6 py-4">
+          <button
+            onClick={handleMarkComplete}
+            disabled={isCompleting}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
+          >
+            {isCompleting ? (
+              <>
+                <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
+                <span>Marking complete...</span>
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined">check_circle</span>
+                <span>Mark My Task Complete</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Pending Verifications Section - EXACT mobile logic */}
       {pendingVerifications.length > 0 && (

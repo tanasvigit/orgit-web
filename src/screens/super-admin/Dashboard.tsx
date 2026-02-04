@@ -56,15 +56,15 @@ export const Dashboard: React.FC = () => {
           {statCards.map((card) => (
             <div
               key={card.label}
-              className="bg-super-admin-surface-light dark:bg-super-admin-surface-dark rounded-xl shadow-soft border border-super-admin-border-light dark:border-super-admin-border-dark p-6"
+              className="bg-super-admin-surface-light dark:bg-super-admin-surface-dark rounded-2xl shadow-lg border border-super-admin-border-light dark:border-super-admin-border-dark p-6 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200"
             >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-500 dark:text-gray-400">{card.label}</p>
                   <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{card.value}</p>
                 </div>
-                <div className={`w-12 h-12 flex items-center justify-center rounded-lg ${card.bgColor} shrink-0 p-2.5 box-border`}>
-                  <span className={`material-symbols-outlined text-base ${card.iconColor} leading-none block`}>
+                <div className={`w-12 h-12 flex items-center justify-center rounded-xl ${card.bgColor} shrink-0 p-2.5 box-border`}>
+                  <span className={`material-symbols-outlined text-xl ${card.iconColor} leading-none block`}>
                     {card.icon}
                   </span>
                 </div>
@@ -74,7 +74,7 @@ export const Dashboard: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-super-admin-surface-light dark:bg-super-admin-surface-dark rounded-xl shadow-soft border border-super-admin-border-light dark:border-super-admin-border-dark p-6">
+          <div className="bg-super-admin-surface-light dark:bg-super-admin-surface-dark rounded-2xl shadow-lg border border-super-admin-border-light dark:border-super-admin-border-dark p-6">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Recent Activity</h3>
             <div className="space-y-3">
               {stats.recentActivity.length > 0 ? (
@@ -98,7 +98,7 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-super-admin-surface-light dark:bg-super-admin-surface-dark rounded-xl shadow-soft border border-super-admin-border-light dark:border-super-admin-border-dark p-6">
+          <div className="bg-super-admin-surface-light dark:bg-super-admin-surface-dark rounded-2xl shadow-lg border border-super-admin-border-light dark:border-super-admin-border-dark p-6">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Quick Actions</h3>
             <div className="space-y-2">
               <a

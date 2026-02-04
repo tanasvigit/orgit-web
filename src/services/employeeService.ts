@@ -23,6 +23,7 @@ export interface Employee {
   reporting_to?: string;
   reportingToName?: string;
   reporting_to_name?: string;
+  level?: string;
   createdAt?: string;
   created_at?: string;
 }
@@ -33,6 +34,7 @@ export interface AddEmployeeRequest {
   department?: string;
   designation?: string;
   reportingTo?: string;
+  level?: string;
 }
 
 export interface UpdateEmployeeRequest {
@@ -40,6 +42,7 @@ export interface UpdateEmployeeRequest {
   department?: string;
   designation?: string;
   reportingTo?: string;
+  level?: string;
   status?: string;
 }
 

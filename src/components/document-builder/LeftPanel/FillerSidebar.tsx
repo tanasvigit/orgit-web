@@ -1,6 +1,7 @@
 import React from 'react';
 import { useDocumentBuilder, TableBlock, TextBlock, KeyValueBlock, SignatureBlock, AmountSummaryBlock } from '../DocumentBuilderProvider';
 import { useAuth } from '../../../context/AuthContext';
+import { useToast } from '../../../context/ToastContext';
 import { organizationService } from '../../../services/organizationService';
 
 const TextFiller: React.FC<{ section: TextBlock }> = ({ section }) => {
@@ -298,6 +299,7 @@ const HeaderFiller: React.FC = () => {
     const { state, dispatch } = useDocumentBuilder();
     const header = state.header;
     const { user } = useAuth();
+    const { toast } = useToast();
     const [isLoadingOrg, setIsLoadingOrg] = React.useState(false);
 
     const updateHeader = (payload: Partial<typeof header>) => {
@@ -306,7 +308,7 @@ const HeaderFiller: React.FC = () => {
 
     const loadFromEntityMaster = async () => {
         if (!user?.organizationId) {
-            alert('Organization not found. Please ensure you are associated with an organization.');
+            toast.error('Organization not found. Please ensure you are associated with an organization.');
             return;
         }
 
@@ -336,7 +338,7 @@ const HeaderFiller: React.FC = () => {
             dispatch({ type: 'UPDATE_HEADER', payload: updates });
         } catch (error: any) {
             console.error('Error loading organization data:', error);
-            alert(`Failed to load Entity Master Data: ${error.response?.data?.error || error.message}`);
+            toast.error(`Failed to load Entity Master Data: ${error.response?.data?.error || error.message}`);
         } finally {
             setIsLoadingOrg(false);
         }

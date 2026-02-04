@@ -42,9 +42,11 @@ export const dashboardService = {
     return response.data;
   },
 
+  // Match mobile: statsResponse?.data || statsResponse so stats object is at top level
   getStatistics: async () => {
     const response = await api.get('/dashboard/statistics');
-    return response.data;
+    const data = response.data;
+    return data?.data ?? data;
   },
 };
 

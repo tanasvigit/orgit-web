@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { authService } from '../../services/authService';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
@@ -26,7 +27,7 @@ export const ProfileSettings: React.FC = () => {
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert('Please select an image file');
+      toast.error('Please select an image file');
       return;
     }
 
@@ -36,11 +37,11 @@ export const ProfileSettings: React.FC = () => {
       if (response.success && response.data?.url) {
         setProfilePhoto(response.data.url);
         updateUser({ ...user, profilePhotoUrl: response.data.url });
-        alert('Profile photo updated successfully');
+        toast.success('Profile photo updated successfully');
       }
     } catch (error) {
       console.error('Upload error:', error);
-      alert('Failed to upload profile photo');
+      toast.error('Failed to upload profile photo');
     } finally {
       setUploading(false);
     }
@@ -48,7 +49,7 @@ export const ProfileSettings: React.FC = () => {
 
   const handleSave = async () => {
     if (!name.trim()) {
-      alert('Name is required');
+      toast.error('Name is required');
       return;
     }
 
@@ -62,12 +63,12 @@ export const ProfileSettings: React.FC = () => {
 
       if (response.success && response.data) {
         updateUser({ ...user, name: name.trim(), bio: bio.trim() });
-        alert('Profile updated successfully');
+        toast.success('Profile updated successfully');
         navigate(-1);
       }
     } catch (error: any) {
       console.error('Update error:', error);
-      alert(error.response?.data?.error || 'Failed to update profile');
+      toast.error(error.response?.data?.error || 'Failed to update profile');
     } finally {
       setLoading(false);
     }

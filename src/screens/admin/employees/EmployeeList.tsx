@@ -16,6 +16,7 @@ import { useQuery, useQueryClient } from 'react-query';
 import { AdminLayout } from '../../../components/admin/AdminLayout';
 import { employeeService, Employee } from '../../../services/employeeService';
 import { useAuth } from '../../../context/AuthContext';
+import { useToast } from '../../../context/ToastContext';
 import { getDepartments, getDesignations } from '../../../services/settingsService';
 import { chatUserService } from '../../../services/chatUserService';
 
@@ -29,6 +30,7 @@ export const EmployeeList: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const queryClient = useQueryClient();
   const { user: currentUser } = useAuth();
+  const { toast } = useToast();
 
   const { data, isLoading, error } = useQuery(
     'employees',
@@ -61,9 +63,9 @@ export const EmployeeList: React.FC = () => {
       await employeeService.removeEmployee(deleteConfirm.id);
       queryClient.invalidateQueries('employees');
       setDeleteConfirm(null);
-      alert('Employee removed successfully');
+      toast.success('Employee removed successfully');
     } catch (error: any) {
-      alert(`Error removing employee: ${error.response?.data?.error || error.message}`);
+      toast.error(`Error removing employee: ${error.response?.data?.error || error.message}`);
     } finally {
       setIsDeleting(false);
     }
@@ -124,14 +126,14 @@ export const EmployeeList: React.FC = () => {
         
         // Validate that formatting was successful (should have 12 digits: 91 + 10 digit number)
         if (!formattedMobile || formattedMobile === '') {
-          alert('Please enter a valid 10-digit mobile number');
+          toast.error('Please enter a valid 10-digit mobile number');
           setIsSaving(false);
           return;
         }
         
         const digitsOnly = formattedMobile.replace(/\D/g, '');
         if (digitsOnly.length !== 12 || !formattedMobile.startsWith('+91')) {
-          alert('Please enter a valid 10-digit mobile number');
+          toast.error('Please enter a valid 10-digit mobile number');
           setIsSaving(false);
           return;
         }
@@ -141,20 +143,20 @@ export const EmployeeList: React.FC = () => {
       
       if (editEmployee) {
         await employeeService.updateEmployee(editEmployee.id, submitData);
-        alert('Employee updated successfully');
+        toast.success('Employee updated successfully');
       } else {
         // Remove password from submitData if user_id is present (existing user)
         if (submitData.user_id && !submitData.password) {
           delete submitData.password;
         }
         await employeeService.addEmployee(submitData);
-        alert('Employee added successfully');
+        toast.success('Employee added successfully');
       }
       queryClient.invalidateQueries('employees');
       setEditEmployee(null);
       setShowAddForm(false);
     } catch (error: any) {
-      alert(`Error saving employee: ${error.response?.data?.error || error.message}`);
+      toast.error(`Error saving employee: ${error.response?.data?.error || error.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -244,6 +246,7 @@ export const EmployeeList: React.FC = () => {
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Department</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Designation</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Reporting To</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Level</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
                     <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Actions</th>
                   </tr>
@@ -274,6 +277,9 @@ export const EmployeeList: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-text-main">{employee.designation || '-'}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-text-muted">
                         {employee.reportingToName || employee.reporting_to_name || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-main">
+                        {employee.level || '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
@@ -321,6 +327,7 @@ export const EmployeeList: React.FC = () => {
               </h3>
               <EmployeeForm
                 employee={editEmployee}
+                employees={employees}
                 onSave={handleSaveEmployee}
                 onCancel={() => {
                   setEditEmployee(null);
@@ -369,17 +376,20 @@ export const EmployeeList: React.FC = () => {
 // Employee Form Component
 interface EmployeeFormProps {
   employee?: Employee | null;
+  employees: Employee[];
   onSave: (data: any) => void;
   onCancel: () => void;
   isSaving: boolean;
 }
 
-const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, onSave, onCancel, isSaving }) => {
+const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave, onCancel, isSaving }) => {
   const [formData, setFormData] = useState({
     mobile: employee?.mobile || '',
     name: employee?.name || '',
     department: employee?.department || '',
     designation: employee?.designation || '',
+    reportingTo: (employee as any)?.reportingTo || (employee as any)?.reporting_to || '',
+    level: (employee as any)?.level || '',
     status: employee?.status || 'active',
     password: '',
   });
@@ -395,6 +405,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, onSave, onCancel,
       name: employee?.name || '',
       department: employee?.department || '',
       designation: employee?.designation || '',
+      reportingTo: (employee as any)?.reportingTo || (employee as any)?.reporting_to || '',
+      level: (employee as any)?.level || '',
       status: employee?.status || 'active',
       password: '',
     });
@@ -489,7 +501,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, onSave, onCancel,
     } else {
       // For new employees, password is only required if user doesn't exist
       if (!selectedExistingUser && !submitData.password) {
-        alert('Password is required for new users');
+        toast.error('Password is required for new users');
         return;
       }
       // If existing user selected, don't send password
@@ -664,7 +676,33 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, onSave, onCancel,
           ))}
         </select>
       </div>
-      {/* Note: Reporting To can be set later via edit, requires employee ID selection */}
+      <div>
+        <label className="block text-sm font-medium text-text-main mb-1">Reporting To</label>
+        <select
+          className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
+          value={formData.reportingTo}
+          onChange={(e) => setFormData({ ...formData, reportingTo: e.target.value })}
+        >
+          <option value="">Self / None</option>
+          {employees
+            .filter((e) => !employee || e.id !== employee.id)
+            .map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name} ({e.mobile})
+              </option>
+            ))}
+        </select>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-text-main mb-1">Level</label>
+        <input
+          type="text"
+          className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
+          placeholder="e.g. L1, L2"
+          value={formData.level}
+          onChange={(e) => setFormData({ ...formData, level: e.target.value.toUpperCase() })}
+        />
+      </div>
       {employee && (
         <div>
           <label className="block text-sm font-medium text-text-main mb-1">Status</label>

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from 'react-query';
 import { getAutoEscalationConfig, updateAutoEscalationConfig } from '../../../services/settingsService';
 import { AdminLayout } from '../../../components/admin/AdminLayout';
+import { useToast } from '../../../context/ToastContext';
 
 interface AutoEscalationConfig {
   enabled?: boolean;
@@ -13,6 +14,7 @@ interface AutoEscalationConfig {
 
 export const AutoEscalationConfig: React.FC = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [config, setConfig] = useState<AutoEscalationConfig>({
     enabled: true,
     unacceptedHours: 24,
@@ -33,11 +35,11 @@ export const AutoEscalationConfig: React.FC = () => {
 
   const updateMutation = useMutation(updateAutoEscalationConfig, {
     onSuccess: () => {
-      alert('Auto-escalation configuration updated successfully');
+      toast.success('Auto-escalation configuration updated successfully');
       navigate(-1);
     },
     onError: (error: any) => {
-      alert(error.response?.data?.error || 'Failed to update configuration');
+      toast.error(error.response?.data?.error || 'Failed to update configuration');
     },
   });
 

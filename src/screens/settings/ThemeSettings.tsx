@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 
 const THEME_STORAGE_KEY = '@orgit_theme';
 
 export const ThemeSettings: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { toast } = useToast();
   const isAdmin = user?.role === 'admin';
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [systemTheme, setSystemTheme] = useState(false);
@@ -49,7 +51,7 @@ export const ThemeSettings: React.FC = () => {
       setSystemTheme(useSystem);
     } catch (error) {
       console.error('Error saving theme:', error);
-      alert('Failed to save theme preference');
+      toast.error('Failed to save theme preference');
     }
   };
 

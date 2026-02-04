@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from 'react-query';
 import { getRecurringTaskSettings, updateRecurringTaskSettings } from '../../../services/settingsService';
 import { AdminLayout } from '../../../components/admin/AdminLayout';
+import { useToast } from '../../../context/ToastContext';
 
 interface RecurringTaskSettings {
   defaultFrequencies?: string[];
@@ -20,6 +21,7 @@ const availableFrequencies = [
 
 export const RecurringTaskSettings: React.FC = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [settings, setSettings] = useState<RecurringTaskSettings>({
     defaultFrequencies: ['weekly', 'monthly', 'quarterly', 'yearly'],
     autoCalculateDueDate: true,
@@ -39,11 +41,11 @@ export const RecurringTaskSettings: React.FC = () => {
 
   const updateMutation = useMutation(updateRecurringTaskSettings, {
     onSuccess: () => {
-      alert('Recurring task settings updated successfully');
+      toast.success('Recurring task settings updated successfully');
       navigate(-1);
     },
     onError: (error: any) => {
-      alert(error.response?.data?.error || 'Failed to update settings');
+      toast.error(error.response?.data?.error || 'Failed to update settings');
     },
   });
 

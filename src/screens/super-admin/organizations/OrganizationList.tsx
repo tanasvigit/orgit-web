@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { useQuery, useQueryClient } from 'react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { SuperAdminLayout } from '../../../components/super-admin/SuperAdminLayout';
+import { useToast } from '../../../context/ToastContext';
 import { organizationService } from '../../../services/organizationService';
 
 export const OrganizationList: React.FC = () => {
+  const { toast } = useToast();
   const [filters, setFilters] = useState({ status: '', search: '', page: 1, limit: 20 });
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -40,7 +42,7 @@ export const OrganizationList: React.FC = () => {
       queryClient.invalidateQueries(['organizations']);
       setDeleteConfirm(null);
     } catch (error: any) {
-      alert(`Error deleting organization: ${error.response?.data?.error || error.message}`);
+      toast.error(`Error deleting organization: ${error.response?.data?.error || error.message}`);
     } finally {
       setIsDeleting(false);
     }

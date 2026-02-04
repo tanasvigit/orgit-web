@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from 'react-query';
+import { useToast } from '../../context/ToastContext';
 import { conversationService } from '../../services/conversationService';
 import { taskService } from '../../services/taskService';
 import { setTaskFinancial } from '../../utils/taskFinancialStorage';
@@ -45,6 +46,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [autoEscalate, setAutoEscalate] = useState(false);
   const [createTaskLoading, setCreateTaskLoading] = useState(false);
   const [reportingMemberId, setReportingMemberId] = useState<string | null>(null);
+  const { toast } = useToast();
 
   // Initialize form with initial values when modal opens
   useEffect(() => {
@@ -116,17 +118,17 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   // Handle create task
   const handleCreateTask = async () => {
     if (!title.trim()) {
-      alert('Please enter a task title');
+      toast.error('Please enter a task title');
       return;
     }
 
     if (!dueDate) {
-      alert('Please select a due date');
+      toast.error('Please select a due date');
       return;
     }
 
     if (selectedAssignees.length === 0) {
-      alert('Please assign the task to at least one person');
+      toast.error('Please assign the task to at least one person');
       return;
     }
 
@@ -167,6 +169,11 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         },
       };
 
+      // When task owner is another member, send creator_id so API sets them as owner and task is hidden from requester
+      if (taskOwner === 'contacts' && taskOwnerUserId) {
+        taskData.creator_id = taskOwnerUserId;
+      }
+
       // Add compliance_id if provided (API supports compliance_id)
       if (complianceId) {
         taskData.compliance_id = complianceId;
@@ -189,7 +196,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       onSuccess();
     } catch (error: any) {
       console.error('Create task error:', error);
-      alert(error.response?.data?.error || 'Failed to create task');
+      toast.error(error.response?.data?.error || 'Failed to create task');
     } finally {
       setCreateTaskLoading(false);
     }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { taskService } from '../../services/taskService';
 import { conversationService } from '../../services/conversationService';
 import { mergeTaskWithFinancial } from '../../utils/taskFinancialStorage';
@@ -9,21 +9,41 @@ import { AdminLayout } from '../../components/admin/AdminLayout';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
 
+export type StatusFilter = 'all' | 'overdue' | 'duesoon' | 'inprogress' | 'completed';
+
 export const TaskDashboardScreen: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin';
-  const [activeTab, setActiveTab] = useState<'one_time' | 'recurring'>('one_time');
   const [searchQuery, setSearchQuery] = useState('');
   const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Fetch tasks
+  // Status filter from URL (dashboard card navigation) or local state
+  const statusFromUrl = searchParams.get('status');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
+    const v = (statusFromUrl || '').toLowerCase();
+    if (v === 'overdue' || v === 'duesoon' || v === 'inprogress' || v === 'completed') return v;
+    return 'all';
+  });
+
+  // Sync filter from URL when navigating from dashboard (e.g. /tasks?status=inprogress)
+  useEffect(() => {
+    const v = (searchParams.get('status') || '').toLowerCase();
+    if (v === 'overdue' || v === 'duesoon' || v === 'inprogress' || v === 'completed') {
+      setStatusFilter(v);
+    } else {
+      setStatusFilter('all');
+    }
+  }, [searchParams]);
+
+  // Fetch all tasks (one-time and recurring; type filter removed)
   const { data: tasksData, isLoading, refetch, error } = useQuery(
-    ['tasks', activeTab],
-    () => taskService.getTasks({ type: activeTab }),
+    ['tasks'],
+    () => taskService.getTasks(),
     {
       onSuccess: () => {
         setRefreshing(false);
@@ -38,7 +58,7 @@ export const TaskDashboardScreen: React.FC = () => {
   // When navigating back to this screen (e.g., after rejecting), force a refetch
   useEffect(() => {
     refetch();
-  }, [location.key, activeTab, refetch]);
+  }, [location.key, refetch]);
 
   const tasks = tasksData || [];
 
@@ -92,10 +112,6 @@ export const TaskDashboardScreen: React.FC = () => {
     [filteredTasks, currentUserId]
   );
 
-  // Separate pending and all tasks (only from visible tasks)
-  const pendingTasks = visibleTasks.filter((task: any) => task.status === 'pending');
-  const allTasks = visibleTasks.filter((task: any) => task.status !== 'pending');
-
   // Format date helper (matching mobile)
   const formatDate = (dateString?: string) => {
     if (!dateString) return '';
@@ -121,6 +137,23 @@ export const TaskDashboardScreen: React.FC = () => {
   const isOverdue = (dueDate?: string) => {
     if (!dueDate) return false;
     return new Date(dueDate) < new Date();
+  };
+
+  // Due soon: due within next 3 days (today <= due <= today+3), not completed (matches dashboard)
+  const DUE_SOON_DAYS = 3;
+  const isDueSoon = (task: any) => {
+    const due = task?.due_date || task?.dueDate;
+    if (!due) return false;
+    const status = (task?.status || '').toLowerCase();
+    if (status === 'completed') return false;
+    const dueDate = new Date(due);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endSoon = new Date(today);
+    endSoon.setDate(endSoon.getDate() + DUE_SOON_DAYS);
+    endSoon.setHours(23, 59, 59, 999);
+    dueDate.setHours(0, 0, 0, 0);
+    return dueDate >= today && dueDate <= endSoon;
   };
 
   // Get status color (global mapping)
@@ -178,6 +211,44 @@ export const TaskDashboardScreen: React.FC = () => {
     return 'pending';
   };
 
+  // Apply dashboard-style status filter (from URL or filter tabs)
+  const statusFilteredTasks = React.useMemo(() => {
+    if (statusFilter === 'all') return visibleTasks;
+    return visibleTasks.filter((task: any) => {
+      const viewerStatus = getViewerStatusForTask(task);
+      const taskStatus = (task?.status || '').toLowerCase();
+      const overdue = isOverdue(task?.due_date || task?.dueDate);
+      if (statusFilter === 'overdue') {
+        return overdue && taskStatus !== 'completed';
+      }
+      if (statusFilter === 'duesoon') {
+        return isDueSoon(task);
+      }
+      if (statusFilter === 'inprogress') {
+        return viewerStatus === 'in_progress' || viewerStatus === 'pending_verification';
+      }
+      if (statusFilter === 'completed') {
+        return viewerStatus === 'completed' || taskStatus === 'completed';
+      }
+      return true;
+    });
+  }, [visibleTasks, statusFilter]);
+
+  // Separate pending and all tasks (from status-filtered list)
+  const pendingTasks = statusFilteredTasks.filter((task: any) => task.status === 'pending');
+  const allTasks = statusFilteredTasks.filter((task: any) => task.status !== 'pending');
+
+  const setStatusFilterAndUrl = (filter: StatusFilter) => {
+    setStatusFilter(filter);
+    if (filter === 'all') {
+      searchParams.delete('status');
+      setSearchParams(searchParams, { replace: true });
+    } else {
+      searchParams.set('status', filter);
+      setSearchParams(searchParams, { replace: true });
+    }
+  };
+
   // Handle refresh
   const handleRefresh = () => {
     setRefreshing(true);
@@ -222,6 +293,8 @@ export const TaskDashboardScreen: React.FC = () => {
     const statusColor = getStatusColor(
       viewerStatus === 'pending_verification' ? 'in_progress' : viewerStatus
     );
+    const taskType = (task.task_type || task.taskType || 'one_time').toLowerCase();
+    const isRecurring = taskType === 'recurring';
     
     // Check current user's relationship to this task
     const currentUserStatus = task.current_user_status;
@@ -269,12 +342,22 @@ export const TaskDashboardScreen: React.FC = () => {
     return (
       <div
         key={task.id}
-        className="flex flex-col gap-3 rounded-xl bg-white dark:bg-slate-800 p-4 shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:shadow-md hover:border-primary/30 dark:hover:border-primary/50 transition-all group"
+        className="flex flex-col gap-3 rounded-2xl bg-white dark:bg-slate-800/90 p-5 shadow-lg border border-slate-200/80 dark:border-slate-600/80 cursor-pointer hover:shadow-xl hover:border-primary/40 dark:hover:border-primary/50 hover:-translate-y-0.5 transition-all duration-200 group"
         onClick={handleCardClick}
       >
-        {/* Header with Status (viewer based) */}
+        {/* Header: OT/RT indicator + Status (viewer based) */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide ${
+                isRecurring
+                  ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
+                  : 'bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300'
+              }`}
+              title={isRecurring ? 'Recurring Task' : 'One-Time Task'}
+            >
+              {isRecurring ? 'RT' : 'OT'}
+            </span>
             {viewerStatus === 'pending' && (
               <span 
                 className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
@@ -334,8 +417,8 @@ export const TaskDashboardScreen: React.FC = () => {
           </p>
         )}
 
-        {/* Finance row (amount + type) - mirrors mobile */}
-        {(task.financial_value != null || task.finance_type) && (
+        {/* Finance row - only visible to task creator */}
+        {(task.financial_value != null || task.finance_type) && (task.created_by === currentUserId || task.creator_id === currentUserId) && (
           <div className="flex items-center justify-between gap-2 text-sm">
             {task.finance_type && (
               <span className="text-gray-500 dark:text-gray-400 uppercase tracking-wide text-xs">
@@ -447,32 +530,10 @@ export const TaskDashboardScreen: React.FC = () => {
 
       {/* Filters and Search Bar */}
       <div className="mb-6">
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-          {/* Tab Container */}
-          <div className="flex h-10 items-center rounded-lg bg-gray-100 dark:bg-slate-700 p-1 shadow-inner">
-            <button
-              onClick={() => setActiveTab('one_time')}
-              className={`px-4 h-full flex items-center justify-center rounded-md transition-all duration-200 ${
-                activeTab === 'one_time'
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-600'
-              } text-xs font-semibold whitespace-nowrap`}
-            >
-              One-Time
-            </button>
-            <button
-              onClick={() => setActiveTab('recurring')}
-              className={`px-4 h-full flex items-center justify-center rounded-md transition-all duration-200 ${
-                activeTab === 'recurring'
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-600'
-              } text-xs font-semibold whitespace-nowrap`}
-            >
-              Recurring
-            </button>
-          </div>
-
-          {/* Search Bar - Navbar Style */}
+        <div className="flex flex-col gap-4">
+          {/* Search + Status filter row */}
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+            {/* Search Bar - Navbar Style */}
           <div className="relative w-full sm:w-64">
             <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 text-[18px] pointer-events-none">
               search
@@ -495,6 +556,27 @@ export const TaskDashboardScreen: React.FC = () => {
                 </span>
               </button>
             )}
+          </div>
+          </div>
+
+          {/* Status filter tabs (dashboard-style: All, Overdue, Due Soon, In Progress, Completed) */}
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mr-1">Status:</span>
+            <div className="flex flex-wrap gap-1.5">
+              {(['all', 'overdue', 'duesoon', 'inprogress', 'completed'] as const).map((key) => (
+                <button
+                  key={key}
+                  onClick={() => setStatusFilterAndUrl(key)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    statusFilter === key
+                      ? 'bg-primary text-white shadow-sm'
+                      : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-600'
+                  }`}
+                >
+                  {key === 'all' ? 'All' : key === 'duesoon' ? 'Due Soon' : key === 'inprogress' ? 'In Progress' : key.charAt(0).toUpperCase() + key.slice(1)}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -522,22 +604,39 @@ export const TaskDashboardScreen: React.FC = () => {
             Retry
           </button>
         </div>
-      ) : filteredTasks.length === 0 ? (
+      ) : statusFilteredTasks.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700">
           <span className="material-symbols-outlined text-6xl text-gray-300 dark:text-gray-600 mb-4">
             task_alt
           </span>
-          <p className="text-gray-400 dark:text-gray-500 text-lg font-medium mb-2">No tasks found</p>
-          <p className="text-gray-400 dark:text-gray-500 text-sm mb-6">
-            {searchQuery ? 'Try adjusting your search' : 'Get started by creating your first task'}
+          <p className="text-gray-400 dark:text-gray-500 text-lg font-medium mb-2">
+            {statusFilter !== 'all' && visibleTasks.length > 0
+              ? 'No tasks match this filter'
+              : 'No tasks found'}
           </p>
-          <button
-            onClick={() => setShowTaskCreateModal(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-lg font-semibold text-sm hover:bg-primary/90 transition-all shadow-md hover:shadow-lg active:scale-[0.98]"
-          >
-            <span className="material-symbols-outlined text-lg">add</span>
-            Create Task
-          </button>
+          <p className="text-gray-400 dark:text-gray-500 text-sm mb-6">
+            {statusFilter !== 'all' && visibleTasks.length > 0
+              ? 'Try another status or All'
+              : searchQuery
+                ? 'Try adjusting your search'
+                : 'Get started by creating your first task'}
+          </p>
+          {statusFilter !== 'all' && visibleTasks.length > 0 ? (
+            <button
+              onClick={() => setStatusFilterAndUrl('all')}
+              className="flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-lg font-semibold text-sm hover:bg-primary/90 transition-all shadow-md hover:shadow-lg active:scale-[0.98]"
+            >
+              Show all tasks
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowTaskCreateModal(true)}
+              className="flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-lg font-semibold text-sm hover:bg-primary/90 transition-all shadow-md hover:shadow-lg active:scale-[0.98]"
+            >
+              <span className="material-symbols-outlined text-lg">add</span>
+              Create Task
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-8">
