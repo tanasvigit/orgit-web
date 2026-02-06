@@ -262,11 +262,6 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
               {!isCollapsed && (
                 <span className="font-medium text-sm whitespace-nowrap">{item.label}</span>
               )}
-              {item.path === '/messages' && (
-                <span className={`absolute w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-gray-800 ${
-                  isCollapsed ? 'top-2 right-2' : 'top-2 right-3'
-                }`}></span>
-              )}
             </Link>
           );
         })}

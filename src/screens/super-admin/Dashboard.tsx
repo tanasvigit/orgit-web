@@ -32,14 +32,14 @@ export const Dashboard: React.FC = () => {
   };
 
   const statCards = [
-    { label: 'Total Organizations', value: stats.totalOrganizations, icon: 'domain', bgColor: 'bg-blue-100 dark:bg-blue-900/20', iconColor: 'text-blue-600 dark:text-blue-400' },
-    { label: 'Active Organizations', value: stats.activeOrganizations, icon: 'check_circle', bgColor: 'bg-green-100 dark:bg-green-900/20', iconColor: 'text-green-600 dark:text-green-400' },
-    { label: 'Total Users', value: stats.totalUsers, icon: 'people', bgColor: 'bg-purple-100 dark:bg-purple-900/20', iconColor: 'text-purple-600 dark:text-purple-400' },
-    { label: 'Active Users', value: stats.activeUsers, icon: 'person_check', bgColor: 'bg-indigo-100 dark:bg-indigo-900/20', iconColor: 'text-indigo-600 dark:text-indigo-400' },
-    { label: 'Total Tasks', value: stats.totalTasks, icon: 'task', bgColor: 'bg-orange-100 dark:bg-orange-900/20', iconColor: 'text-orange-600 dark:text-orange-400' },
-    { label: 'Active Tasks', value: stats.activeTasks, icon: 'play_circle', bgColor: 'bg-yellow-100 dark:bg-yellow-900/20', iconColor: 'text-yellow-600 dark:text-yellow-400' },
-    { label: 'Completed Tasks', value: stats.completedTasks, icon: 'done_all', bgColor: 'bg-green-100 dark:bg-green-900/20', iconColor: 'text-green-600 dark:text-green-400' },
-    { label: 'Overdue Tasks', value: stats.overdueTasks, icon: 'warning', bgColor: 'bg-red-100 dark:bg-red-900/20', iconColor: 'text-red-600 dark:text-red-400' },
+    { label: 'Total Organizations', value: stats.totalOrganizations, icon: 'domain', bgColor: 'bg-blue-100 dark:bg-blue-900/20', iconColor: 'text-blue-600 dark:text-blue-400', borderAccent: 'border-t-blue-500' },
+    { label: 'Active Organizations', value: stats.activeOrganizations, icon: 'check_circle', bgColor: 'bg-green-100 dark:bg-green-900/20', iconColor: 'text-green-600 dark:text-green-400', borderAccent: 'border-t-green-500' },
+    { label: 'Total Users', value: stats.totalUsers, icon: 'people', bgColor: 'bg-purple-100 dark:bg-purple-900/20', iconColor: 'text-purple-600 dark:text-purple-400', borderAccent: 'border-t-purple-500' },
+    { label: 'Active Users', value: stats.activeUsers, icon: 'person_check', bgColor: 'bg-indigo-100 dark:bg-indigo-900/20', iconColor: 'text-indigo-600 dark:text-indigo-400', borderAccent: 'border-t-indigo-500' },
+    { label: 'Total Tasks', value: stats.totalTasks, icon: 'task', bgColor: 'bg-orange-100 dark:bg-orange-900/20', iconColor: 'text-orange-600 dark:text-orange-400', borderAccent: 'border-t-orange-500' },
+    { label: 'Active Tasks', value: stats.activeTasks, icon: 'play_circle', bgColor: 'bg-yellow-100 dark:bg-yellow-900/20', iconColor: 'text-yellow-600 dark:text-yellow-400', borderAccent: 'border-t-yellow-500' },
+    { label: 'Completed Tasks', value: stats.completedTasks, icon: 'done_all', bgColor: 'bg-green-100 dark:bg-green-900/20', iconColor: 'text-green-600 dark:text-green-400', borderAccent: 'border-t-green-500' },
+    { label: 'Overdue Tasks', value: stats.overdueTasks, icon: 'warning', bgColor: 'bg-red-100 dark:bg-red-900/20', iconColor: 'text-red-600 dark:text-red-400', borderAccent: 'border-t-red-500' },
   ];
 
   return (
@@ -56,14 +56,14 @@ export const Dashboard: React.FC = () => {
           {statCards.map((card) => (
             <div
               key={card.label}
-              className="bg-super-admin-surface-light dark:bg-super-admin-surface-dark rounded-2xl shadow-lg border border-super-admin-border-light dark:border-super-admin-border-dark p-6 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200"
+              className={`bg-super-admin-surface-light dark:bg-super-admin-surface-dark rounded-2xl border-2 border-t-4 border-super-admin-border-light dark:border-super-admin-border-dark ${card.borderAccent} shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 ease-out p-6`}
             >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-500 dark:text-gray-400">{card.label}</p>
                   <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{card.value}</p>
                 </div>
-                <div className={`w-12 h-12 flex items-center justify-center rounded-xl ${card.bgColor} shrink-0 p-2.5 box-border`}>
+                <div className={`w-12 h-12 flex items-center justify-center rounded-xl ring-2 ring-white/50 dark:ring-slate-800/50 ${card.bgColor} shrink-0 p-2.5 box-border`}>
                   <span className={`material-symbols-outlined text-xl ${card.iconColor} leading-none block`}>
                     {card.icon}
                   </span>
@@ -74,7 +74,7 @@ export const Dashboard: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-super-admin-surface-light dark:bg-super-admin-surface-dark rounded-2xl shadow-lg border border-super-admin-border-light dark:border-super-admin-border-dark p-6">
+          <div className="bg-super-admin-surface-light dark:bg-super-admin-surface-dark rounded-2xl border-2 border-t-4 border-t-super-admin-primary border-super-admin-border-light dark:border-super-admin-border-dark shadow-lg hover:shadow-xl transition-all duration-300 ease-out p-6">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Recent Activity</h3>
             <div className="space-y-3">
               {stats.recentActivity.length > 0 ? (
@@ -98,7 +98,7 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-super-admin-surface-light dark:bg-super-admin-surface-dark rounded-2xl shadow-lg border border-super-admin-border-light dark:border-super-admin-border-dark p-6">
+          <div className="bg-super-admin-surface-light dark:bg-super-admin-surface-dark rounded-2xl border-2 border-t-4 border-t-super-admin-primary border-super-admin-border-light dark:border-super-admin-border-dark shadow-lg hover:shadow-xl transition-all duration-300 ease-out p-6">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Quick Actions</h3>
             <div className="space-y-2">
               <a

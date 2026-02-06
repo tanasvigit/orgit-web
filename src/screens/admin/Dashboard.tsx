@@ -22,7 +22,7 @@ export const AdminDashboard: React.FC = () => {
   const { data: dashboardData, isLoading, refetch: refetchDashboard } = useQuery(
     ['admin-dashboard'],
     () => dashboardService.getDashboard(3),
-    {
+    { 
       staleTime: 0, // Match mobile: always refetch on focus so counts stay in sync
       refetchInterval: 30000,
       refetchOnMount: 'always',
@@ -152,7 +152,7 @@ export const AdminDashboard: React.FC = () => {
 
   const flattenedSelfTasksForUser = useMemo(() => {
     if (!selfTasks || !currentUserId) return [] as any[];
-    const buckets = ['overdue', 'dueSoon', 'inProgress', 'completed'] as const;
+    const buckets = ['todo', 'overdue', 'dueSoon', 'inProgress', 'completed'] as const;
     const all: any[] = [];
 
     Object.values(selfTasks).forEach((group: any) => {
@@ -305,12 +305,13 @@ export const AdminDashboard: React.FC = () => {
     });
   };
 
-  const getStatusCount = (status: 'overdue' | 'duesoon' | 'inprogress' | 'completed', view: 'self' | 'assigned') => {
+  const getStatusCount = (status: 'todo' | 'overdue' | 'duesoon' | 'inprogress' | 'completed', view: 'self' | 'assigned') => {
     const stats = statistics?.data ?? statistics;
     if (!stats) return 0;
     const prefix = view === 'self' ? 'selfTasks' : 'assignedTasks';
     // Map status to correct key format matching backend response
     const statusKeyMap: Record<string, string> = {
+      todo: 'Todo',
       overdue: 'Overdue',
       duesoon: 'DueSoon',
       inprogress: 'InProgress',
@@ -399,25 +400,29 @@ export const AdminDashboard: React.FC = () => {
         {/* Statistics Cards for this section */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-5 mb-6">
           {/* To-Do Card (Today’s recurring, not completed) */}
-          <div className="bg-white dark:bg-slate-800/90 p-5 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 flex flex-col items-center text-center group hover:shadow-xl hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200">
-            <div className="mb-3 p-2.5 rounded-xl bg-primary/15 text-primary">
+          <button
+            type="button"
+            onClick={() => navigate('/admin/tasks?status=todo')}
+            className="relative bg-white dark:bg-slate-800/90 p-5 rounded-2xl flex flex-col items-center text-center group cursor-pointer text-left w-full border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-primary shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40 transition-all duration-300 ease-out hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-0.5 hover:border-primary/30 dark:hover:border-primary/40"
+          >
+            <div className="mb-3 p-2.5 rounded-xl bg-primary/15 text-primary ring-2 ring-primary/10">
               <span className="material-symbols-outlined text-2xl">today</span>
             </div>
             <span className="text-2xl font-bold text-primary mb-1">
-              {getToDoTasks(viewType).length}
+              {getStatusCount('todo', viewType) + getToDoTasks(viewType).length}
             </span>
             <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
               TO DO
             </span>
-          </div>
+          </button>
           
           {/* Overdue Card - clickable */}
           <button
             type="button"
             onClick={() => navigate('/admin/tasks?status=overdue')}
-            className="bg-white dark:bg-slate-800/90 p-5 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 flex flex-col items-center text-center group hover:shadow-xl hover:border-status-overdue/50 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer text-left"
+            className="relative bg-white dark:bg-slate-800/90 p-5 rounded-2xl flex flex-col items-center text-center group cursor-pointer text-left border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-status-overdue shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40 transition-all duration-300 ease-out hover:shadow-xl hover:shadow-status-overdue/10 hover:-translate-y-0.5 hover:border-status-overdue/30 dark:hover:border-status-overdue/40"
           >
-            <div className="mb-3 p-2.5 rounded-xl bg-status-overdue/15 text-status-overdue">
+            <div className="mb-3 p-2.5 rounded-xl bg-status-overdue/15 text-status-overdue ring-2 ring-status-overdue/20">
               <span className="material-symbols-outlined text-2xl">priority_high</span>
             </div>
             <span className="text-2xl font-bold text-status-overdue mb-1">
@@ -432,9 +437,9 @@ export const AdminDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate('/admin/tasks?status=duesoon')}
-            className="bg-white dark:bg-slate-800/90 p-5 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 flex flex-col items-center text-center group hover:shadow-xl hover:border-status-duesoon/50 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer text-left"
+            className="relative bg-white dark:bg-slate-800/90 p-5 rounded-2xl flex flex-col items-center text-center group cursor-pointer text-left border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-status-duesoon shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40 transition-all duration-300 ease-out hover:shadow-xl hover:shadow-status-duesoon/10 hover:-translate-y-0.5 hover:border-status-duesoon/30 dark:hover:border-status-duesoon/40"
           >
-            <div className="mb-3 p-2.5 rounded-xl bg-status-duesoon/15 text-status-duesoon">
+            <div className="mb-3 p-2.5 rounded-xl bg-status-duesoon/15 text-status-duesoon ring-2 ring-status-duesoon/20">
               <span className="material-symbols-outlined text-2xl">hourglass_top</span>
             </div>
             <span className="text-2xl font-bold text-status-duesoon mb-1">
@@ -449,9 +454,9 @@ export const AdminDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate('/admin/tasks?status=inprogress')}
-            className="bg-white dark:bg-slate-800/90 p-5 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 flex flex-col items-center text-center group hover:shadow-xl hover:border-status-inprogress/50 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer text-left"
+            className="relative bg-white dark:bg-slate-800/90 p-5 rounded-2xl flex flex-col items-center text-center group cursor-pointer text-left border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-status-inprogress shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40 transition-all duration-300 ease-out hover:shadow-xl hover:shadow-status-inprogress/10 hover:-translate-y-0.5 hover:border-status-inprogress/30 dark:hover:border-status-inprogress/40"
           >
-            <div className="mb-3 p-2.5 rounded-xl bg-status-inprogress/15 text-status-inprogress">
+            <div className="mb-3 p-2.5 rounded-xl bg-status-inprogress/15 text-status-inprogress ring-2 ring-status-inprogress/20">
               <span className="material-symbols-outlined text-2xl">pending_actions</span>
             </div>
             <span className="text-2xl font-bold text-status-inprogress mb-1">
@@ -466,9 +471,9 @@ export const AdminDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate('/admin/tasks?status=completed')}
-            className="bg-white dark:bg-slate-800/90 p-5 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 flex flex-col items-center text-center group hover:shadow-xl hover:border-status-completed/50 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer text-left"
+            className="relative bg-white dark:bg-slate-800/90 p-5 rounded-2xl flex flex-col items-center text-center group cursor-pointer text-left border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-status-completed shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40 transition-all duration-300 ease-out hover:shadow-xl hover:shadow-status-completed/10 hover:-translate-y-0.5 hover:border-status-completed/30 dark:hover:border-status-completed/40"
           >
-            <div className="mb-3 p-2.5 rounded-xl bg-status-completed/15 text-status-completed">
+            <div className="mb-3 p-2.5 rounded-xl bg-status-completed/15 text-status-completed ring-2 ring-status-completed/20">
               <span className="material-symbols-outlined text-2xl">task_alt</span>
             </div>
             <span className="text-2xl font-bold text-status-completed mb-1">
@@ -504,7 +509,7 @@ export const AdminDashboard: React.FC = () => {
             <div>
               <button
                 onClick={() => setExpandedDM(!expandedDM)}
-                className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800/90 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 group hover:shadow-xl hover:border-primary/40 transition-all duration-200"
+                className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800/90 rounded-2xl group transition-all duration-300 ease-out border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-primary shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40 hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-0.5 hover:border-primary/30 dark:hover:border-primary/40"
               >
                 <div className="flex items-center gap-4">
                   <div className="p-3 bg-primary/10 rounded-lg text-primary">
@@ -712,7 +717,7 @@ export const AdminDashboard: React.FC = () => {
             <div>
               <button
                 onClick={() => setExpandedCM(!expandedCM)}
-                className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800/90 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 group hover:shadow-xl hover:border-primary/40 transition-all duration-200"
+                className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800/90 rounded-2xl group transition-all duration-300 ease-out border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-primary shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40 hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-0.5 hover:border-primary/30 dark:hover:border-primary/40"
               >
                 <div className="flex items-center gap-4">
                   <div className="p-3 bg-primary/10 rounded-lg text-primary">

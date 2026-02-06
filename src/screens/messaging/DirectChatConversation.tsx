@@ -24,6 +24,7 @@ import { MediaUpload } from '../../components/messaging/MediaUpload';
 import { VoiceRecorder } from '../../components/messaging/VoiceRecorder';
 import { LocationPicker } from '../../components/messaging/LocationPicker';
 import { UserProfileModal } from '../../components/messaging/UserProfileModal';
+import { extractUploadedMedia } from '../../utils/chatMedia';
 
 export const DirectChatConversation: React.FC = () => {
   const { conversationId } = useParams<{ conversationId: string }>();
@@ -60,6 +61,18 @@ export const DirectChatConversation: React.FC = () => {
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showUserProfile, setShowUserProfile] = useState(false);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  // File upload preview state: files selected to send, shown above input
+  type PendingAttachment = {
+    id: string;
+    file: File;
+    name: string;
+    size: number;
+    type: 'image' | 'video' | 'audio' | 'document';
+    previewUrl?: string;
+    uploadProgress: number | null; // null = not started, 0-100 = uploading/done
+  };
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
 
   // Fetch conversations list for sidebar
   const { data: conversations = [] } = useQuery(
@@ -1063,13 +1076,12 @@ export const DirectChatConversation: React.FC = () => {
 
   // Handle send message
   const handleSend = async () => {
-    if ((!message.trim() && !replyingTo && !editingMessage) || !conversationId) return;
+    if ((!message.trim() && !replyingTo && !editingMessage && pendingAttachments.length === 0) || !conversationId) return;
 
     try {
       const socket = await waitForSocketConnection();
-      
+
       if (editingMessage) {
-        // Edit existing message
         await messageService.editMessage(editingMessage.id, message.trim());
         socket.emit('send_message', {
           conversationId,
@@ -1080,8 +1092,63 @@ export const DirectChatConversation: React.FC = () => {
         });
         setEditingMessage(null);
         setMessage('');
+      } else if (pendingAttachments.length > 0) {
+        // Send caption as text first if present
+        const caption = message.trim();
+        if (caption) {
+          const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          const currentUserId = user?.id;
+          const tempMessage = normalizeMessage({
+            id: tempId,
+            conversation_id: conversationId,
+            sender_id: currentUserId,
+            content: caption,
+            message_type: 'text',
+            status: 'sent',
+            created_at: new Date().toISOString(),
+            sender_name: user?.name || 'You',
+            reply_to_message_id: replyingTo?.id || null,
+            reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, content: replyingTo.content, message_type: replyingTo.message_type, sender_name: replyingTo.sender_name } : null,
+          });
+          if (tempMessage) setMessages((prev) => [...prev, tempMessage]);
+          socket.emit('send_message', { conversationId, text: caption, content: caption, messageType: 'text', replyToMessageId: replyingTo?.id || null });
+          setMessage('');
+          setReplyingTo(null);
+        }
+        setUploadingMedia(true);
+        const toSend = [...pendingAttachments];
+        setPendingAttachments([]);
+        for (const item of toSend) {
+          try {
+            let uploadResponse: any;
+            const messageType = item.type;
+            switch (item.type) {
+              case 'image': uploadResponse = await messageService.uploadImage(item.file); break;
+              case 'video': uploadResponse = await messageService.uploadVideo(item.file); break;
+              case 'audio': uploadResponse = await messageService.uploadAudio(item.file); break;
+              case 'document': uploadResponse = await messageService.uploadDocument(item.file); break;
+            }
+            const { storedValue } = extractUploadedMedia(uploadResponse);
+            if (!storedValue) throw new Error('Upload did not return key');
+            socket.emit('send_message', {
+              conversationId,
+              messageType,
+              mediaUrl: storedValue,
+              fileName: item.name,
+              fileSize: item.size,
+              mimeType: item.file.type,
+              replyToMessageId: replyingTo?.id || null,
+            });
+          } catch (err) {
+            console.error('Upload error:', err);
+            toast.error(`Failed to upload ${item.name}. Please try again.`);
+          }
+          if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+        }
+        setUploadingMedia(false);
+        setTimeout(() => scrollToBottom(), 100);
       } else {
-        // Create optimistic message
+        // Text only
         const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const currentUserId = user?.id;
         const tempMessage = normalizeMessage({
@@ -1094,33 +1161,17 @@ export const DirectChatConversation: React.FC = () => {
           created_at: new Date().toISOString(),
           sender_name: user?.name || 'You',
           reply_to_message_id: replyingTo?.id || null,
-          reply_to: replyingTo ? {
-            id: replyingTo.id,
-            sender_id: replyingTo.sender_id,
-            content: replyingTo.content,
-            message_type: replyingTo.message_type,
-            sender_name: replyingTo.sender_name,
-          } : null,
+          reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, content: replyingTo.content, message_type: replyingTo.message_type, sender_name: replyingTo.sender_name } : null,
         });
-        
         if (tempMessage) {
           setMessages((prev) => [...prev, tempMessage]);
           setMessage('');
           setReplyingTo(null);
           setTimeout(() => scrollToBottom(), 100);
         }
-        
-        // Send via socket only (socket handler will insert to database and emit new_message)
-        // Do NOT call sendMessageMutation here as it causes duplicate messages
-        socket.emit('send_message', {
-          conversationId,
-          text: message.trim(),
-          content: message.trim(),
-          messageType: 'text',
-          replyToMessageId: replyingTo?.id || null,
-        });
+        socket.emit('send_message', { conversationId, text: message.trim(), content: message.trim(), messageType: 'text', replyToMessageId: replyingTo?.id || null });
       }
-      
+
       setIsTyping(false);
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
@@ -1128,9 +1179,7 @@ export const DirectChatConversation: React.FC = () => {
       }
     } catch (error) {
       console.error('Send message error:', error);
-      // Show user-friendly error message
       toast.error('Failed to send message. Please try again.');
-      // Don't crash - ensure state is still valid
     }
   };
 
@@ -1263,11 +1312,46 @@ export const DirectChatConversation: React.FC = () => {
     }
   };
 
-  // Handle media upload
+  // Add file to upload preview (show in strip, send when user clicks Send)
+  const addFileToPending = (file: File, type: 'image' | 'video' | 'audio' | 'document') => {
+    const id = `pending_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    let previewUrl: string | undefined;
+    if (type === 'image' || type === 'video') {
+      previewUrl = URL.createObjectURL(file);
+    }
+    setPendingAttachments((prev) => [
+      ...prev,
+      {
+        id,
+        file,
+        name: file.name,
+        size: file.size,
+        type,
+        previewUrl,
+        uploadProgress: null,
+      },
+    ]);
+  };
+
+  const removePendingAttachment = (id: string) => {
+    setPendingAttachments((prev) => {
+      const item = prev.find((p) => p.id === id);
+      if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      return prev.filter((p) => p.id !== id);
+    });
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // Handle media upload (immediate upload and send - used when no preview flow)
   const handleMediaSelect = async (file: File, type: 'image' | 'video' | 'audio' | 'document') => {
     setUploadingMedia(true);
     try {
-      let uploadResponse;
+      let uploadResponse: any;
       let messageType: string = type;
 
       switch (type) {
@@ -1289,17 +1373,16 @@ export const DirectChatConversation: React.FC = () => {
           break;
       }
 
-      const mediaUrl = uploadResponse.url || uploadResponse.mediaUrl || uploadResponse.data?.url;
-      if (!mediaUrl) {
-        throw new Error('No media URL returned from upload');
+      const { storedValue } = extractUploadedMedia(uploadResponse);
+      if (!storedValue) {
+        throw new Error('No media key or URL returned from upload');
       }
 
-      // Send message via socket
       const socket = await waitForSocketConnection();
       socket.emit('send_message', {
         conversationId,
         messageType,
-        mediaUrl,
+        mediaUrl: storedValue,
         fileName: file.name,
         fileSize: file.size,
         mimeType: file.type,
@@ -1315,6 +1398,13 @@ export const DirectChatConversation: React.FC = () => {
     }
   };
 
+  // When user selects file from MediaUpload: add to preview strip (then Send will upload)
+  const handleMediaSelectAddToPreview = (file: File, type: 'image' | 'video' | 'audio' | 'document') => {
+    addFileToPending(file, type);
+    setShowMediaUpload(false);
+    setShowAttachmentMenu(false);
+  };
+
   // Handle voice note
   const handleVoiceNoteComplete = async (audioBlob: Blob) => {
     setUploadingMedia(true);
@@ -1322,10 +1412,10 @@ export const DirectChatConversation: React.FC = () => {
       // Convert blob to file
       const audioFile = new File([audioBlob], 'voice-note.webm', { type: 'audio/webm' });
       const uploadResponse = await messageService.uploadVoiceNote(audioFile);
-      
-      const mediaUrl = uploadResponse.url || uploadResponse.mediaUrl || uploadResponse.data?.url;
-      if (!mediaUrl) {
-        throw new Error('No media URL returned from upload');
+
+      const { storedValue } = extractUploadedMedia(uploadResponse);
+      if (!storedValue) {
+        throw new Error('No media key or URL returned from upload');
       }
 
       // Send message via socket
@@ -1333,7 +1423,7 @@ export const DirectChatConversation: React.FC = () => {
       socket.emit('send_message', {
         conversationId,
         messageType: 'voice_note',
-        mediaUrl,
+        mediaUrl: storedValue,
         fileName: 'voice-note.webm',
         fileSize: audioBlob.size,
         mimeType: 'audio/webm',
@@ -1905,59 +1995,195 @@ export const DirectChatConversation: React.FC = () => {
       )}
 
       {/* Footer */}
-      <div className="p-4 bg-surface-light dark:bg-surface-dark border-t border-border-light dark:border-border-dark">
-        <div className="flex items-end gap-2 max-w-5xl mx-auto">
-          <button 
-            className="p-3 text-gray-400 hover:text-primary transition rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 relative"
-            onClick={() => setShowMediaUpload(true)}
+      <div className="p-4 bg-surface-light dark:bg-surface-dark border-t border-border-light dark:border-border-dark relative">
+        {/* File upload preview strip */}
+        {pendingAttachments.length > 0 && (
+          <div className="flex gap-3 overflow-x-auto pb-4 mb-2 -mx-2 px-2 scroll-smooth max-w-5xl mx-auto" style={{ scrollbarWidth: 'thin' }}>
+            {pendingAttachments.map((item) => (
+              <div
+                key={item.id}
+                className="flex-shrink-0 w-32 h-32 relative group rounded-xl overflow-hidden border border-border-light dark:border-border-dark bg-gray-100 dark:bg-gray-800"
+              >
+                {item.type === 'image' && item.previewUrl ? (
+                  <>
+                    <img alt={item.name} className="w-full h-full object-cover" src={item.previewUrl} />
+                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors" />
+                    <button
+                      type="button"
+                      onClick={() => removePendingAttachment(item.id)}
+                      className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/50 hover:bg-red-500 text-white rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
+                    >
+                      <span className="material-icons-round !text-[14px]">close</span>
+                    </button>
+                    <div className="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-black/60 to-transparent">
+                      <p className="text-[10px] text-white truncate font-medium">{item.name}</p>
+                    </div>
+                  </>
+                ) : item.type === 'document' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => removePendingAttachment(item.id)}
+                      className="absolute top-1.5 right-1.5 z-10 w-6 h-6 bg-gray-200/50 dark:bg-gray-700/50 hover:bg-red-500 hover:text-white text-gray-600 dark:text-gray-300 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
+                    >
+                      <span className="material-icons-round !text-[14px]">close</span>
+                    </button>
+                    <div className="w-full h-full flex flex-col items-center justify-center p-3">
+                      <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center text-red-600 dark:text-red-400 mb-2">
+                        <span className="material-symbols-outlined">picture_as_pdf</span>
+                      </div>
+                      <p className="text-[10px] text-gray-600 dark:text-gray-300 font-semibold text-center line-clamp-2">{item.name}</p>
+                      <p className="text-[9px] text-gray-400 dark:text-gray-500 mt-0.5 uppercase tracking-wider">{formatFileSize(item.size)}</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => removePendingAttachment(item.id)}
+                      className="absolute top-1.5 right-1.5 z-10 w-6 h-6 bg-gray-200/50 dark:bg-gray-700/50 hover:bg-red-500 hover:text-white text-gray-600 dark:text-gray-300 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
+                    >
+                      <span className="material-icons-round !text-[14px]">close</span>
+                    </button>
+                    <div className="w-full h-full flex flex-col items-center justify-center p-3">
+                      <div className="w-12 h-12 bg-gray-200 dark:bg-gray-700/50 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-500 mb-2">
+                        <span className="material-symbols-outlined">{item.type === 'video' ? 'videocam' : item.type === 'audio' ? 'audiotrack' : 'description'}</span>
+                      </div>
+                      <p className="text-[10px] text-gray-600 dark:text-gray-300 font-semibold text-center line-clamp-2">{item.name}</p>
+                      <p className="text-[9px] text-gray-400 dark:text-gray-500 mt-0.5 uppercase tracking-wider">{formatFileSize(item.size)}</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Plus menu (attachments) */}
+        {showAttachmentMenu && (
+          <div className="absolute bottom-[calc(100%+12px)] left-6 w-56 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl shadow-2xl overflow-hidden py-2 z-20">
+            <button
+              type="button"
+              onClick={() => {
+                setShowAttachmentMenu(false);
+                setShowMediaUpload(true);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
+            >
+              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:scale-110 transition-transform">
+                <span className="material-icons-round text-base">upload_file</span>
+              </div>
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Upload File</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowAttachmentMenu(false);
+                setShowLocationPicker(true);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
+            >
+              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform">
+                <span className="material-icons-round text-base">location_on</span>
+              </div>
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Share Location</span>
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
+            >
+              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform">
+                <span className="material-icons-round text-base">contact_page</span>
+              </div>
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Send Contact</span>
+            </button>
+            <div className="mx-4 my-1 h-px bg-gray-100 dark:bg-slate-800" />
+            <button
+              type="button"
+              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
+            >
+              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform">
+                <span className="material-icons-round text-base">poll</span>
+              </div>
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Create Poll</span>
+            </button>
+          </div>
+        )}
+
+        <div className="flex items-center gap-3 max-w-5xl mx-auto bg-gray-100 dark:bg-background-dark/70 p-2 rounded-2xl border border-border-light dark:border-border-dark">
+          {/* Plus button */}
+          <button
+            type="button"
+            className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-all disabled:opacity-50"
+            onClick={() => setShowAttachmentMenu((prev) => !prev)}
             disabled={uploadingMedia}
-            title="Attach file"
+            title="More options"
           >
             {uploadingMedia ? (
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" />
             ) : (
-              <span className="material-icons-outlined">add_circle</span>
+              <span className="material-icons-round">add_circle</span>
             )}
           </button>
-          <div className="flex-1 bg-gray-100 dark:bg-background-dark rounded-2xl flex items-center p-2">
-            <textarea
-              className="w-full bg-transparent border-none focus:ring-0 text-gray-900 dark:text-gray-100 resize-none max-h-32 placeholder-gray-400 py-2 px-3"
-              placeholder={editingMessage ? "Edit message..." : "Type a message..."}
-              rows={1}
-              value={message}
-              onChange={(e) => handleTyping(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-            />
-            <button 
-              className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
-              onClick={() => setShowEmojiPicker(true)}
-            >
-              <span className="material-icons-outlined">sentiment_satisfied</span>
-            </button>
-            <button 
-              className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
-              onClick={() => setShowVoiceRecorder(true)}
-              title="Voice note"
-            >
-              <span className="material-icons-outlined">mic</span>
-            </button>
-          </div>
-            <button 
-              onClick={handleSend} 
-            disabled={(!message.trim() && !replyingTo && !editingMessage) || sendMessageMutation.isLoading || uploadingMedia}
-            className="p-3 bg-primary hover:bg-primary-dark text-white rounded-full shadow-lg transition transform active:scale-95 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-            <span className="material-icons-round">
-                {message.trim() || replyingTo || editingMessage ? 'send' : 'mic'}
-              </span>
-            </button>
-          </div>
+
+          {/* Quick image shortcut (opens media picker) */}
+          <button
+            type="button"
+            className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            onClick={() => setShowMediaUpload(true)}
+            disabled={uploadingMedia}
+            title="Send photo or video"
+          >
+            <span className="material-icons-round">image</span>
+          </button>
+
+          {/* Input */}
+          <textarea
+            className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-gray-900 dark:text-gray-100 resize-none max-h-32 placeholder-gray-400 dark:placeholder-gray-500 py-2 px-2"
+            placeholder={editingMessage ? 'Edit message...' : pendingAttachments.length > 0 ? 'Add a caption...' : 'Type a message...'}
+            rows={1}
+            value={message}
+            onChange={(e) => handleTyping(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+          />
+
+          {/* Emoji */}
+          <button
+            type="button"
+            className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            onClick={() => setShowEmojiPicker(true)}
+            title="Emoji"
+          >
+            <span className="material-icons-round">sentiment_satisfied_alt</span>
+          </button>
+
+          {/* Send */}
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={(!message.trim() && !replyingTo && !editingMessage && pendingAttachments.length === 0) || sendMessageMutation.isLoading || uploadingMedia}
+            className="p-3 bg-primary hover:bg-primary-dark text-white rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 transition-opacity flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="material-icons-round -rotate-45 translate-x-[1px] -translate-y-[1px]">
+              send
+            </span>
+          </button>
         </div>
+
+        <div className="flex items-center justify-center gap-1.5 mt-3">
+          <span className="material-icons-round text-gray-400" style={{ fontSize: 12 }}>
+            lock
+          </span>
+          <p className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold">
+            End-to-end encrypted
+          </p>
+        </div>
+      </div>
 
       {/* Message Action Sheet */}
       <MessageActionSheet
@@ -1985,7 +2211,7 @@ export const DirectChatConversation: React.FC = () => {
       {/* Media Upload */}
       <MediaUpload
         visible={showMediaUpload}
-        onSelect={handleMediaSelect}
+        onSelect={handleMediaSelectAddToPreview}
         onClose={() => setShowMediaUpload(false)}
       />
 

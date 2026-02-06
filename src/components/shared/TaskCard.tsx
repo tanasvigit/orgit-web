@@ -59,12 +59,15 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
   return (
     <div
-      className={`group relative bg-white dark:bg-slate-800/80 rounded-2xl shadow-md hover:shadow-lg transition-all duration-200 overflow-hidden border border-slate-200/80 dark:border-slate-600/80 hover:border-slate-300 dark:hover:border-slate-500 ${
-        status === 'completed' ? 'opacity-75 hover:opacity-100' : ''
-      } cursor-pointer`}
+      className={`group relative bg-white dark:bg-slate-800/80 rounded-2xl overflow-hidden cursor-pointer
+        border-2 border-slate-200/90 dark:border-slate-600/80
+        shadow-lg shadow-slate-200/20 dark:shadow-slate-900/40
+        transition-all duration-300 ease-out
+        hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-0.5 hover:border-primary/30 dark:hover:border-primary/40
+        ${status === 'completed' ? 'opacity-75 hover:opacity-100' : ''}`}
       onClick={onClick}
     >
-      <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl ${statusColorClasses[status]}`} />
+      <div className={`absolute left-0 top-0 bottom-0 w-2 rounded-l-2xl ${statusColorClasses[status]} shadow-sm`} />
       <div className="p-5 pl-6">
         <div className="flex justify-between items-start mb-2">
           <StatusBadge status={status} />

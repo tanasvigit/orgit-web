@@ -49,7 +49,10 @@ export const SettingsScreen: React.FC = () => {
         console.log('Navigating to:', screen);
         navigate(screen);
       }}
-      className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800/90 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-600/80 hover:border-primary/40 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 text-left group"
+      className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800/90 rounded-2xl text-left group transition-all duration-300 ease-out
+        border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-primary
+        shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40
+        hover:border-primary/30 hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-0.5"
     >
       <div className="flex items-center gap-4">
         <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">

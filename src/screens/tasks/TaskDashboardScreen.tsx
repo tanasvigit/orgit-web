@@ -9,7 +9,7 @@ import { AdminLayout } from '../../components/admin/AdminLayout';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
 
-export type StatusFilter = 'all' | 'overdue' | 'duesoon' | 'inprogress' | 'completed';
+export type StatusFilter = 'all' | 'todo' | 'overdue' | 'duesoon' | 'inprogress' | 'completed';
 
 export const TaskDashboardScreen: React.FC = () => {
   const navigate = useNavigate();
@@ -26,14 +26,14 @@ export const TaskDashboardScreen: React.FC = () => {
   const statusFromUrl = searchParams.get('status');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
     const v = (statusFromUrl || '').toLowerCase();
-    if (v === 'overdue' || v === 'duesoon' || v === 'inprogress' || v === 'completed') return v;
+    if (v === 'todo' || v === 'overdue' || v === 'duesoon' || v === 'inprogress' || v === 'completed') return v;
     return 'all';
   });
 
-  // Sync filter from URL when navigating from dashboard (e.g. /tasks?status=inprogress)
+  // Sync filter from URL when navigating from dashboard (e.g. /tasks?status=todo)
   useEffect(() => {
     const v = (searchParams.get('status') || '').toLowerCase();
-    if (v === 'overdue' || v === 'duesoon' || v === 'inprogress' || v === 'completed') {
+    if (v === 'todo' || v === 'overdue' || v === 'duesoon' || v === 'inprogress' || v === 'completed') {
       setStatusFilter(v);
     } else {
       setStatusFilter('all');
@@ -218,6 +218,17 @@ export const TaskDashboardScreen: React.FC = () => {
       const viewerStatus = getViewerStatusForTask(task);
       const taskStatus = (task?.status || '').toLowerCase();
       const overdue = isOverdue(task?.due_date || task?.dueDate);
+      // To Do: pending acceptance (creator: no assignee accepted yet; assignee: I haven't accepted)
+      if (statusFilter === 'todo') {
+        if (taskStatus !== 'pending') return false;
+        const assignees = Array.isArray(task?.assignees) ? task.assignees : [];
+        const creatorId = task?.created_by || task?.creator_id;
+        const isCreator = currentUserId && creatorId === currentUserId;
+        const anyAccepted = assignees.some((a: any) => a.accepted_at || a.has_accepted);
+        const me = assignees.find((a: any) => (a.id || a.user_id || a.userId) === currentUserId);
+        const myAccepted = me && (me.accepted_at || me.has_accepted);
+        return (isCreator && !anyAccepted) || (me && !myAccepted);
+      }
       if (statusFilter === 'overdue') {
         return overdue && taskStatus !== 'completed';
       }
@@ -232,11 +243,18 @@ export const TaskDashboardScreen: React.FC = () => {
       }
       return true;
     });
-  }, [visibleTasks, statusFilter]);
+  }, [visibleTasks, statusFilter, currentUserId]);
 
-  // Separate pending and all tasks (from status-filtered list)
-  const pendingTasks = statusFilteredTasks.filter((task: any) => task.status === 'pending');
-  const allTasks = statusFilteredTasks.filter((task: any) => task.status !== 'pending');
+  // PENDING REVIEW = tasks awaiting current user's action (need to accept). All others go to All Tasks.
+  // After accept, viewer status becomes 'in_progress' so task moves to All Tasks and shows "In Progress".
+  const pendingTasks = React.useMemo(
+    () => statusFilteredTasks.filter((task: any) => getViewerStatusForTask(task) === 'pending'),
+    [statusFilteredTasks]
+  );
+  const allTasks = React.useMemo(
+    () => statusFilteredTasks.filter((task: any) => getViewerStatusForTask(task) !== 'pending'),
+    [statusFilteredTasks]
+  );
 
   const setStatusFilterAndUrl = (filter: StatusFilter) => {
     setStatusFilter(filter);
@@ -342,7 +360,10 @@ export const TaskDashboardScreen: React.FC = () => {
     return (
       <div
         key={task.id}
-        className="flex flex-col gap-3 rounded-2xl bg-white dark:bg-slate-800/90 p-5 shadow-lg border border-slate-200/80 dark:border-slate-600/80 cursor-pointer hover:shadow-xl hover:border-primary/40 dark:hover:border-primary/50 hover:-translate-y-0.5 transition-all duration-200 group"
+        className="flex flex-col gap-3 rounded-2xl bg-white dark:bg-slate-800/90 p-5 cursor-pointer transition-all duration-300 ease-out group
+          border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-primary
+          shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40
+          hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-0.5 hover:border-primary/30 dark:hover:border-primary/40"
         onClick={handleCardClick}
       >
         {/* Header: OT/RT indicator + Status (viewer based) */}
@@ -559,11 +580,11 @@ export const TaskDashboardScreen: React.FC = () => {
           </div>
           </div>
 
-          {/* Status filter tabs (dashboard-style: All, Overdue, Due Soon, In Progress, Completed) */}
+          {/* Status filter tabs (All, To Do, Overdue, Due Soon, In Progress, Completed) */}
           <div className="flex flex-wrap gap-2 items-center">
             <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mr-1">Status:</span>
             <div className="flex flex-wrap gap-1.5">
-              {(['all', 'overdue', 'duesoon', 'inprogress', 'completed'] as const).map((key) => (
+              {(['all', 'todo', 'overdue', 'duesoon', 'inprogress', 'completed'] as const).map((key) => (
                 <button
                   key={key}
                   onClick={() => setStatusFilterAndUrl(key)}
@@ -573,7 +594,7 @@ export const TaskDashboardScreen: React.FC = () => {
                       : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-600'
                   }`}
                 >
-                  {key === 'all' ? 'All' : key === 'duesoon' ? 'Due Soon' : key === 'inprogress' ? 'In Progress' : key.charAt(0).toUpperCase() + key.slice(1)}
+                  {key === 'all' ? 'All' : key === 'todo' ? 'To Do' : key === 'duesoon' ? 'Due Soon' : key === 'inprogress' ? 'In Progress' : key.charAt(0).toUpperCase() + key.slice(1)}
                 </button>
               ))}
             </div>

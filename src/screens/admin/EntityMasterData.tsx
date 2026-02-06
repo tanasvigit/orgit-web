@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { organizationService } from '../../services/organizationService';
+import { entityMasterBulkService } from '../../services/entityMasterBulkService';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import api from '../../services/api';
@@ -138,11 +139,71 @@ export const EntityMasterData: React.FC = () => {
 
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const bulkFileInputRef = React.useRef<HTMLInputElement>(null);
+  const [isBulkUploading, setIsBulkUploading] = useState(false);
+  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
 
   const handleLogoClick = () => {
     if (!isUploadingLogo && fileInputRef.current) {
       fileInputRef.current.click();
     }
+  };
+
+  const handleDownloadTemplate = async () => {
+    setIsDownloadingTemplate(true);
+    try {
+      await entityMasterBulkService.getTemplate();
+      toast.success('Template downloaded. Fill it and upload to bulk update.');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || error.message || 'Failed to download template');
+    } finally {
+      setIsDownloadingTemplate(false);
+    }
+  };
+
+  const bulkUploadMutation = useMutation(
+    (file: File) => entityMasterBulkService.uploadFile(file),
+    {
+      onSuccess: (res) => {
+        const data = res.data?.data;
+        if (data) {
+          const { updated, errors } = data;
+          const parts = [];
+          if (updated.organizations) parts.push(`${updated.organizations} organizations`);
+          if (updated.cost_centres) parts.push(`${updated.cost_centres} cost centres`);
+          if (updated.branches) parts.push(`${updated.branches} branches`);
+          if (updated.client_entities) parts.push(`${updated.client_entities} client entities`);
+          if (updated.client_entity_services) parts.push(`${updated.client_entity_services} client services`);
+          if (parts.length) toast.success(`Updated: ${parts.join(', ')}`);
+          if (errors.length) {
+            errors.slice(0, 5).forEach((e) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
+            if (errors.length > 5) toast.error(`… and ${errors.length - 5} more errors`);
+          }
+        }
+        queryClient.invalidateQueries('admin-organization');
+        queryClient.invalidateQueries(['client-entities']);
+        if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
+      },
+      onError: (error: any) => {
+        toast.error(error.response?.data?.error || error.message || 'Upload failed');
+      },
+      onSettled: () => {
+        setIsBulkUploading(false);
+      },
+    }
+  );
+
+  const handleBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const name = (file.name || '').toLowerCase();
+    if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
+      toast.error('Please select an Excel file (.xlsx or .xls)');
+      e.target.value = '';
+      return;
+    }
+    setIsBulkUploading(true);
+    bulkUploadMutation.mutate(file);
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -238,6 +299,44 @@ export const EntityMasterData: React.FC = () => {
               >
                 <span className="material-symbols-outlined text-[20px]">save</span>
                 <span>{updateMutation.isLoading ? 'Saving...' : 'Save Changes'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Bulk update: Download template / Upload file */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden p-6 mb-6">
+            <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-2xl">upload_file</span>
+              Bulk update from Excel
+            </h2>
+            <p className="text-slate-600 text-sm mb-4">
+              Download the template, fill in your data, then upload the file to update organizations, cost centres, branches, client entities, and client entity services in one go.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleDownloadTemplate}
+                disabled={isDownloadingTemplate}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium text-sm flex items-center gap-2 disabled:opacity-50"
+              >
+                <span className="material-symbols-outlined text-[18px]">download</span>
+                {isDownloadingTemplate ? 'Downloading...' : 'Download template'}
+              </button>
+              <input
+                ref={bulkFileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleBulkFileChange}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => bulkFileInputRef.current?.click()}
+                disabled={isBulkUploading}
+                className="px-4 py-2.5 bg-primary hover:bg-primary-700 text-white rounded-lg font-medium text-sm flex items-center gap-2 disabled:opacity-50"
+              >
+                <span className="material-symbols-outlined text-[18px]">upload</span>
+                {isBulkUploading ? 'Uploading...' : 'Upload file'}
               </button>
             </div>
           </div>

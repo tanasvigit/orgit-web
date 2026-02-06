@@ -32,13 +32,31 @@ export const DocumentMessage: React.FC<DocumentMessageProps> = ({ fileName, file
           )}
         </div>
         {mediaUrl && (
-          <a
-            href={mediaUrl}
-            download={fileName}
-            className="size-8 rounded-full bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 flex items-center justify-center text-gray-700 dark:text-gray-200 transition-colors shrink-0"
-          >
-            <span className="material-symbols-outlined text-lg">download</span>
-          </a>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Open in new tab */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                window.open(mediaUrl, '_blank', 'noopener,noreferrer');
+              }}
+              className="size-8 rounded-full bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 flex items-center justify-center text-gray-700 dark:text-gray-200 transition-colors"
+              title="Open document"
+            >
+              <span className="material-symbols-outlined text-lg">open_in_new</span>
+            </button>
+
+            {/* Download */}
+            <a
+              href={mediaUrl}
+              download={fileName}
+              className="size-8 rounded-full bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 flex items-center justify-center text-gray-700 dark:text-gray-200 transition-colors"
+              title="Download document"
+            >
+              <span className="material-symbols-outlined text-lg">download</span>
+            </a>
+          </div>
         )}
       </div>
     </div>
