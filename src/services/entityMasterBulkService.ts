@@ -15,18 +15,27 @@ export interface EntityMasterUploadResult {
 
 export const entityMasterBulkService = {
   /**
-   * Download entity master Excel template (GET blob, trigger save).
-   * @param onlyOrganisation - If true, requests single-sheet Entity Master template (for /admin/entity-master page).
+   * Download Excel template (GET blob, trigger save).
+   * @param only - 'organisation' | 'employees' | 'service-list' | 'entity-list' | undefined (full template).
    */
-  getTemplate: async (onlyOrganisation?: boolean): Promise<void> => {
-    const params = onlyOrganisation ? { only: 'organisation' } : undefined;
-    console.log('[EntityMaster] getTemplate', { onlyOrganisation, params });
+  getTemplate: async (only?: 'organisation' | 'employees' | 'service-list' | 'entity-list'): Promise<void> => {
+    const params = only ? { only } : undefined;
+    console.log('[EntityMaster] getTemplate', { only, params });
     const response = await api.get('/admin/entity-master/template', {
       responseType: 'blob',
       params,
     });
     const blob = response.data as Blob;
-    const filename = onlyOrganisation ? 'Entity_Master_template.xlsx' : 'OrgIt_Settings_template.xlsx';
+    const filename =
+      only === 'organisation'
+        ? 'Entity_Master_template.xlsx'
+        : only === 'employees'
+          ? 'Employee_template.xlsx'
+          : only === 'service-list'
+            ? 'Service_List_template.xlsx'
+            : only === 'entity-list'
+              ? 'Entity_List_template.xlsx'
+              : 'OrgIt_Settings_template.xlsx';
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

@@ -1,15 +1,21 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { entityListService } from '../../services/entityListService';
+import { entityMasterBulkService } from '../../services/entityMasterBulkService';
 import { masterDataService, TaskServiceFrequency } from '../../services/masterDataService';
 import { organizationService } from '../../services/organizationService';
+import { useToast } from '../../context/ToastContext';
 
 export const EntityList: React.FC = () => {
   const qc = useQueryClient();
-  const [activeTab, setActiveTab] = React.useState<'clients' | 'matrix'>('clients');
-  const [matrixType, setMatrixType] = React.useState<'recurring' | 'one_time'>('recurring');
-  const [matrixEdits, setMatrixEdits] = React.useState<Record<string, Record<string, TaskServiceFrequency>>>({});
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState<'clients' | 'matrix'>('clients');
+  const [matrixType, setMatrixType] = useState<'recurring' | 'one_time'>('recurring');
+  const [matrixEdits, setMatrixEdits] = useState<Record<string, Record<string, TaskServiceFrequency>>>({});
+  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
+  const [isBulkUploading, setIsBulkUploading] = useState(false);
+  const bulkFileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: orgData } = useQuery(['admin-organization'], async () => {
     const res = await organizationService.getMyOrganization();
@@ -99,6 +105,63 @@ export const EntityList: React.FC = () => {
     }
   );
 
+  const handleDownloadEntityListTemplate = async () => {
+    setIsDownloadingTemplate(true);
+    try {
+      await entityMasterBulkService.getTemplate('entity-list');
+      toast.success('Entity List template downloaded. Fill NAME OF THE CLIENT, ENTITY TYPE, COST CENTRE and compliance dropdowns (GSTR, etc.), then upload.');
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to download template');
+    } finally {
+      setIsDownloadingTemplate(false);
+    }
+  };
+
+  const bulkUploadMutation = useMutation(
+    (file: File) => entityMasterBulkService.uploadFile(file),
+    {
+      onSuccess: (res) => {
+        const data = res.data?.data;
+        if (data) {
+          const { updated, errors } = data;
+          if (updated?.client_entities != null && updated.client_entities > 0) {
+            toast.success(`Updated ${updated.client_entities} client(s).`);
+          }
+          if (updated?.client_entity_services != null && updated.client_entity_services > 0) {
+            toast.success(`Updated ${updated.client_entity_services} client service(s).`);
+          }
+          if (errors?.length) {
+            errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
+            if (errors.length > 5) toast.error(`… and ${errors.length - 5} more errors`);
+          }
+        }
+        qc.invalidateQueries(['client-entities']);
+        qc.invalidateQueries(['client-matrix', 'recurring']);
+        qc.invalidateQueries(['client-matrix', 'one_time']);
+        if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
+      },
+      onError: (err: any) => {
+        toast.error(err.response?.data?.error || err.message || 'Upload failed');
+      },
+      onSettled: () => {
+        setIsBulkUploading(false);
+      },
+    }
+  );
+
+  const handleBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const name = (file.name || '').toLowerCase();
+    if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
+      toast.error('Please select an Excel file (.xlsx or .xls)');
+      e.target.value = '';
+      return;
+    }
+    setIsBulkUploading(true);
+    bulkUploadMutation.mutate(file);
+  };
+
   const formatRollout = (rule: string) =>
     rule === 'one_month_before_period_end' ? '1 MONTH BEFORE PERIOD END' : 'End of Period';
 
@@ -109,7 +172,7 @@ export const EntityList: React.FC = () => {
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-1.5">Entity List</h1>
             <p className="text-gray-500 dark:text-gray-400 text-sm">
-              Clients and services provided to them (Admin only)
+              NAME OF THE CLIENT, ENTITY TYPE, COST CENTRE, GSTR & compliance fields (dropdowns). Clients and services (Admin only).
             </p>
           </div>
           <div className="flex gap-2">
@@ -129,6 +192,37 @@ export const EntityList: React.FC = () => {
             >
               Service Matrix
             </button>
+          </div>
+        </div>
+
+        {/* Bulk update from Excel */}
+        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Bulk update from Excel</h2>
+          <div className="flex flex-wrap gap-3 items-center">
+            <button
+              type="button"
+              onClick={handleDownloadEntityListTemplate}
+              disabled={isDownloadingTemplate}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 disabled:opacity-50"
+            >
+              {isDownloadingTemplate ? 'Downloading…' : 'Download Entity List template'}
+            </button>
+            <input
+              ref={bulkFileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={handleBulkFileChange}
+            />
+            <button
+              type="button"
+              onClick={() => bulkFileInputRef.current?.click()}
+              disabled={isBulkUploading}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white disabled:opacity-50"
+            >
+              {isBulkUploading ? 'Uploading…' : 'Upload file'}
+            </button>
+            <span className="text-xs text-slate-500">First 3 columns: text. All compliance columns (GSTR 1, GSTR 1A, …): dropdown (Daily, Weekly, … NA, Custom).</span>
           </div>
         </div>
 

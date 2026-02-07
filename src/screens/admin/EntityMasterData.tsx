@@ -138,8 +138,7 @@ export const EntityMasterData: React.FC = () => {
   const handleDownloadTemplate = async () => {
     setIsDownloadingTemplate(true);
     try {
-      // Single-sheet Entity Master template for this page
-      await entityMasterBulkService.getTemplate(true);
+      await entityMasterBulkService.getTemplate('organisation');
       toast.success('Entity Master template downloaded. Fill it and upload to bulk update.');
     } catch (error: any) {
       toast.error(error.response?.data?.error || error.message || 'Failed to download template');

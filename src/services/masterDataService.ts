@@ -40,5 +40,11 @@ export const masterDataService = {
   getTaskFrequencies: () => api.get('/master/task-frequencies'),
   getTaskServices: (type?: TaskServiceType) =>
     api.get('/master/task-services', { params: type ? { type } : undefined }),
+  createTaskService: (body: {
+    title: string;
+    task_type: TaskServiceType;
+    frequency?: TaskServiceFrequency;
+    rollout_rule?: 'end_of_period' | 'one_month_before_period_end';
+  }) => api.post<{ success: boolean; data: TaskServiceItem }>('/admin/task-services', body),
 };
 

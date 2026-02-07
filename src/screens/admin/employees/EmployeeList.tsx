@@ -11,14 +11,15 @@
  * 
  * API: Uses /api/admin/employees which automatically filters by admin's organization
  */
-import React, { useState } from 'react';
-import { useQuery, useQueryClient } from 'react-query';
+import React, { useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { AdminLayout } from '../../../components/admin/AdminLayout';
 import { employeeService, Employee } from '../../../services/employeeService';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { getDepartments, getDesignations } from '../../../services/settingsService';
 import { chatUserService } from '../../../services/chatUserService';
+import { entityMasterBulkService } from '../../../services/entityMasterBulkService';
 
 export const EmployeeList: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -28,9 +29,64 @@ export const EmployeeList: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
+  const [isBulkUploading, setIsBulkUploading] = useState(false);
+  const bulkFileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
+
+  const handleDownloadEmployeeTemplate = async () => {
+    setIsDownloadingTemplate(true);
+    try {
+      await entityMasterBulkService.getTemplate('employees');
+      toast.success('Employee template downloaded. Fill it and upload to bulk update.');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || error.message || 'Failed to download template');
+    } finally {
+      setIsDownloadingTemplate(false);
+    }
+  };
+
+  const bulkUploadMutation = useMutation(
+    (file: File) => entityMasterBulkService.uploadFile(file),
+    {
+      onSuccess: (res) => {
+        const data = res.data?.data;
+        if (data) {
+          const { updated, errors } = data;
+          if (updated.employees != null && updated.employees > 0) {
+            toast.success(`Updated ${updated.employees} employee(s).`);
+          }
+          if (errors?.length) {
+            errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
+            if (errors.length > 5) toast.error(`… and ${errors.length - 5} more errors`);
+          }
+        }
+        queryClient.invalidateQueries('employees');
+        if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
+      },
+      onError: (error: any) => {
+        toast.error(error.response?.data?.error || error.message || 'Upload failed');
+      },
+      onSettled: () => {
+        setIsBulkUploading(false);
+      },
+    }
+  );
+
+  const handleBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const name = (file.name || '').toLowerCase();
+    if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
+      toast.error('Please select an Excel file (.xlsx or .xls)');
+      e.target.value = '';
+      return;
+    }
+    setIsBulkUploading(true);
+    bulkUploadMutation.mutate(file);
+  };
 
   const { data, isLoading, error } = useQuery(
     'employees',
@@ -179,6 +235,44 @@ export const EmployeeList: React.FC = () => {
             <p className="text-text-muted mt-2 text-sm md:text-base">
               Manage employees in your organization{filteredEmployees.length > 0 && ` (${filteredEmployees.length} total)`}
             </p>
+          </div>
+        </div>
+
+        {/* Bulk update from Excel (same process as Entity Master Data) */}
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+          <h2 className="text-lg font-bold text-text-main mb-2 flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary text-2xl">upload_file</span>
+            Bulk update from Excel
+          </h2>
+          <p className="text-text-muted text-sm mb-4">
+            Download the Employee template, fill in NAME OF THE EMPLOYEE, MOBILE NUMBER, DESIGNATON, REPORTING TO, LEVEL, then upload to add or update employees in your organization.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handleDownloadEmployeeTemplate}
+              disabled={isDownloadingTemplate}
+              className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-text-main rounded-lg font-medium text-sm flex items-center gap-2 disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[18px]">download</span>
+              {isDownloadingTemplate ? 'Downloading...' : 'Download Employee template'}
+            </button>
+            <input
+              ref={bulkFileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleBulkFileChange}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => bulkFileInputRef.current?.click()}
+              disabled={isBulkUploading}
+              className="px-4 py-2.5 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium text-sm flex items-center gap-2 disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[18px]">upload</span>
+              {isBulkUploading ? 'Uploading...' : 'Upload file'}
+            </button>
           </div>
         </div>
 
