@@ -23,6 +23,9 @@ export const EntityMasterData: React.FC = () => {
     countryId: '',
     stateId: '',
     cityId: '',
+    countryName: '',
+    stateName: '',
+    cityName: '',
     pinCode: '',
     addressLine1: '',
     addressLine2: '',
@@ -40,32 +43,10 @@ export const EntityMasterData: React.FC = () => {
     branches: [] as Array<{ name: string; shortName?: string; address?: string; gstNumber?: string }>,
   });
 
-  const { data: countriesData } = useQuery(['master-countries'], async () => {
-    const res = await masterDataService.getCountries();
-    return res.data.data || res.data;
-  });
   const { data: orgConstitutionsData } = useQuery(['master-org-constitutions'], async () => {
     const res = await masterDataService.getOrgConstitutions();
     return res.data.data || res.data;
   });
-
-  const { data: statesData } = useQuery(
-    ['master-states', formData.countryId],
-    async () => {
-      const res = await masterDataService.getStates(formData.countryId);
-      return res.data.data || res.data;
-    },
-    { enabled: !!formData.countryId }
-  );
-
-  const { data: citiesData } = useQuery(
-    ['master-cities', formData.stateId],
-    async () => {
-      const res = await masterDataService.getCities(formData.stateId);
-      return res.data.data || res.data;
-    },
-    { enabled: !!formData.stateId }
-  );
 
   // Get user's organization
   const { data: orgData, isLoading } = useQuery(
@@ -86,6 +67,7 @@ export const EntityMasterData: React.FC = () => {
 
   useEffect(() => {
     if (orgData) {
+      console.log('[EntityMaster] org data loaded', { name: orgData.name, country: orgData.country?.name, state: orgData.state?.name, city: orgData.city?.name });
       setFormData({
         name: orgData.name || '',
         shortName: orgData.shortName || '',
@@ -95,6 +77,9 @@ export const EntityMasterData: React.FC = () => {
         countryId: orgData.countryId || '',
         stateId: orgData.stateId || '',
         cityId: orgData.cityId || '',
+        countryName: orgData.country?.name || '',
+        stateName: orgData.state?.name || '',
+        cityName: orgData.city?.name || '',
         pinCode: orgData.pinCode || '',
         addressLine1: orgData.addressLine1 || '',
         addressLine2: orgData.addressLine2 || '',
@@ -134,6 +119,7 @@ export const EntityMasterData: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('[EntityMaster] form submit', { name: formData.name, countryId: formData.countryId, stateId: formData.stateId, cityId: formData.cityId });
     updateMutation.mutate(formData);
   };
 
@@ -152,8 +138,9 @@ export const EntityMasterData: React.FC = () => {
   const handleDownloadTemplate = async () => {
     setIsDownloadingTemplate(true);
     try {
-      await entityMasterBulkService.getTemplate();
-      toast.success('Template downloaded. Fill it and upload to bulk update.');
+      // Single-sheet Entity Master template for this page
+      await entityMasterBulkService.getTemplate(true);
+      toast.success('Entity Master template downloaded. Fill it and upload to bulk update.');
     } catch (error: any) {
       toast.error(error.response?.data?.error || error.message || 'Failed to download template');
     } finally {
@@ -166,14 +153,17 @@ export const EntityMasterData: React.FC = () => {
     {
       onSuccess: (res) => {
         const data = res.data?.data;
+        console.log('[EntityMaster] upload success', { data: res.data?.data });
         if (data) {
           const { updated, errors } = data;
           const parts = [];
           if (updated.organizations) parts.push(`${updated.organizations} organizations`);
           if (updated.cost_centres) parts.push(`${updated.cost_centres} cost centres`);
           if (updated.branches) parts.push(`${updated.branches} branches`);
+          if (updated.task_services) parts.push(`${updated.task_services} task services`);
           if (updated.client_entities) parts.push(`${updated.client_entities} client entities`);
           if (updated.client_entity_services) parts.push(`${updated.client_entity_services} client services`);
+          if (updated.employees) parts.push(`${updated.employees} employees`);
           if (parts.length) toast.success(`Updated: ${parts.join(', ')}`);
           if (errors.length) {
             errors.slice(0, 5).forEach((e) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
@@ -182,6 +172,8 @@ export const EntityMasterData: React.FC = () => {
         }
         queryClient.invalidateQueries('admin-organization');
         queryClient.invalidateQueries(['client-entities']);
+        queryClient.invalidateQueries('employees');
+        queryClient.invalidateQueries(['task-services']);
         if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
       },
       onError: (error: any) => {
@@ -344,12 +336,14 @@ export const EntityMasterData: React.FC = () => {
           <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col">
             {/* Organization Details */}
             <div className="p-6 md:p-8 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
+              <h2 className="text-lg font-bold text-slate-900 mb-2 flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-2xl">business</span>
-                Organization Details
+                Organisation details
               </h2>
+              <p className="text-sm text-slate-500 mb-6">Bulk template: Name of the Organisation, Short Name, Address, E Mail ID, Web Site, Phone Number, Org Constitution, PAN, GST Number, Depot, Warehouse.</p>
               <div className="flex flex-col md:flex-row gap-8">
                 <div className="w-full md:w-1/3 flex flex-col gap-2">
+                  <p className="text-xs text-slate-500 mb-1">Additional (not in bulk template)</p>
                   <label className="block text-sm font-medium text-slate-700">Company Logo</label>
                   <div 
                     onClick={handleLogoClick}
@@ -399,7 +393,7 @@ export const EntityMasterData: React.FC = () => {
                 <div className="w-full md:w-2/3 space-y-5">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgName">
-                      Organization Name
+                      Name of the Organisation
                     </label>
                     <input
                       id="orgName"
@@ -442,7 +436,7 @@ export const EntityMasterData: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgEmail">
-                        Email Address
+                        E Mail ID
                       </label>
                       <div className="relative">
                         <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
@@ -459,6 +453,7 @@ export const EntityMasterData: React.FC = () => {
                       </div>
                     </div>
                     <div>
+                      <p className="text-xs text-slate-500 mb-1">Additional (not in bulk template)</p>
                       <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgMobile">
                         Mobile Number
                       </label>
@@ -480,7 +475,7 @@ export const EntityMasterData: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgWebsite">
-                        Website
+                        Web Site
                       </label>
                       <input
                         id="orgWebsite"
@@ -512,7 +507,7 @@ export const EntityMasterData: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgAddress">
-                      Registered Address
+                      Address of the Organisation
                     </label>
                     <textarea
                       id="orgAddress"
@@ -523,66 +518,37 @@ export const EntityMasterData: React.FC = () => {
                       rows={3}
                     />
                   </div>
+                  <p className="text-xs text-slate-500 mt-4 mb-1">Additional — also in Excel: Country, State, City, Pin Code, Address Line 1/2</p>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1.5">Country</label>
-                      <select
-                        value={formData.countryId}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            countryId: e.target.value,
-                            stateId: '',
-                            cityId: '',
-                          })
-                        }
+                      <input
+                        type="text"
+                        value={formData.countryName}
+                        onChange={(e) => setFormData({ ...formData, countryName: e.target.value })}
+                        placeholder="e.g. India"
                         className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
-                      >
-                        <option value="">Select</option>
-                        {(countriesData || []).map((c: any) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1.5">State</label>
-                      <select
-                        value={formData.stateId}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            stateId: e.target.value,
-                            cityId: '',
-                          })
-                        }
+                      <input
+                        type="text"
+                        value={formData.stateName}
+                        onChange={(e) => setFormData({ ...formData, stateName: e.target.value })}
+                        placeholder="e.g. Maharashtra"
                         className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
-                        disabled={!formData.countryId}
-                      >
-                        <option value="">Select</option>
-                        {(statesData || []).map((s: any) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1.5">City</label>
-                      <select
-                        value={formData.cityId}
-                        onChange={(e) => setFormData({ ...formData, cityId: e.target.value })}
+                      <input
+                        type="text"
+                        value={formData.cityName}
+                        onChange={(e) => setFormData({ ...formData, cityName: e.target.value })}
+                        placeholder="e.g. Mumbai"
                         className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
-                        disabled={!formData.stateId}
-                      >
-                        <option value="">Select</option>
-                        {(citiesData || []).map((c: any) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -643,7 +609,7 @@ export const EntityMasterData: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="panNo">
-                    PAN Number
+                    PAN of the Organisation
                   </label>
                   <input
                     id="panNo"
@@ -655,6 +621,7 @@ export const EntityMasterData: React.FC = () => {
                   />
                 </div>
                 <div>
+                  <p className="text-xs text-slate-500 mb-1">Additional (not in bulk template)</p>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="cinNo">
                     CIN Number
                   </label>
@@ -668,6 +635,7 @@ export const EntityMasterData: React.FC = () => {
                   />
                 </div>
                 <div>
+                  <p className="text-xs text-slate-500 mb-1">Additional (not in bulk template)</p>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="accountingYearStart">
                     Accounting Year Start
                   </label>
@@ -680,7 +648,7 @@ export const EntityMasterData: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Depot Count</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Depot</label>
                   <input
                     type="number"
                     min={0}
@@ -690,7 +658,7 @@ export const EntityMasterData: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Warehouse Count</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Warehouse</label>
                   <input
                     type="number"
                     min={0}
