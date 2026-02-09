@@ -22,7 +22,7 @@ export const EmployeeDashboard: React.FC = () => {
   const { data: dashboardData, isLoading, refetch: refetchDashboard } = useQuery(
     ['dashboard'],
     () => dashboardService.getDashboard(3),
-    {
+    { 
       staleTime: 0, // Always consider stale so focus/mount refetch gets fresh data (match mobile)
       refetchInterval: 30000,
       refetchOnMount: 'always',

@@ -76,8 +76,12 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
-  // Message visibility: 'shared_to_group' (default) or 'org_only' for task groups
+  // Message visibility: 'shared_to_group' (default) or 'org_only' for task groups ONLY
+  // For personal chats, visibility is always 'private' (handled by backend)
   const [visibilityMode, setVisibilityMode] = useState<'shared_to_group' | 'org_only'>('shared_to_group');
+  
+  // Check if this is a task group conversation
+  const isTaskGroup = conversationData?.is_task_group || conversationData?.isTaskGroup || false;
   type PendingAttachment = {
     id: string;
     file: File;
@@ -701,7 +705,15 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, content: replyingTo.content, message_type: replyingTo.message_type, sender_name: replyingTo.sender_name } : null,
           });
           if (tempMessage) setMessages((prev) => [...prev, tempMessage]);
-          socket.emit('send_message', { conversationId, text: caption, content: caption, messageType: 'text', replyToMessageId: replyingTo?.id || null });
+          socket.emit('send_message', { 
+            conversationId, 
+            text: caption, 
+            content: caption, 
+            messageType: 'text', 
+            replyToMessageId: replyingTo?.id || null,
+            // Only send visibilityMode for task groups
+            ...(isTaskGroup && { visibilityMode }),
+          });
           setMessage('');
           setReplyingTo(null);
         }
@@ -742,7 +754,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           sender_name: user?.name || 'You',
           reply_to_message_id: replyingTo?.id || null,
           reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, content: replyingTo.content, message_type: replyingTo.message_type, sender_name: replyingTo.sender_name } : null,
-          visibility_mode: visibilityMode,
+          visibility_mode: isTaskGroup ? visibilityMode : 'private',
         });
         if (tempMessage) {
           setMessages((prev) => [...prev, tempMessage]);
@@ -756,7 +768,8 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           content: message.trim(), 
           messageType: 'text', 
           replyToMessageId: replyingTo?.id || null,
-          visibilityMode,
+          // Only send visibilityMode for task groups; backend will use 'private' for personal chats
+          ...(isTaskGroup && { visibilityMode }),
         });
       }
 
@@ -955,7 +968,8 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         fileSize: file.size,
         mimeType: file.type,
         replyToMessageId: replyingTo?.id || null,
-        visibilityMode,
+        // Only send visibilityMode for task groups
+        ...(isTaskGroup && { visibilityMode }),
       });
 
       setReplyingTo(null);
@@ -990,7 +1004,8 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         mimeType: 'audio/webm',
         duration: 0,
         replyToMessageId: replyingTo?.id || null,
-        visibilityMode,
+        // Only send visibilityMode for task groups
+        ...(isTaskGroup && { visibilityMode }),
       });
 
       setReplyingTo(null);
@@ -1014,7 +1029,8 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         locationLng: location.lng,
         locationAddress: location.address,
         replyToMessageId: replyingTo?.id || null,
-        visibilityMode,
+        // Only send visibilityMode for task groups
+        ...(isTaskGroup && { visibilityMode }),
       });
       setReplyingTo(null);
     } catch (error) {
@@ -1424,8 +1440,8 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                   {senderName}
                 </span>
               )}
-              {/* Visibility badge – show only for Org-Only to reduce noise */}
-              {visibilityMode === 'org_only' && (
+              {/* Visibility badge – show only for Org-Only messages in Task Groups */}
+              {isTaskGroup && visibilityMode === 'org_only' && (
                 <span
                   className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"
                   title="Visible only to members of your organization"
@@ -2006,9 +2022,53 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             </button>
           </div>
 
-          {/* Visibility toggle row (Org-Only vs Shared-to-Group) */}
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+          {/* Visibility toggle row (Org-Only vs Shared-to-Group) - ONLY for Task Groups */}
+          {isTaskGroup && (
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+                <span className="material-icons-round text-gray-400" style={{ fontSize: 12 }}>
+                  lock
+                </span>
+                <p className="uppercase tracking-wider font-semibold">
+                  End-to-end encrypted
+                </p>
+              </div>
+              <div className="flex items-center gap-1 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setVisibilityMode('shared_to_group')}
+                  className={`px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors ${
+                    visibilityMode === 'shared_to_group'
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <span className="material-icons-round" style={{ fontSize: 12 }}>
+                    public
+                  </span>
+                  <span>Shared to All</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisibilityMode('org_only')}
+                  className={`px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors ${
+                    visibilityMode === 'org_only'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <span className="material-icons-round" style={{ fontSize: 12 }}>
+                    business
+                  </span>
+                  <span>Org-Only</span>
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Encryption note for personal chats (without visibility toggle) */}
+          {!isTaskGroup && (
+            <div className="flex items-center gap-2 px-1 text-[11px] text-gray-500 dark:text-gray-400">
               <span className="material-icons-round text-gray-400" style={{ fontSize: 12 }}>
                 lock
               </span>
@@ -2016,37 +2076,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                 End-to-end encrypted
               </p>
             </div>
-            <div className="flex items-center gap-1 text-[11px]">
-              <button
-                type="button"
-                onClick={() => setVisibilityMode('shared_to_group')}
-                className={`px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors ${
-                  visibilityMode === 'shared_to_group'
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-700'
-                }`}
-              >
-                <span className="material-icons-round" style={{ fontSize: 12 }}>
-                  public
-                </span>
-                <span>Shared to All</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setVisibilityMode('org_only')}
-                className={`px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors ${
-                  visibilityMode === 'org_only'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-700'
-                }`}
-              >
-                <span className="material-icons-round" style={{ fontSize: 12 }}>
-                  business
-                </span>
-                <span>Org-Only</span>
-              </button>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
