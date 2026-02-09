@@ -31,13 +31,34 @@ export const Login: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
-  // Helper function to match Mobile logic
+  // Helper function to normalize mobile number - accepts 10 digits, 12 digits starting with 91, or +91XXXXXXXXXX
   const formatPhoneNumber = (phone: string) => {
-    let cleaned = phone.replace(/\D/g, '');
-    if (cleaned.startsWith('91') && cleaned.length === 12) return `+${cleaned}`;
-    if (cleaned.length === 10) return `+91${cleaned}`;
-    if (phone.startsWith('+')) return phone;
-    return cleaned.length === 10 ? `+91${cleaned}` : phone;
+    if (!phone) return phone;
+    // If already has +, normalize digits after +
+    if (phone.startsWith('+')) {
+      const digits = phone.replace(/\D/g, '');
+      return '+' + digits;
+    }
+    // Remove all non-digits
+    const cleaned = phone.replace(/\D/g, '');
+    // 10 digits: add +91 prefix
+    if (cleaned.length === 10) {
+      return `+91${cleaned}`;
+    }
+    // 12 digits starting with 91: add + prefix
+    if (cleaned.length === 12 && cleaned.startsWith('91')) {
+      return `+${cleaned}`;
+    }
+    // Other lengths: try to normalize (take last 10 digits if longer, or use as-is if 6-20 digits)
+    if (cleaned.length >= 6 && cleaned.length <= 20) {
+      if (cleaned.length > 10) {
+        // If longer than 10, take last 10 digits (assume country code prefix)
+        return `+91${cleaned.slice(-10)}`;
+      }
+      return `+91${cleaned}`;
+    }
+    // Return as-is if can't normalize (will fail backend validation)
+    return phone;
   };
 
   const passwordForm = useForm<PasswordLoginFormData>({
@@ -53,13 +74,30 @@ export const Login: React.FC = () => {
     setError(null);
 
     try {
+      console.log('[Login UI] Starting password login');
+      console.log('[Login UI] Raw input - mobile:', data.mobile, 'password length:', data.password?.length);
+      
       const fullMobile = formatPhoneNumber(data.mobile);
-      const response = await authService.loginWithPassword({
+      console.log('[Login UI] Formatted mobile:', fullMobile);
+      console.log('[Login UI] Sending login request to backend...');
+      
+      const requestPayload = {
         mobile: fullMobile,
         password: data.password,
+      };
+      console.log('[Login UI] Request payload:', { ...requestPayload, password: '***' });
+      
+      const response = await authService.loginWithPassword(requestPayload);
+      
+      console.log('[Login UI] Response received:', {
+        success: response.success,
+        hasData: !!response.data,
+        error: response.error,
+        userRole: response.data?.user?.role,
       });
 
       if (response.success && response.data) {
+        console.log('[Login UI] Login successful, storing tokens and user data');
         login(
           response.data.token,
           response.data.refreshToken,
@@ -67,24 +105,61 @@ export const Login: React.FC = () => {
         );
         // Check if profile is complete, otherwise redirect to profile setup
         if (!response.data.user.name || response.data.user.name.startsWith('User ')) {
+          console.log('[Login UI] Redirecting to profile setup');
           navigate('/profile-setup');
         } else {
           // Redirect based on user role
-          if (response.data.user.role === 'admin') {
-            navigate('/admin');
-          } else if (response.data.user.role === 'super_admin') {
-            navigate('/super-admin');
-          } else {
-            navigate('/dashboard');
-          }
+          const redirectPath = response.data.user.role === 'admin' 
+            ? '/admin' 
+            : response.data.user.role === 'super_admin' 
+            ? '/super-admin' 
+            : '/dashboard';
+          console.log('[Login UI] Redirecting to:', redirectPath);
+          navigate(redirectPath);
         }
       } else {
-        setError(response.error || 'Invalid mobile number or password');
+        const errorMsg = response.error || response.message || 'Invalid mobile number or password';
+        console.error('[Login UI] Login failed:', errorMsg);
+        console.error('[Login UI] Full response:', response);
+        setError(errorMsg);
+        toast.error(errorMsg);
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Login failed. Please try again.');
+      console.error('[Login UI] Login exception:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        stack: err.stack,
+      });
+      
+      // Extract detailed error message
+      let errorMsg = 'Login failed. Please try again.';
+      if (err.response?.data?.error) {
+        errorMsg = err.response.data.error;
+      } else if (err.response?.data?.message) {
+        errorMsg = err.response.data.message;
+      } else if (err.message) {
+        errorMsg = err.message;
+      }
+      
+      // Show specific error messages
+      if (err.response?.status === 401) {
+        errorMsg = err.response?.data?.error || 'Invalid mobile number or password. Please check your credentials.';
+      } else if (err.response?.status === 403) {
+        errorMsg = err.response?.data?.error || 'Your account is not active. Please contact administrator.';
+      } else if (err.response?.status === 400) {
+        errorMsg = err.response?.data?.error || 'Invalid request. Please check your input.';
+      } else if (!err.response) {
+        errorMsg = 'Network error. Please check your internet connection.';
+      }
+      
+      console.error('[Login UI] Setting error:', errorMsg);
+      setError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setIsLoading(false);
+      console.log('[Login UI] Login attempt completed');
     }
   };
 
@@ -233,7 +308,14 @@ export const Login: React.FC = () => {
               </button>
             </div>
 
-            {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
+            {error && (
+              <div className="mt-2 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                <p className="text-red-600 dark:text-red-400 text-sm font-medium flex items-center gap-2">
+                  <span className="material-symbols-outlined text-lg">error</span>
+                  {error}
+                </p>
+              </div>
+            )}
 
             <div className="px-0 pb-4 w-full mt-2">
               <Button type="submit" fullWidth disabled={isLoading}>
@@ -263,7 +345,14 @@ export const Login: React.FC = () => {
               )}
             </label>
 
-            {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
+            {error && (
+              <div className="mt-2 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                <p className="text-red-600 dark:text-red-400 text-sm font-medium flex items-center gap-2">
+                  <span className="material-symbols-outlined text-lg">error</span>
+                  {error}
+                </p>
+              </div>
+            )}
 
             <div className="px-0 pb-4 w-full mt-2">
               <Button type="submit" fullWidth disabled={isLoading}>

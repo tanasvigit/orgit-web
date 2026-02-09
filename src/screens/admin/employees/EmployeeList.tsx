@@ -29,6 +29,10 @@ export const EmployeeList: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [resetPasswordEmployee, setResetPasswordEmployee] = useState<{ id: string; name: string } | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
   const [isBulkUploading, setIsBulkUploading] = useState(false);
   const bulkFileInputRef = useRef<HTMLInputElement>(null);
@@ -395,6 +399,14 @@ export const EmployeeList: React.FC = () => {
                             <span>Edit</span>
                           </button>
                           <button
+                            onClick={() => setResetPasswordEmployee({ id: employee.id, name: employee.name || 'Employee' })}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
+                            title="Reset Password"
+                          >
+                            <span className="material-symbols-outlined text-base">lock_reset</span>
+                            <span>Reset Password</span>
+                          </button>
+                          <button
                             onClick={() => setDeleteConfirm({ id: employee.id, name: employee.name || 'Employee' })}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                             title="Remove Employee"
@@ -430,6 +442,84 @@ export const EmployeeList: React.FC = () => {
                 isSaving={isSaving}
                 key={editEmployee?.id || 'new'} // Force re-render when switching between add/edit
               />
+            </div>
+          </div>
+        )}
+
+        {/* Reset Password Dialog */}
+        {resetPasswordEmployee && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+              <h3 className="text-lg font-bold text-text-main mb-4">Reset Password</h3>
+              <p className="text-text-muted mb-4">
+                Set a new password for <strong className="text-text-main">{resetPasswordEmployee.name}</strong>.
+              </p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-text-main mb-2">New Password *</label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Enter new password (min 4 characters)"
+                    className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-main mb-2">Confirm Password *</label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm new password"
+                    className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
+                  />
+                </div>
+                {newPassword && confirmPassword && newPassword !== confirmPassword && (
+                  <p className="text-red-500 text-sm">Passwords do not match</p>
+                )}
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => {
+                    setResetPasswordEmployee(null);
+                    setNewPassword('');
+                    setConfirmPassword('');
+                  }}
+                  className="px-4 py-2 text-text-muted bg-slate-100 dark:bg-slate-700 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                  disabled={isResettingPassword}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!newPassword || newPassword.length < 4) {
+                      toast.error('Password must be at least 4 characters');
+                      return;
+                    }
+                    if (newPassword !== confirmPassword) {
+                      toast.error('Passwords do not match');
+                      return;
+                    }
+                    setIsResettingPassword(true);
+                    try {
+                      await employeeService.resetPassword(resetPasswordEmployee.id, newPassword);
+                      toast.success('Password reset successfully');
+                      setResetPasswordEmployee(null);
+                      setNewPassword('');
+                      setConfirmPassword('');
+                    } catch (error: any) {
+                      toast.error(error.response?.data?.error || 'Failed to reset password');
+                    } finally {
+                      setIsResettingPassword(false);
+                    }
+                  }}
+                  className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                  disabled={isResettingPassword || !newPassword || newPassword.length < 4 || newPassword !== confirmPassword}
+                >
+                  {isResettingPassword ? 'Resetting...' : 'Reset Password'}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -817,9 +907,9 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
           <input
             type="password"
             required
-            minLength={6}
+            minLength={4}
             className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
-            placeholder="Minimum 6 characters"
+            placeholder="Minimum 4 characters"
             value={formData.password}
             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
           />

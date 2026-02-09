@@ -9,13 +9,6 @@ export const OrganisationStructureScreen: React.FC = () => {
 
   const organisationStructureItems = [
     { 
-      icon: 'business', 
-      title: 'Entity Master Data', 
-      subtitle: 'Name, logo, address, contact', 
-      screen: '/admin/entity-master',
-      color: 'text-blue-500'
-    },
-    { 
       icon: 'domain', 
       title: 'Departments', 
       subtitle: 'Manage business units and departments', 
@@ -28,13 +21,6 @@ export const OrganisationStructureScreen: React.FC = () => {
       subtitle: 'Job titles and position levels', 
       screen: '/admin/settings/designations',
       color: 'text-purple-500'
-    },
-    { 
-      icon: 'account_tree', 
-      title: 'Reporting Hierarchy', 
-      subtitle: 'Visual reporting structure and relationships', 
-      screen: '/admin/settings/reporting-hierarchy',
-      color: 'text-orange-500'
     },
   ];
 
@@ -51,10 +37,8 @@ export const OrganisationStructureScreen: React.FC = () => {
     >
       <div className="flex items-center gap-4 flex-1">
         <div className={`w-16 h-16 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform ${
-          color === 'text-blue-500' ? 'bg-blue-100 dark:bg-blue-900/30' :
           color === 'text-green-500' ? 'bg-green-100 dark:bg-green-900/30' :
-          color === 'text-purple-500' ? 'bg-purple-100 dark:bg-purple-900/30' :
-          'bg-orange-100 dark:bg-orange-900/30'
+          'bg-purple-100 dark:bg-purple-900/30'
         }`}>
           <span className={`material-symbols-outlined text-3xl ${color}`}>
             {icon}
@@ -80,7 +64,7 @@ export const OrganisationStructureScreen: React.FC = () => {
             Organisation Structure
           </h1>
           <p className="text-gray-500 dark:text-gray-400 text-sm">
-            Manage your organization's structure, departments, designations, and hierarchy
+            Departments and Designations
           </p>
         </div>
       </div>
@@ -102,10 +86,8 @@ export const OrganisationStructureScreen: React.FC = () => {
                 About Organisation Structure
               </h3>
               <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
-                Configure your organization's fundamental structure including entity details, 
-                departmental organization, job designations, and reporting relationships. 
-                These settings form the foundation for task assignment, compliance tracking, 
-                and organizational management.
+                Manage Departments and Designations. These settings form the foundation for 
+                task assignment and organizational structure.
               </p>
             </div>
           </div>

@@ -68,5 +68,11 @@ export const employeeService = {
    * Remove an employee from the admin's organization
    */
   removeEmployee: (id: string) => api.delete(`/admin/employees/${id}`),
+
+  /**
+   * Reset employee password (admin only)
+   */
+  resetPassword: (id: string, newPassword: string) => 
+    api.post(`/admin/employees/${id}/reset-password`, { newPassword }),
 };
 

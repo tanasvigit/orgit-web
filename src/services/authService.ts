@@ -67,16 +67,41 @@ export const authService = {
     const deviceId = localStorage.getItem('deviceId') || `web-${Date.now()}`;
     localStorage.setItem('deviceId', deviceId);
 
-    const response = await api.post('/auth/login', {
+    const requestPayload = {
       ...data,
       deviceId,
       deviceType: 'web',
+    };
+    console.log('[authService] Sending login request:', {
+      ...requestPayload,
+      password: '***',
+      url: '/auth/login',
     });
-    if (response.data.success && response.data.data.token) {
-      localStorage.setItem('token', response.data.data.token);
-      localStorage.setItem('refreshToken', response.data.data.refreshToken);
+
+    try {
+      const response = await api.post('/auth/login', requestPayload);
+      console.log('[authService] Login response:', {
+        status: response.status,
+        success: response.data?.success,
+        hasData: !!response.data?.data,
+        error: response.data?.error,
+      });
+      
+      if (response.data.success && response.data.data.token) {
+        console.log('[authService] Storing tokens in localStorage');
+        localStorage.setItem('token', response.data.data.token);
+        localStorage.setItem('refreshToken', response.data.data.refreshToken);
+      }
+      return response.data;
+    } catch (error: any) {
+      console.error('[authService] Login request failed:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+      });
+      throw error;
     }
-    return response.data;
   },
 
   getCurrentUser: async () => {
@@ -117,6 +142,11 @@ export const authService = {
 
   changePassword: async (data: { currentPassword: string; newPassword: string }) => {
     const response = await api.put('/auth/change-password', data);
+    return response.data;
+  },
+
+  dismissChangePassword: async () => {
+    const response = await api.post('/auth/dismiss-change-password');
     return response.data;
   },
 };

@@ -11,6 +11,7 @@ interface User {
   profilePhotoUrl?: string;
   bio?: string;
   organizationId?: string;
+  mustChangePassword?: boolean;
 }
 
 interface AuthContextType {

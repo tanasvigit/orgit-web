@@ -76,6 +76,8 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  // Message visibility: 'shared_to_group' (default) or 'org_only' for task groups
+  const [visibilityMode, setVisibilityMode] = useState<'shared_to_group' | 'org_only'>('shared_to_group');
   type PendingAttachment = {
     id: string;
     file: File;
@@ -135,6 +137,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       status: msg.status || 'sent',
       reactions: msg.reactions || [],
       starred: msg.starred || false,
+      visibility_mode: msg.visibility_mode || msg.visibilityMode || 'shared_to_group',
       created_at: msg.created_at || msg.createdAt,
       updated_at: msg.updated_at || msg.updatedAt,
     };
@@ -739,6 +742,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           sender_name: user?.name || 'You',
           reply_to_message_id: replyingTo?.id || null,
           reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, content: replyingTo.content, message_type: replyingTo.message_type, sender_name: replyingTo.sender_name } : null,
+          visibility_mode: visibilityMode,
         });
         if (tempMessage) {
           setMessages((prev) => [...prev, tempMessage]);
@@ -746,7 +750,14 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           setReplyingTo(null);
           setTimeout(() => scrollToBottom(), 100);
         }
-        socket.emit('send_message', { conversationId, text: message.trim(), content: message.trim(), messageType: 'text', replyToMessageId: replyingTo?.id || null });
+        socket.emit('send_message', { 
+          conversationId, 
+          text: message.trim(), 
+          content: message.trim(), 
+          messageType: 'text', 
+          replyToMessageId: replyingTo?.id || null,
+          visibilityMode,
+        });
       }
 
       setIsTyping(false);
@@ -944,6 +955,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         fileSize: file.size,
         mimeType: file.type,
         replyToMessageId: replyingTo?.id || null,
+        visibilityMode,
       });
 
       setReplyingTo(null);
@@ -978,6 +990,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         mimeType: 'audio/webm',
         duration: 0,
         replyToMessageId: replyingTo?.id || null,
+        visibilityMode,
       });
 
       setReplyingTo(null);
@@ -1001,6 +1014,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         locationLng: location.lng,
         locationAddress: location.address,
         replyToMessageId: replyingTo?.id || null,
+        visibilityMode,
       });
       setReplyingTo(null);
     } catch (error) {
@@ -1313,6 +1327,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     const messageStatus = msg.status || 'sent';
     const messageType = msg.message_type || 'text';
     const senderName = msg.sender_name || msg.senderName || 'Unknown';
+    const visibilityMode = msg.visibility_mode || msg.visibilityMode || 'shared_to_group';
 
     // Status icon and color
     let statusIcon = null;
@@ -1403,11 +1418,22 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             onContextMenu={(e) => handleMessageContextMenu(e, msg)}
           >
             {/* Sender name for group chats */}
-            {!isMyMessage && (
-              <span className="text-xs text-gray-600 dark:text-gray-300 font-semibold px-1 mb-0.5">
-                {senderName}
-              </span>
-            )}
+            <div className="flex items-center gap-2 px-1 mb-0.5">
+              {!isMyMessage && (
+                <span className="text-xs text-gray-600 dark:text-gray-300 font-semibold">
+                  {senderName}
+                </span>
+              )}
+              {/* Visibility badge – show only for Org-Only to reduce noise */}
+              {visibilityMode === 'org_only' && (
+                <span
+                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"
+                  title="Visible only to members of your organization"
+                >
+                  Org-Only
+                </span>
+              )}
+            </div>
 
             {/* Reply Preview */}
             {msg.reply_to && (
@@ -1911,28 +1937,29 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           </div>
         )}
 
-        <div className="flex items-center gap-3 max-w-5xl mx-auto bg-gray-100 dark:bg-background-dark/70 p-2 rounded-2xl border border-border-light dark:border-border-dark">
-          {/* Plus button */}
-          <button
-            type="button"
-            className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-all"
-            onClick={() => setShowAttachmentMenu((prev) => !prev)}
-            title="More options"
-          >
-            <span className="material-icons-round">add_circle</span>
-          </button>
+        <div className="flex flex-col gap-1 max-w-5xl mx-auto">
+          <div className="flex items-center gap-3 bg-gray-100 dark:bg-background-dark/70 p-2 rounded-2xl border border-border-light dark:border-border-dark">
+            {/* Plus button */}
+            <button
+              type="button"
+              className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-all"
+              onClick={() => setShowAttachmentMenu((prev) => !prev)}
+              title="More options"
+            >
+              <span className="material-icons-round">add_circle</span>
+            </button>
 
-          {/* Quick image shortcut */}
-          <button
-            type="button"
-            className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-            onClick={() => setShowMediaUpload(true)}
-            title="Send photo or video"
-          >
-            <span className="material-icons-round">image</span>
-          </button>
+            {/* Quick image shortcut */}
+            <button
+              type="button"
+              className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+              onClick={() => setShowMediaUpload(true)}
+              title="Send photo or video"
+            >
+              <span className="material-icons-round">image</span>
+            </button>
 
-          {/* Input */}
+            {/* Input */}
           <textarea
             className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-gray-900 dark:text-gray-100 resize-none max-h-32 placeholder-gray-400 dark:placeholder-gray-500 py-2 px-2"
             placeholder={editingMessage ? 'Edit message...' : pendingAttachments.length > 0 ? 'Add a caption...' : 'Type a message...'}
@@ -1966,27 +1993,60 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           >
             <span className="material-icons-round">mic</span>
           </button>
+            {/* Send */}
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={(!message.trim() && !replyingTo && !editingMessage && pendingAttachments.length === 0) || sendMessageMutation.isLoading || uploadingMedia}
+              className="p-3 bg-primary hover:bg-primary-dark text-white rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 transition-opacity flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="material-icons-round -rotate-45 translate-x-[1px] -translate-y-[1px]">
+                send
+              </span>
+            </button>
+          </div>
 
-          {/* Send */}
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={(!message.trim() && !replyingTo && !editingMessage && pendingAttachments.length === 0) || sendMessageMutation.isLoading || uploadingMedia}
-            className="p-3 bg-primary hover:bg-primary-dark text-white rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 transition-opacity flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <span className="material-icons-round -rotate-45 translate-x-[1px] -translate-y-[1px]">
-              send
-            </span>
-          </button>
-        </div>
-
-        <div className="flex items-center justify-center gap-1.5 mt-3">
-          <span className="material-icons-round text-gray-400" style={{ fontSize: 12 }}>
-            lock
-          </span>
-          <p className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold">
-            End-to-end encrypted
-          </p>
+          {/* Visibility toggle row (Org-Only vs Shared-to-Group) */}
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+              <span className="material-icons-round text-gray-400" style={{ fontSize: 12 }}>
+                lock
+              </span>
+              <p className="uppercase tracking-wider font-semibold">
+                End-to-end encrypted
+              </p>
+            </div>
+            <div className="flex items-center gap-1 text-[11px]">
+              <button
+                type="button"
+                onClick={() => setVisibilityMode('shared_to_group')}
+                className={`px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors ${
+                  visibilityMode === 'shared_to_group'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="material-icons-round" style={{ fontSize: 12 }}>
+                  public
+                </span>
+                <span>Shared to All</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setVisibilityMode('org_only')}
+                className={`px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors ${
+                  visibilityMode === 'org_only'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="material-icons-round" style={{ fontSize: 12 }}>
+                  business
+                </span>
+                <span>Org-Only</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

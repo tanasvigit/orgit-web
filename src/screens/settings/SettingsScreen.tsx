@@ -18,6 +18,7 @@ export const SettingsScreen: React.FC = () => {
 
   const commonSettings = [
     { icon: 'person', title: 'Profile', subtitle: 'Update your profile details', screen: '/settings/profile' },
+    { icon: 'lock', title: 'Change Password', subtitle: 'Update your password', screen: '/settings/change-password' },
   ];
 
   // Eight sections: Entity Master Data, Employees, Departments, Designations, Organisation Structure, Service List, Entity List, Automation & Configurations
@@ -36,7 +37,7 @@ export const SettingsScreen: React.FC = () => {
     setIsDownloadingTemplate(true);
     try {
       await entityMasterBulkService.getTemplate();
-      toast.success('Template downloaded. Fill it and upload to bulk update all settings.');
+      toast.success('OrgIt Settings template downloaded. Contains: Entity Master, Entity List, Service List, Employees, Cost Centres, Branches. Fill and upload to bulk update.');
     } catch (error: any) {
       toast.error(error.response?.data?.error || error.message || 'Failed to download template');
     } finally {
@@ -120,7 +121,7 @@ export const SettingsScreen: React.FC = () => {
         <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-text-main-light dark:text-text-main-dark mb-2">Settings</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Manage your account settings and preferences</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Manage your account settings and preferences. Download <strong>OrgIt Settings</strong> for one workbook with all sheets; individual templates are also available in each module (Entity Master, Employees, Entity List, Service List).</p>
           </div>
           {isAdmin && (
             <div className="flex items-center gap-2 flex-shrink-0">
@@ -138,7 +139,7 @@ export const SettingsScreen: React.FC = () => {
                 className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg font-medium text-sm flex items-center gap-2 disabled:opacity-50 transition-colors"
               >
                 <span className="material-icons-outlined text-[18px]">download</span>
-                {isDownloadingTemplate ? 'Downloading...' : 'Download template'}
+                {isDownloadingTemplate ? 'Downloading...' : 'Download OrgIt Settings'}
               </button>
               <button
                 type="button"

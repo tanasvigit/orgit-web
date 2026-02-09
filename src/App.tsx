@@ -55,6 +55,7 @@ import { ReminderConfig } from './screens/admin/settings/ReminderConfig';
 import { AutoEscalationConfig } from './screens/admin/settings/AutoEscalationConfig';
 import { RecurringTaskSettings } from './screens/admin/settings/RecurringTaskSettings';
 import { OrganisationStructureScreen } from './screens/admin/settings/OrganisationStructureScreen';
+import { ChangePasswordPopup } from './components/auth/ChangePasswordPopup';
 import './App.css';
 
 const queryClient = new QueryClient({
@@ -170,6 +171,7 @@ function App() {
       <AuthProvider>
         <ToastProvider>
         <Router>
+          <ChangePasswordPopup />
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<MobileNumberRegistration />} />

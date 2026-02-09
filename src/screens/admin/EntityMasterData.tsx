@@ -504,20 +504,7 @@ export const EntityMasterData: React.FC = () => {
                       </select>
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgAddress">
-                      Address of the Organisation
-                    </label>
-                    <textarea
-                      id="orgAddress"
-                      value={formData.address}
-                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                      className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow resize-none"
-                      placeholder="Enter full office address including zip code..."
-                      rows={3}
-                    />
-                  </div>
-                  <p className="text-xs text-slate-500 mt-4 mb-1">Additional — also in Excel: Country, State, City, Pin Code, Address Line 1/2</p>
+                  <p className="text-xs text-slate-500 mt-4 mb-1">Also in Excel: Country, State, City, Pin Code, Address Line 1/2</p>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1.5">Country</label>
@@ -620,7 +607,6 @@ export const EntityMasterData: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500 mb-1">Additional (not in bulk template)</p>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="cinNo">
                     CIN Number
                   </label>
@@ -631,19 +617,6 @@ export const EntityMasterData: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, cin: e.target.value.toUpperCase() })}
                     className="w-full rounded-lg border-slate-200 bg-white text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 uppercase font-mono tracking-wide placeholder:normal-case placeholder:font-sans placeholder:tracking-normal"
                     placeholder="L12345MH2023PLC123456"
-                  />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 mb-1">Additional (not in bulk template)</p>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="accountingYearStart">
-                    Accounting Year Start
-                  </label>
-                  <input
-                    id="accountingYearStart"
-                    type="date"
-                    value={formData.accountingYearStart}
-                    onChange={(e) => setFormData({ ...formData, accountingYearStart: e.target.value })}
-                    className="w-full rounded-lg border-slate-200 bg-white text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3"
                   />
                 </div>
                 <div>

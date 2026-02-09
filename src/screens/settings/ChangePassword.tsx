@@ -25,8 +25,8 @@ export const ChangePassword: React.FC = () => {
       return;
     }
 
-    if (newPassword.length < 6) {
-      toast.error('New password must be at least 6 characters');
+    if (newPassword.length < 4) {
+      toast.error('New password must be at least 4 characters');
       return;
     }
 
@@ -94,7 +94,7 @@ export const ChangePassword: React.FC = () => {
                 type={showNewPassword ? 'text' : 'password'}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Enter new password (min 6 characters)"
+                placeholder="Enter new password (min 4 characters)"
                 className="w-full px-4 py-2 pr-10 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-text-main-light dark:text-text-main-dark"
               />
               <button
