@@ -5,6 +5,7 @@ import { taskService } from '../../services/taskService';
 import { conversationService } from '../../services/conversationService';
 import { mergeTaskWithFinancial } from '../../utils/taskFinancialStorage';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
@@ -16,6 +17,7 @@ export const TaskDashboardScreen: React.FC = () => {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
+  const { toast } = useToast();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin';
   const [searchQuery, setSearchQuery] = useState('');
@@ -179,6 +181,8 @@ export const TaskDashboardScreen: React.FC = () => {
     }
 
     const assignees = Array.isArray(task?.assignees) ? task.assignees : [];
+    const creatorId = task?.created_by || task?.creator_id;
+    const isCreator = currentUserId && creatorId === currentUserId;
     const me = assignees.find((a: any) => {
       const assigneeId = a.id || a.user_id || a.userId;
       return assigneeId === currentUserId;
@@ -205,6 +209,36 @@ export const TaskDashboardScreen: React.FC = () => {
     } else if (statusForUser.has_accepted) {
       // Fallback if only current_user_status is available
       return 'in_progress';
+    }
+
+    // If current user is the creator but not an assignee, derive status from team progress
+    if (isCreator) {
+      if (assignees.length > 0) {
+        const anyVerified = assignees.some(
+          (a: any) =>
+            a.verified_at ||
+            (a.verifiedAt as any) ||
+            a.is_verified
+        );
+        if (anyVerified) return 'completed';
+
+        const anyCompleted = assignees.some(
+          (a: any) =>
+            a.completed_at ||
+            a.completion_status === 'completed' ||
+            a.status === 'completed'
+        );
+        if (anyCompleted) return 'pending_verification';
+
+        const anyAccepted = assignees.some(
+          (a: any) =>
+            a.accepted_at ||
+            a.has_accepted
+        );
+        if (anyAccepted) return 'in_progress';
+      }
+      // No assignees or no progress yet
+      return 'pending';
     }
 
     // Default: pending until accepted
@@ -313,6 +347,32 @@ export const TaskDashboardScreen: React.FC = () => {
     );
     const taskType = (task.task_type || task.taskType || 'one_time').toLowerCase();
     const isRecurring = taskType === 'recurring';
+    // Primary status badge for the card – use the same per-viewer logic as dashboard,
+    // but override to Overdue when the task is past due and not completed.
+    let primaryStatusLabel: string | null = null;
+    let primaryStatusColor = statusColor;
+
+    if (overdue && viewerStatus !== 'completed') {
+      primaryStatusLabel = 'Overdue';
+      primaryStatusColor = '#EF4444';
+    } else {
+      switch (viewerStatus) {
+        case 'pending':
+          primaryStatusLabel = 'TODO';
+          break;
+        case 'in_progress':
+          primaryStatusLabel = 'In Progress';
+          break;
+        case 'pending_verification':
+          primaryStatusLabel = 'Pending Review';
+          break;
+        case 'completed':
+          primaryStatusLabel = 'Completed';
+          break;
+        default:
+          primaryStatusLabel = 'TODO';
+      }
+    }
     
     // Check current user's relationship to this task
     const currentUserStatus = task.current_user_status;
@@ -357,6 +417,45 @@ export const TaskDashboardScreen: React.FC = () => {
       navigate(isAdmin ? `/admin/tasks/${task.id}` : `/tasks/${task.id}`);
     };
 
+    const handleDeleteTask = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!task.id || !isCreatorForTask) return;
+      toast.confirm('Are you sure you want to delete this task? This action cannot be undone.', {
+        confirmLabel: 'Delete',
+        cancelLabel: 'Cancel',
+        onConfirm: async () => {
+          try {
+            await taskService.deleteTask(task.id);
+            await refetch();
+            queryClient.invalidateQueries(['tasks']);
+            queryClient.invalidateQueries(['dashboard']);
+          } catch (error: any) {
+            console.error('Delete task error:', error);
+          }
+        },
+      });
+    };
+
+    const handleCompleteTask = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!task.id) return;
+      // For assignees or creator, we call the existing completeTask API (global complete).
+      toast.confirm('Mark this task as completed?', {
+        confirmLabel: 'Complete',
+        cancelLabel: 'Cancel',
+        onConfirm: async () => {
+          try {
+            await taskService.completeTask(task.id);
+            await refetch();
+            queryClient.invalidateQueries(['tasks']);
+            queryClient.invalidateQueries(['dashboard']);
+          } catch (error: any) {
+            console.error('Complete task error:', error);
+          }
+        },
+      });
+    };
+
     return (
       <div
         key={task.id}
@@ -366,7 +465,7 @@ export const TaskDashboardScreen: React.FC = () => {
           hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-0.5 hover:border-primary/30 dark:hover:border-primary/40"
         onClick={handleCardClick}
       >
-        {/* Header: OT/RT indicator + Status (viewer based) */}
+        {/* Header: OT/RT indicator + primary status badge */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2 flex-wrap">
             <span
@@ -379,36 +478,12 @@ export const TaskDashboardScreen: React.FC = () => {
             >
               {isRecurring ? 'RT' : 'OT'}
             </span>
-            {viewerStatus === 'pending' && (
+            {primaryStatusLabel && (
               <span 
                 className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
-                style={{ backgroundColor: statusColor }}
+                style={{ backgroundColor: primaryStatusColor }}
               >
-                Pending
-              </span>
-            )}
-            {viewerStatus === 'in_progress' && (
-              <span 
-                className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
-                style={{ backgroundColor: statusColor }}
-              >
-                In Progress
-              </span>
-            )}
-            {viewerStatus === 'pending_verification' && (
-              <span 
-                className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
-                style={{ backgroundColor: statusColor }}
-              >
-                Pending Review
-              </span>
-            )}
-            {viewerStatus === 'completed' && (
-              <span 
-                className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
-                style={{ backgroundColor: statusColor }}
-              >
-                Completed
+                {primaryStatusLabel}
               </span>
             )}
           </div>
@@ -508,6 +583,26 @@ export const TaskDashboardScreen: React.FC = () => {
             )}
           </div>
         )}
+
+        {/* Complete / Delete buttons on card footer */}
+        <div className="flex gap-3 pt-2 mt-1 border-t border-gray-100 dark:border-gray-700">
+          <button
+            onClick={handleCompleteTask}
+            className="flex-1 flex items-center justify-center h-10 rounded-lg bg-emerald-600 text-white font-semibold text-sm shadow-md hover:bg-emerald-700 transition-colors"
+          >
+            <span className="material-symbols-outlined text-lg mr-2">check_circle</span>
+            Complete
+          </button>
+          {isCreatorForTask && (
+            <button
+              onClick={handleDeleteTask}
+              className="flex-1 flex items-center justify-center h-10 rounded-lg border border-red-500/40 text-red-600 dark:text-red-400 font-semibold text-sm hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+            >
+              <span className="material-symbols-outlined text-lg mr-2">delete</span>
+              Delete
+            </button>
+          )}
+        </div>
       </div>
     );
   };

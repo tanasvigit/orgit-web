@@ -83,21 +83,6 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
     }
   );
 
-  // Update task status mutation
-  const updateStatusMutation = useMutation(
-    (status: string) => taskService.updateTaskStatus(taskId!, status),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(['task', taskId]);
-        queryClient.invalidateQueries(['tasks']);
-        queryClient.invalidateQueries(['dashboard']);
-      },
-      onError: (error: any) => {
-        toast.error(error.response?.data?.error || 'Failed to update task status');
-      },
-    }
-  );
-
   const handleAccept = async () => {
     setProcessing(true);
     try {
@@ -160,6 +145,38 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
   const canAccept = !isCreator && currentUserAssignee && !currentUserAssignee.has_accepted;
   const canReject = !isCreator && currentUserAssignee && !currentUserAssignee.has_accepted;
 
+  // Delete task (creator only, web UI only)
+  const deleteTaskMutation = useMutation(
+    () => taskService.deleteTask(taskId!),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['dashboard']);
+        toast.success('Task deleted successfully');
+        onClose();
+      },
+      onError: (error: any) => {
+        toast.error(error.response?.data?.error || error.message || 'Failed to delete task');
+      },
+    }
+  );
+
+  const handleDeleteTask = () => {
+    if (!taskId || !isCreator) return;
+    toast.confirm('Are you sure you want to delete this task? This action cannot be undone.', {
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      onConfirm: async () => {
+        try {
+          await deleteTaskMutation.mutateAsync();
+        } catch {
+          // handled in onError
+        }
+      },
+    });
+  };
+
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Not set';
     try {
@@ -171,7 +188,7 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
 
   const getStatusLabel = (status: string) => {
     const labels: { [key: string]: string } = {
-      pending: 'Pending',
+      pending: 'TODO',
       in_progress: 'In Progress',
       completed: 'Completed',
       rejected: 'Rejected',
@@ -194,130 +211,83 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const isOverdue = dueDate && dueDate < today && displayTask.status !== 'completed';
+  const rawStatus = (displayTask.status || '').toLowerCase();
+
+  let primaryStatusLabel: string = 'TODO';
+  if (rawStatus === 'completed') {
+    primaryStatusLabel = 'Completed';
+  } else if (isOverdue && rawStatus !== 'completed') {
+    primaryStatusLabel = 'Overdue';
+  } else if (rawStatus === 'in_progress') {
+    primaryStatusLabel = 'In Progress';
+  }
 
   const content = (
     <div className="p-6 md:p-8">
-      {/* Scrollable Content */}
-      <main className="max-w-4xl mx-auto">
-        {/* Task Info Card */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-md mb-6 border border-gray-200 dark:border-gray-700">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex gap-2 flex-wrap">
-              {displayTask.status === 'pending' && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-                  style={{ backgroundColor: statusColor }}
-                >
-                  {getStatusLabel(displayTask.status)}
-                </span>
-              )}
-              {displayTask.status === 'in_progress' && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-                  style={{ backgroundColor: statusColor }}
-                >
-                  In Progress
-                </span>
-              )}
-              {displayTask.status === 'completed' && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-                  style={{ backgroundColor: statusColor }}
-                >
-                  Completed
-                </span>
-              )}
-              {displayTask.status === 'rejected' && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-                  style={{ backgroundColor: statusColor }}
-                >
-                  Rejected
+      <main className="max-w-4xl mx-auto space-y-6">
+        {/* Hero: Title + Status (read-only) */}
+        <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
+          <div className="p-6 md:p-8">
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm"
+                style={{ backgroundColor: primaryStatusLabel === 'Overdue' ? '#EF4444' : statusColor }}
+              >
+                {primaryStatusLabel}
+              </span>
+            </div>
+            <h2 className="text-2xl md:text-3xl font-bold leading-tight text-gray-900 dark:text-white mb-4">{displayTask.title}</h2>
+            <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+              <span className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-lg text-gray-400">calendar_today</span>
+                Created {formatDate(displayTask.created_at)}
+              </span>
+              {displayTask.id && (
+                <span className="flex items-center gap-2 text-gray-400 dark:text-gray-500">
+                  <span className="text-gray-300 dark:text-gray-600">•</span>
+                  #{displayTask.id.slice(0, 8).toUpperCase()}
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-3">
-              {isOverdue && (
-                <div className="flex items-center gap-2 text-red-600 dark:text-red-400 text-sm font-semibold">
-                  <span className="material-symbols-outlined text-base">warning</span>
-                  Overdue
-                </div>
-              )}
-              {/* Status Change Dropdown */}
-              <div className="relative">
-                <select
-                  value={displayTask.status || 'pending'}
-                  onChange={(e) => {
-                    const newStatus = e.target.value;
-                    if (newStatus !== displayTask.status) {
-                      updateStatusMutation.mutate(newStatus);
-                    }
-                  }}
-                  disabled={updateStatusMutation.isLoading}
-                  className="appearance-none bg-white dark:bg-slate-700 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <option value="pending">Pending</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500 dark:text-gray-400">
-                  <span className="material-symbols-outlined text-base">arrow_drop_down</span>
-                </span>
-              </div>
-            </div>
-          </div>
-          <h2 className="text-2xl md:text-3xl font-bold leading-tight text-gray-900 dark:text-white mb-3">{displayTask.title}</h2>
-          <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-base">calendar_today</span>
-              <span>Created: {formatDate(displayTask.created_at)}</span>
-            </div>
-            {displayTask.id && (
-              <div className="flex items-center gap-2">
-                <span className="text-gray-300 dark:text-gray-600">•</span>
-                <span>ID: #{displayTask.id.slice(0, 8).toUpperCase()}</span>
-              </div>
-            )}
           </div>
         </div>
 
         {/* Description Card */}
         {displayTask.description && (
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-md mb-6 border border-gray-200 dark:border-gray-700">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-primary dark:text-purple-400 mb-3">
-              DESCRIPTION
+          <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm p-6 md:p-8">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-primary dark:text-purple-400 mb-3">
+              Description
             </h3>
-            <p className="text-gray-700 dark:text-gray-200 leading-relaxed">
+            <p className="text-gray-700 dark:text-gray-200 leading-relaxed text-base">
               {displayTask.description}
             </p>
           </div>
         )}
 
         {/* Date Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-md border border-gray-200 dark:border-gray-700 flex flex-col gap-2 hover:shadow-lg transition-shadow">
-            <span className="flex items-center gap-2 text-xs font-semibold text-primary dark:text-purple-400 uppercase">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm p-5 flex flex-col gap-2 hover:shadow-md transition-shadow">
+            <span className="flex items-center gap-2 text-xs font-semibold text-primary dark:text-purple-400 uppercase tracking-wider">
               <span className="material-symbols-outlined text-base">play_circle</span>
-              START DATE
+              Start date
             </span>
             <span className="text-base font-semibold text-gray-900 dark:text-white">
               {formatDate(displayTask.start_date)}
             </span>
           </div>
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-5 shadow-md border border-gray-200 dark:border-gray-700 flex flex-col gap-2 hover:shadow-lg transition-shadow">
-            <span className="flex items-center gap-2 text-xs font-semibold text-primary dark:text-purple-400 uppercase">
+          <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm p-5 flex flex-col gap-2 hover:shadow-md transition-shadow">
+            <span className="flex items-center gap-2 text-xs font-semibold text-primary dark:text-purple-400 uppercase tracking-wider">
               <span className="material-symbols-outlined text-base">flag</span>
-              TARGET DATE
+              Target date
             </span>
             <span className="text-base font-semibold text-gray-900 dark:text-white">
               {formatDate(displayTask.target_date)}
             </span>
           </div>
-          <div className="bg-primary/10 dark:bg-primary/20 rounded-xl p-5 border-2 border-primary/30 dark:border-primary/40 flex flex-col gap-2 shadow-md hover:shadow-lg transition-shadow">
-            <span className="flex items-center gap-2 text-xs font-bold text-primary dark:text-purple-400 uppercase">
+          <div className="rounded-2xl border-2 border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/20 shadow-sm p-5 flex flex-col gap-2 hover:shadow-md transition-shadow">
+            <span className="flex items-center gap-2 text-xs font-bold text-primary dark:text-purple-400 uppercase tracking-wider">
               <span className="material-symbols-outlined text-base">event</span>
-              DUE DATE
+              Due date
             </span>
             <span className="text-lg font-bold text-primary dark:text-purple-300">
               {formatDate(displayTask.due_date)}
@@ -326,10 +296,10 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
         </div>
 
         {/* Assigned To Card - Full Details */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-md mb-6 border border-gray-200 dark:border-gray-700">
+        <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm p-6 md:p-8">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-primary dark:text-purple-400">
-              ASSIGNED TO
+            <h3 className="text-xs font-bold uppercase tracking-wider text-primary dark:text-purple-400">
+              Assigned to
             </h3>
             <span className="text-xs text-gray-500 dark:text-gray-400">
               {assignees.length || 0} {assignees.length === 1 ? 'Assignee' : 'Assignees'}
@@ -523,40 +493,58 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
       </main>
 
       {/* Action Bar */}
-      {(canAccept || canReject) && (
+      {(canAccept || canReject || isCreator) && (
         <div className="max-w-4xl mx-auto mt-6 pb-4">
           <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-md border border-gray-200 dark:border-gray-700">
-            <div className="flex gap-3">
-              {canReject && (
+            {(canAccept || canReject) && (
+              <div className="flex gap-3 mb-3">
+                {canReject && (
+                  <button
+                    onClick={() => setShowRejectModal(true)}
+                    disabled={processing}
+                    className="flex-1 rounded-lg border border-red-500/30 bg-white dark:bg-slate-800 px-6 py-3 text-sm font-semibold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-lg">close</span>
+                    Reject
+                  </button>
+                )}
+                {canAccept && (
+                  <button
+                    onClick={handleAccept}
+                    disabled={processing}
+                    className="flex-[2] rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-white hover:bg-primary/90 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {processing ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                        <span>Processing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-[20px]">check</span>
+                        <span>Accept Task</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            )}
+            {isCreator && (
+              <div className="pt-2 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center gap-3">
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  Only the task creator can delete this task.
+                </span>
                 <button
-                  onClick={() => setShowRejectModal(true)}
-                  disabled={processing}
-                  className="flex-1 rounded-lg border border-red-500/30 bg-white dark:bg-slate-800 px-6 py-3 text-sm font-semibold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                  type="button"
+                  onClick={handleDeleteTask}
+                  disabled={deleteTaskMutation.isLoading}
+                  className="inline-flex items-center gap-2 rounded-lg border border-red-500/40 px-4 py-2 text-xs sm:text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
                 >
-                  <span className="material-symbols-outlined text-lg">close</span>
-                  Reject
+                  <span className="material-symbols-outlined text-base">delete</span>
+                  <span>{deleteTaskMutation.isLoading ? 'Deleting...' : 'Delete Task'}</span>
                 </button>
-              )}
-              {canAccept && (
-                <button
-                  onClick={handleAccept}
-                  disabled={processing}
-                  className="flex-[2] rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-white hover:bg-primary/90 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {processing ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                      <span>Processing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-[20px]">check</span>
-                      <span>Accept Task</span>
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       )}

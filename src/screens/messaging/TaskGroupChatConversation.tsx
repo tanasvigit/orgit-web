@@ -76,12 +76,10 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   // Message visibility: 'shared_to_group' (default) or 'org_only' for task groups ONLY
   // For personal chats, visibility is always 'private' (handled by backend)
   const [visibilityMode, setVisibilityMode] = useState<'shared_to_group' | 'org_only'>('shared_to_group');
-  
-  // Check if this is a task group conversation
-  const isTaskGroup = conversationData?.is_task_group || conversationData?.isTaskGroup || false;
   type PendingAttachment = {
     id: string;
     file: File;
@@ -99,6 +97,29 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     () => conversationService.getConversationDetails(conversationId!),
     { enabled: !!conversationId }
   );
+
+  // Check if this is a task group conversation (must be after conversationData is defined)
+  const isTaskGroup = conversationData?.is_task_group || conversationData?.isTaskGroup || false;
+  const isPinned = conversationData?.is_pinned ?? conversationData?.isPinned ?? false;
+
+  // Pin/unpin conversation
+  const pinMutation = useMutation(
+    () => conversationService.pinConversation(conversationId!, !isPinned),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['conversation', conversationId]);
+        queryClient.invalidateQueries(['conversations']);
+        toast.success(isPinned ? 'Conversation unpinned' : 'Conversation pinned');
+      },
+      onError: (err: any) => {
+        toast.error(err?.message || 'Failed to update pin');
+      },
+    }
+  );
+  const handlePinClick = () => {
+    if (!conversationId) return;
+    pinMutation.mutate();
+  };
 
   // Derive a reliable taskId for this conversation (works for both /messages and /tasks routes)
   const effectiveTaskId = useMemo(() => {
@@ -1589,25 +1610,17 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           className="flex items-center gap-4 flex-1 text-left hover:opacity-80 transition-opacity cursor-pointer"
         >
           <div className="relative">
-            <div 
-              className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-800 to-primary flex items-center justify-center text-white shadow-md"
-            >
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-700 to-teal-500 flex items-center justify-center text-white shadow-md overflow-hidden">
               {conversationPhoto ? (
                 <img src={conversationPhoto} alt={conversationName} className="w-full h-full rounded-xl object-cover" />
               ) : (
-                <span className="material-icons-outlined opacity-50 text-xl">folder</span>
+                <span className="material-icons-outlined opacity-50 text-xl">groups</span>
               )}
-            </div>
-            <div className="absolute -bottom-1 -right-1 bg-white dark:bg-surface-dark p-0.5 rounded-full">
-              <div className="w-4 h-4 bg-primary text-white rounded-full flex items-center justify-center">
-                <span className="material-icons-round text-[8px]">assignment</span>
-              </div>
             </div>
           </div>
           <div>
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">
               {conversationName}
-              <span className="bg-accent-pink dark:bg-red-900/30 text-accent-text dark:text-red-300 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">Task Group</span>
             </h2>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {isTyping ? (
@@ -1626,19 +1639,6 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           </div>
         </button>
         <div className="flex items-center gap-4 text-gray-400" onClick={(e) => e.stopPropagation()}>
-          {taskId && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowTaskDetails(true);
-              }}
-              className="hover:text-primary transition flex items-center gap-2 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 rounded-lg"
-              title="View Task"
-            >
-              <span className="material-icons-outlined text-sm">assignment</span>
-              <span className="text-sm font-medium">View Task</span>
-            </button>
-          )}
           <button 
             onClick={(e) => {
               e.stopPropagation();
@@ -1650,17 +1650,58 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             <span className="material-icons-outlined">search</span>
           </button>
           <button 
-            onClick={(e) => e.stopPropagation()}
-            className="hover:text-primary transition"
+            onClick={(e) => {
+              e.stopPropagation();
+              handlePinClick();
+            }}
+            className={`hover:text-primary transition ${isPinned ? 'text-primary' : ''}`}
+            title={isPinned ? 'Unpin' : 'Pin'}
           >
-            <span className="material-icons-outlined">push_pin</span>
+            <span className="material-icons-outlined">{isPinned ? 'push_pin' : 'push_pin'}</span>
           </button>
-          <button 
-            onClick={(e) => e.stopPropagation()}
-            className="hover:text-primary transition"
-          >
-            <span className="material-icons-outlined">more_vert</span>
-          </button>
+          <div className="relative">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMoreMenu((prev) => !prev);
+              }}
+              className="hover:text-primary transition"
+              title="More options"
+            >
+              <span className="material-icons-outlined">more_vert</span>
+            </button>
+            {showMoreMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowMoreMenu(false)} aria-hidden="true" />
+                <div className="absolute right-0 top-full mt-1 py-1 w-48 bg-white dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-lg shadow-lg z-20">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMoreMenu(false);
+                      setShowTaskGroupDetails(true);
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2"
+                  >
+                    <span className="material-icons-outlined text-lg">info</span>
+                    Task group details
+                  </button>
+                  {taskId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        setShowTaskDetails(true);
+                      }}
+                      className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2"
+                    >
+                      <span className="material-icons-outlined text-lg">assignment</span>
+                      View task
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -2024,15 +2065,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
           {/* Visibility toggle row (Org-Only vs Shared-to-Group) - ONLY for Task Groups */}
           {isTaskGroup && (
-            <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
-                <span className="material-icons-round text-gray-400" style={{ fontSize: 12 }}>
-                  lock
-                </span>
-                <p className="uppercase tracking-wider font-semibold">
-                  End-to-end encrypted
-                </p>
-              </div>
+            <div className="flex items-center justify-end px-1">
               <div className="flex items-center gap-1 text-[11px]">
                 <button
                   type="button"
@@ -2063,18 +2096,6 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                   <span>Org-Only</span>
                 </button>
               </div>
-            </div>
-          )}
-          
-          {/* Encryption note for personal chats (without visibility toggle) */}
-          {!isTaskGroup && (
-            <div className="flex items-center gap-2 px-1 text-[11px] text-gray-500 dark:text-gray-400">
-              <span className="material-icons-round text-gray-400" style={{ fontSize: 12 }}>
-                lock
-              </span>
-              <p className="uppercase tracking-wider font-semibold">
-                End-to-end encrypted
-              </p>
             </div>
           )}
         </div>

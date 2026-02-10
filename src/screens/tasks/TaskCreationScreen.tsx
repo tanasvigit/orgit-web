@@ -76,15 +76,17 @@ export const TaskCreationScreen: React.FC = () => {
       return;
     }
 
-    if (selectedAssignees.length === 0) {
-      toast.error('Please assign the task to at least one person');
-      return;
-    }
-
     setLoading(true);
     try {
       const parsedFinancialValue =
         financialValue.trim().length > 0 ? Number.parseFloat(financialValue) : null;
+
+      const fallbackAssignees =
+        selectedAssignees.length > 0
+          ? selectedAssignees
+          : user
+          ? [{ id: (user as any).id || (user as any).userId, name: (user as any).name }]
+          : [];
 
       const taskData: Record<string, unknown> = {
         title: title.trim(),
@@ -93,7 +95,7 @@ export const TaskCreationScreen: React.FC = () => {
         task_owner: taskOwner,
         financial_value: Number.isFinite(parsedFinancialValue as number) ? parsedFinancialValue : null,
         finance_type: financialValue.trim().length > 0 ? financeType : null,
-        assignee_ids: selectedAssignees.map(a => a.id),
+        assignee_ids: fallbackAssignees.map(a => a.id),
         start_date: startDate.toISOString(),
         target_date: targetDate.toISOString(),
         due_date: dueDate.toISOString(),
@@ -140,7 +142,7 @@ export const TaskCreationScreen: React.FC = () => {
         <h2 className="text-lg font-bold text-white tracking-tight">Create Task</h2>
         <button
           onClick={handleCreate}
-          disabled={loading || !title.trim() || selectedAssignees.length === 0}
+          disabled={loading || !title.trim()}
           className="text-white hover:bg-white/20 rounded-lg px-3 py-1.5 transition-colors font-bold disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? 'Saving...' : 'Save'}
@@ -473,7 +475,7 @@ export const TaskCreationScreen: React.FC = () => {
         <div className="max-w-lg mx-auto">
           <button
             onClick={handleCreate}
-            disabled={loading || !title.trim() || selectedAssignees.length === 0}
+            disabled={loading || !title.trim()}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-4 text-center text-base font-bold text-white shadow-lg shadow-primary/25 transition-transform active:scale-[0.98] hover:bg-primary/90 disabled:opacity-70 disabled:cursor-not-allowed"
           >
             {loading ? (

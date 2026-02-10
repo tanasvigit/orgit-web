@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from 'react-query';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
 import { conversationService } from '../../services/conversationService';
 import { taskService } from '../../services/taskService';
 import { setTaskFinancial } from '../../utils/taskFinancialStorage';
@@ -47,6 +48,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [createTaskLoading, setCreateTaskLoading] = useState(false);
   const [reportingMemberId, setReportingMemberId] = useState<string | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   // Initialize form with initial values when modal opens
   useEffect(() => {
@@ -127,11 +129,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       return;
     }
 
-    if (selectedAssignees.length === 0) {
-      toast.error('Please assign the task to at least one person');
-      return;
-    }
-
     setCreateTaskLoading(true);
     try {
       // Build description with document/compliance reference if exists (mobile behavior)
@@ -147,6 +144,14 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       const parsedFinancialValue =
         financialValue.trim().length > 0 ? Number.parseFloat(financialValue) : null;
 
+      // If no assignees selected, assign task to current user (self)
+      const fallbackAssignees =
+        selectedAssignees.length > 0
+          ? selectedAssignees
+          : user
+          ? [{ id: (user as any).id || (user as any).userId, name: (user as any).name }]
+          : [];
+
       const taskData: any = {
         title: title.trim(),
         description: taskDescription,
@@ -154,7 +159,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         task_owner: taskOwner,
         financial_value: Number.isFinite(parsedFinancialValue as number) ? parsedFinancialValue : null,
         finance_type: financialValue.trim().length > 0 ? financeType : null,
-        assignee_ids: selectedAssignees.map(a => a.id),
+        assignee_ids: fallbackAssignees.map(a => a.id),
         start_date: startDate.toISOString(),
         target_date: targetDate.toISOString(),
         due_date: dueDate.toISOString(),

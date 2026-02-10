@@ -140,26 +140,6 @@ export const TaskDetailsScreen: React.FC = () => {
     }
   );
 
-  // Update task status mutation
-  const updateStatusMutation = useMutation(
-    (status: string) => taskService.updateTaskStatus(taskId!, status),
-    {
-      onSuccess: (data) => {
-        console.log('Task status updated successfully:', data);
-        queryClient.invalidateQueries(['task', taskId]);
-        queryClient.invalidateQueries(['tasks']);
-        queryClient.invalidateQueries(['dashboard']);
-        queryClient.invalidateQueries(['dashboard-statistics']);
-      },
-      onError: (error: any) => {
-        console.error('Failed to update task status:', error);
-        console.error('Error response:', error.response);
-        const errorMessage = error.response?.data?.error || error.message || 'Failed to update task status';
-        toast.error(errorMessage);
-      }
-    }
-  );
-
   // Format date helper (matching mobile)
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Not set';
@@ -191,7 +171,7 @@ export const TaskDetailsScreen: React.FC = () => {
   // Get global status label
   const getStatusLabel = (status?: string) => {
     switch (status) {
-      case 'pending': return 'Pending Approval';
+      case 'pending': return 'TODO';
       case 'in_progress': return 'In Progress';
       case 'completed': return 'Completed';
       case 'rejected': return 'Rejected';
@@ -254,7 +234,7 @@ export const TaskDetailsScreen: React.FC = () => {
     if (member.accepted_at || member.has_accepted) {
       return 'In Progress';
     }
-    return 'Pending';
+    return 'TODO';
   };
 
   // EXACT mobile logic: getMemberStatusColor shows green if completed_at exists
@@ -271,9 +251,13 @@ export const TaskDetailsScreen: React.FC = () => {
   const isReportingMember =
     !!normalizedTask && normalizedTask.reporting_member_id === currentUserId;
 
-  // For the header badge, prefer showing the current viewer's own status
-  // (Completed / Pending Review / In Progress / Pending) rather than only global status.
-  const getDisplayStatusLabelForViewer = () => {
+  // Per-viewer status for details page (mirror dashboard logic, with creator aggregation)
+  type ViewerStatus = 'pending' | 'in_progress' | 'pending_verification' | 'completed';
+
+  const getViewerStatusForCurrentUser = (): ViewerStatus => {
+    const statusForUser = normalizedTask?.current_user_status || (normalizedTask as any)?.currentUserStatus || {};
+    const assigneesArr = Array.isArray(normalizedTask?.assignees) ? normalizedTask!.assignees : [];
+
     if (currentUserAssignee) {
       const verified =
         currentUserAssignee.verified_at ||
@@ -287,16 +271,49 @@ export const TaskDetailsScreen: React.FC = () => {
 
       const accepted =
         currentUserAssignee.accepted_at ||
-        currentUserAssignee.has_accepted;
+        currentUserAssignee.has_accepted ||
+        statusForUser.has_accepted ||
+        statusForUser.accepted_at;
 
-      if (verified) return 'Completed';
-      if (completed) return 'Pending for Review';
-      if (accepted) return 'In Progress';
-      return 'Pending';
+      if (verified) return 'completed';
+      if (completed) return 'pending_verification';
+      if (accepted) return 'in_progress';
+      return 'pending';
     }
 
-    // Fallback: show global task status
-    return getStatusLabel((normalizedTask || task)?.status);
+    if (statusForUser.has_accepted) {
+      return 'in_progress';
+    }
+
+    if (isCreator) {
+      if (assigneesArr.length > 0) {
+        const anyVerified = assigneesArr.some(
+          (a: any) =>
+            a.verified_at ||
+            (a.verifiedAt as any) ||
+            a.is_verified
+        );
+        if (anyVerified) return 'completed';
+
+        const anyCompleted = assigneesArr.some(
+          (a: any) =>
+            a.completed_at ||
+            a.completion_status === 'completed' ||
+            a.status === 'completed'
+        );
+        if (anyCompleted) return 'pending_verification';
+
+        const anyAccepted = assigneesArr.some(
+          (a: any) =>
+            a.accepted_at ||
+            a.has_accepted
+        );
+        if (anyAccepted) return 'in_progress';
+      }
+      return 'pending';
+    }
+
+    return 'pending';
   };
 
   // Creator is always considered "in" the task; they never see Accept/Reject.
@@ -428,6 +445,44 @@ export const TaskDetailsScreen: React.FC = () => {
     }
   );
 
+  // Delete task (creator only)
+  const deleteTaskMutation = useMutation(
+    () => taskService.deleteTask(taskId!),
+    {
+      onSuccess: () => {
+        // Remove from caches and dashboard
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        toast.success('Task deleted successfully');
+        navigate(isAdmin ? '/admin/tasks' : '/tasks');
+      },
+      onError: (error: any) => {
+        const message =
+          error?.response?.data?.error ||
+          error?.message ||
+          'Failed to delete task';
+        toast.error(message);
+      },
+    }
+  );
+
+  const handleDeleteTask = () => {
+    if (!taskId || !isCreator) return;
+    toast.confirm('Are you sure you want to delete this task? This action cannot be undone.', {
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      onConfirm: async () => {
+        try {
+          await deleteTaskMutation.mutateAsync();
+        } catch {
+          // error already handled in onError
+        }
+      },
+    });
+  };
+
   const handleVerifyMember = (memberUserId: string, memberName: string) => {
     toast.confirm(`Verify that ${memberName} has completed their part of the task?`, {
       onConfirm: async () => {
@@ -492,134 +547,91 @@ export const TaskDetailsScreen: React.FC = () => {
   // Use normalizedTask if available, fallback to task; merge finance from API/localStorage
   const displayTask = mergeTaskWithFinancial(normalizedTask || task);
   
-  const statusColor = getStatusColor(displayTask.status);
+  const viewerStatus = getViewerStatusForCurrentUser();
+  const statusColor = getStatusColor(
+    viewerStatus === 'pending_verification' ? 'in_progress' : viewerStatus
+  );
   const isOverdue = displayTask.due_date && new Date(displayTask.due_date) < new Date() && displayTask.status !== 'completed';
+
+  // Hero badge label: use viewer status, but override to Overdue when needed
+  const heroStatusLabel = (() => {
+    if (isOverdue && viewerStatus !== 'completed') {
+      return 'Overdue';
+    }
+    switch (viewerStatus) {
+      case 'pending':
+        return 'TODO';
+      case 'in_progress':
+        return 'In Progress';
+      case 'pending_verification':
+        return 'Pending for Review';
+      case 'completed':
+        return 'Completed';
+      default:
+        return 'TODO';
+    }
+  })();
 
   const content = (
     <div className="p-6 md:p-8">
       {/* Page Header */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex items-center gap-4 mb-8">
         <button 
           onClick={() => navigate(-1)} 
-          className="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400 transition-colors"
+          className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400 transition-colors border border-gray-200 dark:border-gray-700"
+          aria-label="Back"
         >
-          <span className="material-symbols-outlined">arrow_back</span>
+          <span className="material-symbols-outlined text-xl">arrow_back</span>
         </button>
-        <div className="flex-1">
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-1">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white truncate">
             Task Details
           </h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">
             View and manage task information
           </p>
         </div>
       </div>
 
-      {/* Scrollable Content */}
-      <main className="max-w-4xl mx-auto">
-        {/* Task Info Card */}
-        <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-sm mb-6 border border-gray-200 dark:border-gray-700">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex gap-2 flex-wrap">
-              {displayTask.status === 'pending' && (
-                <span 
-                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-                  style={{ backgroundColor: statusColor }}
-                >
-                  {getStatusLabel(displayTask.status)}
-                </span>
-              )}
-              {displayTask.status === 'in_progress' && (
-                <span 
-                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-                  style={{ backgroundColor: statusColor }}
-                >
-                  In Progress
-                </span>
-              )}
-              {displayTask.status === 'completed' && (
-                <span 
-                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-                  style={{ backgroundColor: statusColor }}
-                >
-                  Completed
-                </span>
-              )}
-              {displayTask.status === 'rejected' && (
-                <span 
-                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-                  style={{ backgroundColor: statusColor }}
-                >
-                  Rejected
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              {isOverdue && (
-                <div className="flex items-center gap-2 text-red-600 dark:text-red-400 text-sm font-semibold">
-                  <span className="material-symbols-outlined text-base">warning</span>
-                  Overdue
-                </div>
-              )}
-              {/* Status Change Dropdown – only task creator can change global status */}
-              {isCreator ? (
-                <div className="relative">
-                  <select
-                    value={displayTask.status || 'pending'}
-                    onChange={(e) => {
-                      const newStatus = e.target.value;
-                      if (newStatus !== displayTask.status) {
-                        updateStatusMutation.mutate(newStatus);
-                      }
-                    }}
-                    disabled={updateStatusMutation.isLoading}
-                    className="appearance-none bg-white dark:bg-slate-700 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <option value="pending">Pending</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                    <option value="rejected">Rejected</option>
-                  </select>
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500 dark:text-gray-400">
-                    <span className="material-symbols-outlined text-base">arrow_drop_down</span>
-                  </span>
-                </div>
-              ) : (
-                <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 font-medium">
-                  Status:&nbsp;
-                  <span className="text-gray-900 dark:text-gray-100">
-                    {getDisplayStatusLabelForViewer()}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap mb-3">
-            <h2 className="text-2xl md:text-3xl font-bold leading-tight text-gray-900 dark:text-white">{displayTask.title}</h2>
-            {(displayTask.financial_value != null || displayTask.finance_type) && isCreator && (
+      <main className="max-w-4xl mx-auto space-y-6">
+        {/* Hero: Title + Status (read-only) */}
+        <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
+          <div className="p-6 md:p-8">
+            <div className="flex flex-wrap items-center gap-3 mb-4">
               <span
-                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                  displayTask.finance_type === 'income'
-                    ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
-                    : displayTask.finance_type === 'expense'
-                    ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                }`}
+                className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm"
+                style={{ backgroundColor: heroStatusLabel === 'Overdue' ? '#EF4444' : statusColor }}
               >
-                {displayTask.finance_type === 'income' ? 'Income' : displayTask.finance_type === 'expense' ? 'Expense' : 'Finance'}
-                {displayTask.financial_value != null && ` · ${displayTask.finance_type === 'expense' ? '-' : '+'}${Number(displayTask.financial_value).toFixed(2)}`}
+                {heroStatusLabel}
               </span>
-            )}
-          </div>
-          <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-base">calendar_today</span>
-              <span>Created: {formatDate(displayTask.created_at)}</span>
             </div>
-            {displayTask.id && (
-              <div className="flex items-center gap-2">
-                <span className="text-gray-300 dark:text-gray-600">•</span>
-                <span>ID: #{displayTask.id.slice(0, 8).toUpperCase()}</span>
+            <h2 className="text-2xl md:text-3xl font-bold leading-tight text-gray-900 dark:text-white mb-4">{displayTask.title}</h2>
+            <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+              <span className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-lg text-gray-400">calendar_today</span>
+                Created {formatDate(displayTask.created_at)}
+              </span>
+              {displayTask.id && (
+                <span className="flex items-center gap-2 text-gray-400 dark:text-gray-500">
+                  <span className="text-gray-300 dark:text-gray-600">•</span>
+                  #{displayTask.id.slice(0, 8).toUpperCase()}
+                </span>
+              )}
+            </div>
+            {(displayTask.financial_value != null || displayTask.finance_type) && isCreator && (
+              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-semibold ${
+                    displayTask.finance_type === 'income'
+                      ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
+                      : displayTask.finance_type === 'expense'
+                      ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  {displayTask.finance_type === 'income' ? 'Income' : displayTask.finance_type === 'expense' ? 'Expense' : 'Finance'}
+                  {displayTask.financial_value != null && ` · ${displayTask.finance_type === 'expense' ? '-' : '+'}${Number(displayTask.financial_value).toFixed(2)}`}
+                </span>
               </div>
             )}
           </div>
@@ -627,40 +639,40 @@ export const TaskDetailsScreen: React.FC = () => {
 
         {/* Description Card */}
         {displayTask.description && (
-          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-sm mb-6 border border-gray-200 dark:border-gray-700">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-primary dark:text-purple-400 mb-3">
-              DESCRIPTION
+          <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm p-6 md:p-8">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-primary dark:text-purple-400 mb-3">
+              Description
             </h3>
-            <p className="text-gray-700 dark:text-gray-200 leading-relaxed">
+            <p className="text-gray-700 dark:text-gray-200 leading-relaxed text-base">
               {displayTask.description}
             </p>
           </div>
         )}
 
         {/* Date Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white dark:bg-slate-800 rounded-lg p-5 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col gap-2">
-            <span className="flex items-center gap-2 text-xs font-semibold text-primary dark:text-purple-400 uppercase">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm p-5 flex flex-col gap-2 hover:shadow-md transition-shadow">
+            <span className="flex items-center gap-2 text-xs font-semibold text-primary dark:text-purple-400 uppercase tracking-wider">
               <span className="material-symbols-outlined text-base">play_circle</span>
-              START DATE
+              Start date
             </span>
             <span className="text-base font-semibold text-gray-900 dark:text-white">
               {formatDate(displayTask.start_date)}
             </span>
           </div>
-          <div className="bg-white dark:bg-slate-800 rounded-lg p-5 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col gap-2">
-            <span className="flex items-center gap-2 text-xs font-semibold text-primary dark:text-purple-400 uppercase">
+          <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm p-5 flex flex-col gap-2 hover:shadow-md transition-shadow">
+            <span className="flex items-center gap-2 text-xs font-semibold text-primary dark:text-purple-400 uppercase tracking-wider">
               <span className="material-symbols-outlined text-base">flag</span>
-              TARGET DATE
+              Target date
             </span>
             <span className="text-base font-semibold text-gray-900 dark:text-white">
               {formatDate(displayTask.target_date)}
             </span>
           </div>
-          <div className="bg-primary/10 dark:bg-primary/20 rounded-lg p-5 border-2 border-primary/30 dark:border-primary/40 flex flex-col gap-2">
-            <span className="flex items-center gap-2 text-xs font-bold text-primary dark:text-purple-400 uppercase">
+          <div className="rounded-2xl border-2 border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/20 shadow-sm p-5 flex flex-col gap-2 hover:shadow-md transition-shadow">
+            <span className="flex items-center gap-2 text-xs font-bold text-primary dark:text-purple-400 uppercase tracking-wider">
               <span className="material-symbols-outlined text-base">event</span>
-              DUE DATE
+              Due date
             </span>
             <span className="text-lg font-bold text-primary dark:text-purple-300">
               {formatDate(displayTask.due_date)}
@@ -669,10 +681,10 @@ export const TaskDetailsScreen: React.FC = () => {
         </div>
 
         {/* Assigned To Card - Full Details + Member Completion Flow */}
-        <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-sm mb-6 border border-gray-200 dark:border-gray-700">
+        <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm p-6 md:p-8">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-primary dark:text-purple-400">
-              ASSIGNED TO
+            <h3 className="text-xs font-bold uppercase tracking-wider text-primary dark:text-purple-400">
+              Assigned to
             </h3>
             <span className="text-xs text-gray-500 dark:text-gray-400">
               {assignees.length || 0} {assignees.length === 1 ? 'Assignee' : 'Assignees'}
@@ -1013,61 +1025,76 @@ export const TaskDetailsScreen: React.FC = () => {
       </main>
 
       {/* Action Bar */}
-      {(canAccept || canReject || canMarkComplete) && (
+      {(canAccept || canReject || canMarkComplete || isCreator) && (
         <div className="max-w-4xl mx-auto mt-6">
           <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-            <div className="flex gap-3">
-              {canReject && (
+            {(canAccept || canReject || canMarkComplete) && (
+              <div className="flex gap-3 mb-3">
+                {canReject && (
+                  <button
+                    onClick={() => setShowRejectModal(true)}
+                    disabled={processing}
+                    className="flex-1 rounded-lg border border-red-500/30 bg-white dark:bg-slate-800 px-6 py-3 text-sm font-semibold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-lg">close</span>
+                    Reject
+                  </button>
+                )}
+                {canAccept && (
+                  <button
+                    onClick={handleAccept}
+                    disabled={processing}
+                    className="flex-[2] rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-white hover:bg-primary/90 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {processing ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                        <span>Processing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-[20px]">check</span>
+                        <span>Accept Task</span>
+                      </>
+                    )}
+                  </button>
+                )}
+                {canMarkComplete && (
+                  <button
+                    onClick={handleMarkComplete}
+                    disabled={processing}
+                    className="flex-[2] rounded-lg bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {processing ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                        <span>Processing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-[20px]">
+                          check_circle
+                        </span>
+                        <span>Mark Complete</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            )}
+            {isCreator && (
+              <div className="pt-3 border-t border-gray-100 dark:border-gray-700 flex justify-end">
                 <button
-                  onClick={() => setShowRejectModal(true)}
-                  disabled={processing}
-                  className="flex-1 rounded-lg border border-red-500/30 bg-white dark:bg-slate-800 px-6 py-3 text-sm font-semibold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                  type="button"
+                  onClick={handleDeleteTask}
+                  disabled={deleteTaskMutation.isLoading}
+                  className="inline-flex items-center gap-2 rounded-lg border border-red-500/40 px-4 py-2 text-xs sm:text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
                 >
-                  <span className="material-symbols-outlined text-lg">close</span>
-                  Reject
+                  <span className="material-symbols-outlined text-base">delete</span>
+                  <span>{deleteTaskMutation.isLoading ? 'Deleting...' : 'Delete Task'}</span>
                 </button>
-              )}
-              {canAccept && (
-                <button
-                  onClick={handleAccept}
-                  disabled={processing}
-                  className="flex-[2] rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-white hover:bg-primary/90 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {processing ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                      <span>Processing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-[20px]">check</span>
-                      <span>Accept Task</span>
-                    </>
-                  )}
-                </button>
-              )}
-              {canMarkComplete && (
-                <button
-                  onClick={handleMarkComplete}
-                  disabled={processing}
-                  className="flex-[2] rounded-lg bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {processing ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                      <span>Processing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-[20px]">
-                        check_circle
-                      </span>
-                      <span>Mark Complete</span>
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       )}

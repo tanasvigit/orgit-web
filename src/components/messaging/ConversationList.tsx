@@ -137,13 +137,8 @@ export const ConversationList: React.FC<ConversationListProps> = ({
     });
   }, [conversations, filter, searchQuery]);
 
-  // Separate conversations: Task Groups and Pinned go to "Priority & Tasks", others go to "Recent Messages"
-  const pinnedConversations = filteredConversations.filter(conv => 
-    conv.isPinned || conv.is_pinned || conv.isTaskGroup || conv.is_task_group
-  );
-  const recentConversations = filteredConversations.filter(conv => 
-    !(conv.isPinned || conv.is_pinned) && !(conv.isTaskGroup || conv.is_task_group)
-  );
+  // Single list: all conversations (pinned first, then by time) – no "Priority & Tasks" section
+  const allConversations = filteredConversations;
 
   return (
     <>
@@ -231,103 +226,14 @@ export const ConversationList: React.FC<ConversationListProps> = ({
         </div>
       )}
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-6">
-        {pinnedConversations.length > 0 && !hideSearchAndFilters && (
+        {allConversations.length > 0 && (
           <div>
             <h3 className="flex items-center text-xs font-bold text-primary uppercase tracking-wider mb-3 px-2">
-              <span className="material-icons-round text-sm mr-1">push_pin</span>
-              Priority & Tasks
-            </h3>
-            <div className="space-y-2">
-              {pinnedConversations.map((conv) => {
-                const convId = getConversationId(conv);
-                const convName = getConversationName(conv);
-                const convPhoto = getConversationPhoto(conv);
-                const lastMessage = getLastMessagePreview(conv);
-                const unreadCount = conv.unreadCount || conv.unread_count || 0;
-                const isPinned = conv.isPinned || conv.is_pinned || false;
-                const lastMessageTime = conv.lastMessageTime || conv.last_message_time;
-                const timeDisplay = formatTime(lastMessageTime);
-                const isTaskGroup = conv.isTaskGroup || conv.is_task_group;
-                const isActive = convId === currentConversationId;
-
-                return (
-                  <div
-                    key={convId}
-                    className={`bg-white dark:bg-surface-dark p-3 rounded-2xl shadow-sm hover:shadow-md transition cursor-pointer border-l-4 ${
-                      isActive ? 'border-primary bg-primary/5' : isPinned ? 'border-primary' : 'border-transparent hover:border-gray-300 dark:hover:border-gray-600'
-                    } group`}
-                    onClick={() => {
-                      if (isTaskGroup) {
-                        navigate(isAdmin ? `/admin/messages/task-group/${convId}` : `/messages/task-group/${convId}`);
-                      } else {
-                        navigate(isAdmin ? `/admin/messages/${convId}` : `/messages/${convId}`);
-                      }
-                    }}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="relative">
-                        {isTaskGroup ? (
-                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-800 to-primary flex items-center justify-center text-white shadow-lg">
-                            {convPhoto ? (
-                              <img src={convPhoto} alt={convName} className="w-full h-full rounded-xl object-cover" />
-                            ) : (
-                              <span className="material-icons-outlined opacity-50 text-2xl">folder</span>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-700 to-teal-500 flex items-center justify-center text-white shadow-lg overflow-hidden">
-                            {convPhoto ? (
-                              <img src={convPhoto} alt={convName} className="w-full h-full rounded-xl object-cover" />
-                            ) : (
-                              <span className="material-icons-outlined text-2xl">person</span>
-                            )}
-                          </div>
-                        )}
-                        {isTaskGroup && (
-                          <div className="absolute -bottom-1 -right-1 bg-white dark:bg-surface-dark p-0.5 rounded-full">
-                            <div className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center">
-                              <span className="material-icons-round text-[10px]">assignment</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-baseline mb-0.5">
-                          <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate">{convName}</h4>
-                          <span className={`text-xs ${isPinned ? 'text-primary font-medium' : 'text-gray-400'}`}>
-                            {timeDisplay}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {isTaskGroup && (
-                            <span className="bg-accent-pink dark:bg-red-900/30 text-accent-text dark:text-red-300 text-[10px] font-bold px-1.5 py-0.5 rounded">URGENT</span>
-                          )}
-                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{lastMessage}</p>
-                        </div>
-                      </div>
-                      {unreadCount > 0 && (
-                        <div className="flex flex-col items-end gap-1">
-                          <span className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-[10px] font-bold">
-                            {unreadCount > 99 ? '99+' : unreadCount}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {recentConversations.length > 0 && (
-          <div>
-            <h3 className="flex items-center text-xs font-bold text-primary uppercase tracking-wider mb-3 px-2 mt-4">
               <span className="material-icons-round text-sm mr-1">person</span>
               Recent Messages
             </h3>
             <div className="space-y-1">
-              {recentConversations.map((conv) => {
+              {allConversations.map((conv) => {
                 const convId = getConversationId(conv);
                 const convName = getConversationName(conv);
                 const convPhoto = getConversationPhoto(conv);
@@ -336,6 +242,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                 const lastMessageTime = conv.lastMessageTime || conv.last_message_time;
                 const timeDisplay = formatTime(lastMessageTime);
                 const isGroup = conv.type === 'group' || conv.is_group;
+                const isTaskGroup = conv.isTaskGroup || conv.is_task_group;
                 const isActive = convId === currentConversationId;
 
                 return (
@@ -347,7 +254,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                         : 'hover:bg-white dark:hover:bg-surface-dark hover:shadow-sm'
                     }`}
                     onClick={() => {
-                      if (isGroup && (conv.isTaskGroup || conv.is_task_group)) {
+                      if (isTaskGroup) {
                         navigate(isAdmin ? `/admin/messages/task-group/${convId}` : `/messages/task-group/${convId}`);
                       } else {
                         navigate(isAdmin ? `/admin/messages/${convId}` : `/messages/${convId}`);
@@ -364,11 +271,11 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                       ) : (
                         <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
                           <span className="material-icons-round text-blue-600 dark:text-blue-400 text-2xl">
-                            {isGroup ? 'groups' : 'person'}
+                            {isGroup || isTaskGroup ? 'groups' : 'person'}
                           </span>
                         </div>
                       )}
-                      {!isGroup && (
+                      {!isGroup && !isTaskGroup && (
                         <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-700 rounded-full"></span>
                       )}
                     </div>
@@ -394,7 +301,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
           </div>
         )}
 
-        {pinnedConversations.length === 0 && recentConversations.length === 0 && (
+        {allConversations.length === 0 && (
           <div className="flex items-center justify-center py-12">
             <p className="text-gray-400 text-sm">
               {searchQuery ? 'No conversations found' : 'No conversations yet'}

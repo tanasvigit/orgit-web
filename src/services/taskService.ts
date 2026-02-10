@@ -105,6 +105,12 @@ export const taskService = {
     }
   },
 
+  // Delete a task (web-only helper, uses existing API route)
+  deleteTask: async (taskId: string) => {
+    const response = await api.delete(`/tasks/${taskId}`);
+    return response.data;
+  },
+
   getMentionableTasks: async () => {
     const response = await api.get('/tasks/mentionable');
     return response.data;

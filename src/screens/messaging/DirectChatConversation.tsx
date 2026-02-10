@@ -62,6 +62,7 @@ export const DirectChatConversation: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   // File upload preview state: files selected to send, shown above input
   type PendingAttachment = {
     id: string;
@@ -87,23 +88,16 @@ export const DirectChatConversation: React.FC = () => {
   const { data: conversationData } = useQuery(
     ['conversation', conversationId],
     () => conversationService.getConversationDetails(conversationId!),
-    { 
+    {
       enabled: !!conversationId,
       onSuccess: (data) => {
-        // Extract otherUserId for direct conversations
-        // Backend returns { conversation, members } - extract other user from members array
         const currentUserId = user?.id || user?.userId;
         const otherMembers = data.otherMembers || data.other_members || [];
-        
         if (!data.is_group && !data.is_task_group) {
-          // Find the other user (not the current user) from members
-          // Check all possible ID fields and ensure it's not the current user
           const otherUser = otherMembers.find((m: any) => {
             const memberId = m.id || m.user_id || m.userId;
             return memberId && memberId !== currentUserId;
           });
-          
-          // Only set otherUserId if we found a user that's not the current user
           if (otherUser) {
             const otherUserIdValue = otherUser.id || otherUser.user_id || otherUser.userId;
             if (otherUserIdValue && otherUserIdValue !== currentUserId) {
@@ -111,9 +105,29 @@ export const DirectChatConversation: React.FC = () => {
             }
           }
         }
-      }
+      },
     }
   );
+  const isPinned = conversationData?.is_pinned ?? conversationData?.isPinned ?? false;
+
+  // Pin/unpin conversation
+  const pinMutation = useMutation(
+    () => conversationService.pinConversation(conversationId!, !isPinned),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['conversation', conversationId]);
+        queryClient.invalidateQueries(['conversations']);
+        toast.success(isPinned ? 'Conversation unpinned' : 'Conversation pinned');
+      },
+      onError: (err: any) => {
+        toast.error(err?.message || 'Failed to update pin');
+      },
+    }
+  );
+  const handlePinClick = () => {
+    if (!conversationId) return;
+    pinMutation.mutate();
+  };
 
   // Normalize message function (matching mobile)
   const normalizeMessage = (msg: any) => {
@@ -1732,19 +1746,18 @@ export const DirectChatConversation: React.FC = () => {
   const [conversationFilter, setConversationFilter] = useState<'All' | 'Direct' | 'Task Groups'>('All');
   const [conversationSearchQuery, setConversationSearchQuery] = useState('');
 
-  // Right sidebar content for task groups
+  // Right sidebar content for task groups (normal style, no special icons/labels)
   const rightSidebarContent = (conversationData?.isTaskGroup || conversationData?.is_task_group) ? (
     <>
       <div className="p-6 flex flex-col items-center border-b border-border-light dark:border-border-dark">
-        <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-purple-800 to-primary flex items-center justify-center text-white shadow-xl mb-4 text-4xl">
+        <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-teal-700 to-teal-500 flex items-center justify-center text-white shadow-xl mb-4 overflow-hidden">
           {conversationPhoto ? (
             <img src={conversationPhoto} alt={conversationName} className="w-full h-full rounded-2xl object-cover" />
           ) : (
-            <span className="material-icons-outlined">folder</span>
+            <span className="material-icons-outlined text-4xl">groups</span>
           )}
         </div>
         <h3 className="text-lg font-bold text-gray-900 dark:text-white text-center">{conversationName}</h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Task Group</p>
         <div className="flex gap-4 mt-6 w-full justify-center">
           <div className="flex flex-col items-center">
             <button className="w-10 h-10 rounded-full bg-secondary dark:bg-primary/20 flex items-center justify-center text-primary mb-1 hover:bg-gray-200 dark:hover:bg-gray-700 transition">
@@ -1823,29 +1836,19 @@ export const DirectChatConversation: React.FC = () => {
             }}
           >
           <div className="relative">
-            <div 
-                className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-800 to-primary flex items-center justify-center text-white shadow-md"
-              >
-                {conversationPhoto ? (
-                  <img src={conversationPhoto} alt={conversationName} className="w-full h-full rounded-xl object-cover" />
-                ) : (
-                  <span className="material-icons-outlined opacity-50 text-xl">person</span>
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-700 to-teal-500 flex items-center justify-center text-white shadow-md overflow-hidden">
+              {conversationPhoto ? (
+                <img src={conversationPhoto} alt={conversationName} className="w-full h-full rounded-xl object-cover" />
+              ) : (
+                <span className="material-icons-outlined opacity-50 text-xl">
+                  {(conversationData?.isTaskGroup || conversationData?.is_task_group) || (conversationData?.is_group) ? 'groups' : 'person'}
+                </span>
               )}
             </div>
-              {(conversationData?.isTaskGroup || conversationData?.is_task_group) && (
-                <div className="absolute -bottom-1 -right-1 bg-white dark:bg-surface-dark p-0.5 rounded-full">
-                  <div className="w-4 h-4 bg-primary text-white rounded-full flex items-center justify-center">
-                    <span className="material-icons-round text-[8px]">assignment</span>
           </div>
-                </div>
-              )}
-            </div>
             <div>
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">
                 {conversationName}
-                {(conversationData?.isTaskGroup || conversationData?.is_task_group) && (
-                  <span className="bg-accent-pink dark:bg-red-900/30 text-accent-text dark:text-red-300 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">Urgent</span>
-                )}
               </h2>
               <p className="text-xs text-gray-500 dark:text-gray-400">
               {isTyping ? (
@@ -1879,13 +1882,44 @@ export const DirectChatConversation: React.FC = () => {
               title="Search messages"
             >
               <span className="material-icons-outlined">search</span>
-          </button>
-            <button className="hover:text-primary transition">
+            </button>
+            <button 
+              onClick={handlePinClick}
+              disabled={pinMutation.isLoading}
+              className={`hover:text-primary transition ${isPinned ? 'text-primary' : ''}`}
+              title={isPinned ? 'Unpin' : 'Pin'}
+            >
               <span className="material-icons-outlined">push_pin</span>
             </button>
-            <button className="hover:text-primary transition">
-              <span className="material-icons-outlined">more_vert</span>
-          </button>
+            <div className="relative">
+              <button 
+                onClick={() => setShowMoreMenu((prev) => !prev)}
+                className="hover:text-primary transition"
+                title="More options"
+              >
+                <span className="material-icons-outlined">more_vert</span>
+              </button>
+              {showMoreMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowMoreMenu(false)} aria-hidden="true" />
+                  <div className="absolute right-0 top-full mt-1 py-1 w-48 bg-white dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-lg shadow-lg z-20">
+                    {!(conversationData?.is_group || conversationData?.is_task_group) && otherUserId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMoreMenu(false);
+                          setShowUserProfile(true);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2"
+                      >
+                        <span className="material-icons-outlined text-lg">person</span>
+                        View profile
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
         </div>
       </header>
 
@@ -2173,15 +2207,6 @@ export const DirectChatConversation: React.FC = () => {
               send
             </span>
           </button>
-        </div>
-
-        <div className="flex items-center justify-center gap-1.5 mt-3">
-          <span className="material-icons-round text-gray-400" style={{ fontSize: 12 }}>
-            lock
-          </span>
-          <p className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold">
-            End-to-end encrypted
-          </p>
         </div>
       </div>
 
