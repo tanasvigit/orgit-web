@@ -697,6 +697,18 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   };
 
   // Handle send message
+  const getDeviceLocalTimestamp = () => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const year = now.getFullYear();
+    const month = pad(now.getMonth() + 1);
+    const day = pad(now.getDate());
+    const hours = pad(now.getHours());
+    const minutes = pad(now.getMinutes());
+    const seconds = pad(now.getSeconds());
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  };
+
   const handleSend = async () => {
     if ((!message.trim() && !replyingTo && !editingMessage && pendingAttachments.length === 0) || !conversationId) return;
 
@@ -732,6 +744,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             content: caption, 
             messageType: 'text', 
             replyToMessageId: replyingTo?.id || null,
+            deviceTimestamp: getDeviceLocalTimestamp(),
             // Only send visibilityMode for task groups
             ...(isTaskGroup && { visibilityMode }),
           });
@@ -752,7 +765,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             }
             const { storedValue } = extractUploadedMedia(uploadResponse);
             if (!storedValue) throw new Error('Upload did not return key');
-            socket.emit('send_message', { conversationId, messageType: item.type, mediaUrl: storedValue, fileName: item.name, fileSize: item.size, mimeType: item.file.type, replyToMessageId: replyingTo?.id || null });
+            socket.emit('send_message', { conversationId, messageType: item.type, mediaUrl: storedValue, fileName: item.name, fileSize: item.size, mimeType: item.file.type, replyToMessageId: replyingTo?.id || null, deviceTimestamp: getDeviceLocalTimestamp() });
           } catch (err) {
             console.error('Upload error:', err);
             toast.error(`Failed to upload ${item.name}. Please try again.`);
@@ -789,6 +802,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           content: message.trim(), 
           messageType: 'text', 
           replyToMessageId: replyingTo?.id || null,
+          deviceTimestamp: getDeviceLocalTimestamp(),
           // Only send visibilityMode for task groups; backend will use 'private' for personal chats
           ...(isTaskGroup && { visibilityMode }),
         });

@@ -1088,6 +1088,19 @@ export const DirectChatConversation: React.FC = () => {
     }
   };
 
+  // Helper: get device local timestamp as "YYYY-MM-DD HH:MM:SS"
+  const getDeviceLocalTimestamp = () => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const year = now.getFullYear();
+    const month = pad(now.getMonth() + 1);
+    const day = pad(now.getDate());
+    const hours = pad(now.getHours());
+    const minutes = pad(now.getMinutes());
+    const seconds = pad(now.getSeconds());
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  };
+
   // Handle send message
   const handleSend = async () => {
     if ((!message.trim() && !replyingTo && !editingMessage && pendingAttachments.length === 0) || !conversationId) return;
@@ -1125,7 +1138,7 @@ export const DirectChatConversation: React.FC = () => {
             reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, content: replyingTo.content, message_type: replyingTo.message_type, sender_name: replyingTo.sender_name } : null,
           });
           if (tempMessage) setMessages((prev) => [...prev, tempMessage]);
-          socket.emit('send_message', { conversationId, text: caption, content: caption, messageType: 'text', replyToMessageId: replyingTo?.id || null });
+          socket.emit('send_message', { conversationId, text: caption, content: caption, messageType: 'text', replyToMessageId: replyingTo?.id || null, deviceTimestamp: getDeviceLocalTimestamp() });
           setMessage('');
           setReplyingTo(null);
         }
@@ -1152,6 +1165,7 @@ export const DirectChatConversation: React.FC = () => {
               fileSize: item.size,
               mimeType: item.file.type,
               replyToMessageId: replyingTo?.id || null,
+              deviceTimestamp: getDeviceLocalTimestamp(),
             });
           } catch (err) {
             console.error('Upload error:', err);
@@ -1183,7 +1197,7 @@ export const DirectChatConversation: React.FC = () => {
           setReplyingTo(null);
           setTimeout(() => scrollToBottom(), 100);
         }
-        socket.emit('send_message', { conversationId, text: message.trim(), content: message.trim(), messageType: 'text', replyToMessageId: replyingTo?.id || null });
+        socket.emit('send_message', { conversationId, text: message.trim(), content: message.trim(), messageType: 'text', replyToMessageId: replyingTo?.id || null, deviceTimestamp: getDeviceLocalTimestamp() });
       }
 
       setIsTyping(false);
