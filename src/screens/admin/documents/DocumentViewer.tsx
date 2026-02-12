@@ -11,7 +11,10 @@ import { getDocumentById as getLocalDocumentById, getDocumentBlobUrl, downloadDo
 import { Button } from '../../../components/shared';
 import { DocumentBuilderProvider, useDocumentBuilder } from '../../../components/document-builder/DocumentBuilderProvider';
 import { DocumentBuilderContent } from '../../../components/document-builder/DocumentBuilderLayout';
+import { SchemaDrivenDocumentEditor } from '../../../components/document-templates/SchemaDrivenDocumentEditor';
 
+// NOTE: Editing is disabled, but we keep these components in place
+// to avoid large refactors. They are no longer reachable from the UI.
 const DocumentEditorIntegration: React.FC<{ instance: any, id: string, onBack: () => void; isAdmin: boolean }> = ({ instance, id, onBack, isAdmin }) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -86,6 +89,119 @@ const DocumentEditorIntegration: React.FC<{ instance: any, id: string, onBack: (
   );
 };
 
+const SchemaDocumentEditorIntegration: React.FC<{
+  instance: any;
+  template: any;
+  id: string;
+  onBack: () => void;
+  isAdmin: boolean;
+}> = ({ instance, template, id, onBack, isAdmin }) => {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [title, setTitle] = useState(instance.title);
+
+  const mutation = useMutation(
+    (data: any) => documentInstanceService.update(id, data),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['documentInstance', id]);
+        queryClient.invalidateQueries('documentInstances');
+        navigate(`/admin/documents/${id}`);
+      },
+      onError: (err: any) => {
+        toast.error('Failed to save changes: ' + (err.response?.data?.error || err.message));
+      },
+    }
+  );
+
+  const Layout = isAdmin ? AdminLayout : EmployeeLayout;
+
+  const schema = template?.templateSchema || {};
+  const initialValues = {
+    ...(instance.filledData || {}),
+    item_rows: Array.isArray(instance?.filledData?.item_rows)
+      ? instance.filledData.item_rows.map((r: any) => ({
+          ...r,
+          detailsText: Array.isArray(r?.details) ? r.details.join('\n') : r.detailsText,
+        }))
+      : instance?.filledData?.item_rows,
+  };
+
+  const normalizeForSubmit = (data: Record<string, any>) => {
+    const out = { ...(data || {}) };
+    if (Array.isArray(out.item_rows)) {
+      out.item_rows = out.item_rows.map((row: any) => {
+        const r = { ...(row || {}) };
+        if (typeof r.detailsText === 'string' && r.detailsText.trim().length > 0) {
+          r.details = r.detailsText
+            .split(/\r?\n/)
+            .map((s: string) => s.trim())
+            .filter(Boolean);
+        }
+        delete r.detailsText;
+        return r;
+      });
+    }
+    return out;
+  };
+
+  return (
+    <Layout hideHeader={isAdmin}>
+      <div className="flex flex-col h-full overflow-hidden">
+        <div className="bg-white border-b border-gray-200 px-8 py-4 flex justify-between items-center shrink-0">
+          <div className="flex items-center gap-4">
+            <button onClick={onBack} className="text-gray-500 hover:text-gray-700 transition-colors">
+              <span className="material-symbols-outlined">arrow_back</span>
+            </button>
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase block">Document Title</label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="font-bold text-gray-900 border-none p-0 focus:ring-0 w-72 text-lg"
+              />
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={onBack}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-auto p-6 md:p-8">
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Edit Data</h2>
+              <p className="text-sm text-gray-500">Structure is locked. You can edit fields and rows only.</p>
+            </div>
+
+            {/* Wrap editor so the top Save button can submit */}
+            <div>
+              <SchemaDrivenDocumentEditor
+                schema={schema}
+                initialValues={initialValues}
+                submitLabel={mutation.isLoading ? 'Saving...' : 'Save Changes'}
+                disabled={mutation.isLoading}
+                onCancel={onBack}
+                onSubmit={async (formData) => {
+                  const filledData = normalizeForSubmit(formData);
+                  mutation.mutate({
+                    title,
+                    filledData,
+                  });
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </Layout>
+  );
+};
+
 export const DocumentViewer: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -153,20 +269,30 @@ export const DocumentViewer: React.FC = () => {
     };
   }, [id, isEditMode, isLocal, instance?.id, instance?.updatedAt]);
 
-  const updateStatusMutation = useMutation(
-    (newStatus: 'draft' | 'final') => {
-      return documentInstanceService.update(id!, {
-        status: newStatus,
-      });
-    },
+  const markCheckedMutation = useMutation(
+    () => documentInstanceService.markChecked(id!),
     {
       onSuccess: () => {
         queryClient.invalidateQueries(['documentInstance', id]);
         queryClient.invalidateQueries('documentInstances');
-        toast.success('Document status updated successfully!');
+        toast.success('Marked as Checked');
       },
       onError: (error: any) => {
-        toast.error(`Failed to update status: ${error.response?.data?.error || error.message}`);
+        toast.error(error.response?.data?.error || error.message || 'Failed to mark checked');
+      },
+    }
+  );
+
+  const markApprovedMutation = useMutation(
+    () => documentInstanceService.markApproved(id!),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['documentInstance', id]);
+        queryClient.invalidateQueries('documentInstances');
+        toast.success('Marked as Approved');
+      },
+      onError: (error: any) => {
+        toast.error(error.response?.data?.error || error.message || 'Failed to mark approved');
       },
     }
   );
@@ -234,6 +360,11 @@ export const DocumentViewer: React.FC = () => {
   const Layout = isAdmin ? AdminLayout : EmployeeLayout;
 
   const currentInstance = isLocal ? localDocument : instance;
+  const flow = !isLocal ? (currentInstance as any)?.filledData?.approval_flow : null;
+  const flowEnabled = !!flow?.enabled;
+  const flowStage = flow?.stage as string | undefined;
+  const isCheckedByMe = !!user?.id && flow?.checkedByUserId === user.id;
+  const isApprovedByMe = !!user?.id && flow?.approvedByUserId === user.id;
 
   if ((isLoading && !isLocal) || (isLocal && !localDocument && !isEditMode)) {
     return (
@@ -262,18 +393,7 @@ export const DocumentViewer: React.FC = () => {
     );
   }
 
-  if (isEditMode && !isLocal && currentInstance.status === 'draft') {
-    return (
-      <DocumentBuilderProvider>
-        <DocumentEditorIntegration
-          instance={instance}
-          id={id!}
-          isAdmin={isAdmin}
-          onBack={() => navigate(isAdmin ? `/admin/documents/${id}` : `/documents/${id}`)}
-        />
-      </DocumentBuilderProvider>
-    );
-  }
+  // Editing is disabled: documents are generated at creation time.
 
   return (
     <Layout>
@@ -308,6 +428,11 @@ export const DocumentViewer: React.FC = () => {
                 >
                   {currentInstance.status || 'draft'}
                 </span>
+                {!isLocal && flowEnabled && (
+                  <span className="px-3 py-1 text-[10px] font-bold uppercase rounded-full bg-blue-100 text-blue-800">
+                    {flowStage || 'prepared'}
+                  </span>
+                )}
                 {isLocal && (
                   <span className="px-2 py-1 text-[10px] font-bold uppercase rounded-full bg-blue-100 text-blue-800">
                     Local
@@ -319,27 +444,39 @@ export const DocumentViewer: React.FC = () => {
           <div className="flex gap-3 flex-wrap">
             {!isLocal && currentInstance.status === 'draft' && (
               <>
-                <Button
-                  variant="outline"
-                  onClick={() => navigate(isAdmin ? `/admin/documents/${id}?edit=true` : `/documents/${id}?edit=true`)}
-                >
-                  <span className="material-symbols-outlined mr-2">edit</span>
-                  Edit Data
-                </Button>
-                <Button
-                  variant="primary"
-                  onClick={() => {
-                    toast.confirm('Are you sure you want to mark this document as Final? This action cannot be undone.', {
-                      onConfirm: () => updateStatusMutation.mutate('final'),
-                      confirmLabel: 'Mark Final',
-                      cancelLabel: 'Cancel',
-                    });
-                  }}
-                  disabled={updateStatusMutation.isLoading}
-                >
-                  <span className="material-symbols-outlined mr-2">check_circle</span>
-                  {updateStatusMutation.isLoading ? 'Updating...' : 'Mark as Final'}
-                </Button>
+                {flowEnabled && flowStage === 'prepared' && isCheckedByMe && (
+                  <Button
+                    variant="primary"
+                    onClick={() => {
+                      toast.confirm('Mark this document as Checked? This will send it to Approved By.', {
+                        onConfirm: () => markCheckedMutation.mutate(),
+                        confirmLabel: 'Mark Checked',
+                        cancelLabel: 'Cancel',
+                      });
+                    }}
+                    disabled={markCheckedMutation.isLoading}
+                  >
+                    <span className="material-symbols-outlined mr-2">fact_check</span>
+                    {markCheckedMutation.isLoading ? 'Updating...' : 'Mark Checked'}
+                  </Button>
+                )}
+
+                {flowEnabled && flowStage === 'checked' && isApprovedByMe && (
+                  <Button
+                    variant="primary"
+                    onClick={() => {
+                      toast.confirm('Mark this document as Approved? This will finalize the PDF.', {
+                        onConfirm: () => markApprovedMutation.mutate(),
+                        confirmLabel: 'Mark Approved',
+                        cancelLabel: 'Cancel',
+                      });
+                    }}
+                    disabled={markApprovedMutation.isLoading}
+                  >
+                    <span className="material-symbols-outlined mr-2">verified</span>
+                    {markApprovedMutation.isLoading ? 'Updating...' : 'Mark Approved'}
+                  </Button>
+                )}
               </>
             )}
             {isLocal && (

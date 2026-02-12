@@ -1,6 +1,13 @@
 import { io, Socket } from 'socket.io-client';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000';
+const getSocketURL = () => {
+  if (import.meta.env.VITE_SOCKET_URL) return import.meta.env.VITE_SOCKET_URL;
+  if (import.meta.env.DEV) return 'http://localhost:3000';
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  return '';
+};
+
+const SOCKET_URL = getSocketURL();
 
 let socket: Socket | null = null;
 let connectionPromise: Promise<Socket> | null = null;

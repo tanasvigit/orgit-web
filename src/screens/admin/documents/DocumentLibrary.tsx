@@ -13,6 +13,7 @@ export const DocumentLibrary: React.FC = () => {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [filters, setFilters] = useState({
+    // Editing is disabled; status changes are driven by approval flow.
     status: '' as '' | 'draft' | 'final' | 'archived',
     templateId: '',
     search: '',
@@ -56,22 +57,7 @@ export const DocumentLibrary: React.FC = () => {
     }
   );
 
-  const updateStatusMutation = useMutation(
-    ({ id, status }: { id: string; status: 'draft' | 'final' }) => {
-      return documentInstanceService.update(id, {
-        status: status,
-      });
-    },
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries('documentInstances');
-        toast.success('Document status updated successfully!');
-      },
-      onError: (error: any) => {
-        toast.error(`Failed to update status: ${error.response?.data?.error || error.message}`);
-      },
-    }
-  );
+  // Removed manual status updates (no edit / no mark-final).
 
   const handleDelete = async (id: string) => {
     toast.confirm('Are you sure you want to delete this document?', {
@@ -235,22 +221,7 @@ export const DocumentLibrary: React.FC = () => {
                         >
                           {instance.status}
                         </span>
-                        {instance.status === 'draft' && (
-                          <button
-                            onClick={() => {
-                              toast.confirm('Mark this document as Final? This action cannot be undone.', {
-                                onConfirm: () => updateStatusMutation.mutate({ id: instance.id, status: 'final' }),
-                                confirmLabel: 'Mark Final',
-                                cancelLabel: 'Cancel',
-                              });
-                            }}
-                            disabled={updateStatusMutation.isLoading}
-                            className="text-green-600 hover:text-green-800 hover:bg-green-50 p-1 rounded-full transition-colors disabled:opacity-50"
-                            title="Mark as Final"
-                          >
-                            <span className="material-symbols-outlined text-lg">check_circle</span>
-                          </button>
-                        )}
+                        {/* Manual "Mark Final" removed (no edit flow). */}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-gray-400 font-medium">
@@ -269,15 +240,7 @@ export const DocumentLibrary: React.FC = () => {
                         >
                           <span className="material-symbols-outlined">visibility</span>
                         </button>
-                        {instance.status === 'draft' && (
-                          <button
-                            onClick={() => navigate(`/admin/documents/${instance.id}?edit=true`)}
-                            className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all"
-                            title="Edit Data"
-                          >
-                            <span className="material-symbols-outlined">edit_square</span>
-                          </button>
-                        )}
+                        {/* Editing removed */}
                         <button
                           onClick={() => handleDownload(instance.id)}
                           className="p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all"

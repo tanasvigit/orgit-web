@@ -1,0 +1,381 @@
+<style>
+  :root {
+    --primary: #1d4ed8;
+    --text: #111827;
+    --muted: #6b7280;
+    --border: #000000;
+    --bg: #ffffff;
+    --bg-soft: #f3f4f6;
+    --row-soft: #f9fafb;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    color: var(--text);
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  /* A4 at 96dpi ≈ 794px × 1123px */
+  .page {
+    width: 794px;
+    min-height: 1123px;
+    margin: 0 auto;
+    padding: 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+  }
+
+  .row { display: grid; grid-template-columns: 1fr 1fr; }
+  .row-12 { display: grid; grid-template-columns: repeat(12, 1fr); }
+  .span-6 { grid-column: span 6; }
+  .span-3 { grid-column: span 3; }
+  .pad-0 { padding: 0; }
+  .minh-100 { min-height: 100px; }
+  .mt-6 { margin-top: 6px; }
+  .mb-6 { margin-bottom: 6px; }
+
+  .cell { padding: 8px; }
+  .b-b { border-bottom: 0.5px solid var(--border); }
+  .b-r { border-right: 0.5px solid var(--border); }
+
+  .topbar-left {
+    padding: 6px 10px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    color: var(--primary);
+  }
+  .topbar-right {
+    padding: 6px 10px;
+    text-align: right;
+    font-weight: 700;
+    color: var(--muted);
+  }
+
+  .header-wrap { display: flex; gap: 10px; align-items: flex-start; }
+  .logo {
+    width: 64px;
+    height: 64px;
+    border: 0.5px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: #fff;
+  }
+  .logo img { width: 100%; height: 100%; object-fit: contain; }
+  .h-title { font-size: 18px; font-weight: 800; margin: 0 0 2px; letter-spacing: -0.2px; }
+  .h-meta { margin: 0; color: var(--text); }
+  .h-muted { margin: 0; color: var(--muted); }
+  .strong { font-weight: 700; }
+  .preline { white-space: pre-line; }
+
+  .info-grid { height: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+  .info { padding: 8px; }
+  .label { color: var(--muted); font-size: 10px; margin-bottom: 2px; }
+  .value { font-weight: 700; min-height: 14px; word-break: break-word; }
+
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td { border: 0.5px solid var(--border); padding: 4px 6px; vertical-align: top; }
+  thead th { background: var(--bg-soft); text-transform: uppercase; font-size: 10px; letter-spacing: 0.4px; }
+  tbody tr { break-inside: avoid; page-break-inside: avoid; }
+
+  .col-idx { width: 32px; text-align: center; }
+  .col-hsn { width: 74px; text-align: center; }
+  .col-rate { width: 96px; text-align: right; white-space: nowrap; }
+  .col-qty { width: 52px; text-align: center; white-space: nowrap; }
+  .col-taxable, .col-tax, .col-amount { width: 106px; text-align: right; white-space: nowrap; }
+
+  .item-name { font-weight: 800; margin: 0 0 2px; }
+  .item-meta { margin: 0; color: var(--muted); font-size: 9px; }
+  .tax-rate { color: var(--muted); font-size: 9px; }
+
+  .summary-row { display: grid; grid-template-columns: 2fr 1fr; border-top: 0.5px solid var(--border); }
+  .summary-left { padding: 6px 8px; color: var(--muted); font-style: italic; border-right: 0.5px solid var(--border); }
+  .summary-right { display: grid; grid-template-rows: auto auto auto; }
+  .sum-line { display: flex; justify-content: space-between; gap: 10px; padding: 4px 8px; border-bottom: 0.5px solid var(--border); }
+  .sum-line.alt { background: var(--row-soft); }
+  .sum-label { font-weight: 700; }
+  .sum-val { font-weight: 800; white-space: nowrap; }
+  .sum-total { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 8px; }
+  .sum-total .t-label { font-size: 16px; font-weight: 800; }
+  .sum-total .t-val { font-size: 18px; font-weight: 900; white-space: nowrap; }
+
+  .amount-words {
+    border-top: 0.5px solid var(--border);
+    border-bottom: 0.5px solid var(--border);
+    padding: 6px 8px;
+    text-align: center;
+    background: var(--row-soft);
+    font-style: italic;
+  }
+  .amount-payable {
+    border-bottom: 0.5px solid var(--border);
+    padding: 6px 10px;
+    text-align: right;
+    font-weight: 800;
+    font-size: 10px;
+  }
+
+  .bank-row { display: grid; grid-template-columns: 2fr 1fr 1fr; border-bottom: 0.5px solid var(--border); }
+  .bank { padding: 10px; border-right: 0.5px solid var(--border); min-height: 150px; }
+  .bank h3 { margin: 0 0 8px; font-size: 11px; font-weight: 900; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+  .bank-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 4px 8px; color: var(--text); }
+  .bank-grid .k { color: var(--muted); }
+
+  .qr { padding: 10px; border-right: 0.5px solid var(--border); display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 150px; }
+  .qr .qr-title { font-weight: 900; margin-bottom: 8px; }
+  .qr-box { width: 92px; height: 92px; border: 1px solid var(--border); background: #fff; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 2px; }
+  .qr-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .qr-placeholder { font-size: 10px; color: var(--muted); }
+  .qr-note { margin-top: 8px; font-size: 10px; color: var(--muted); }
+
+  .sign { padding: 10px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; min-height: 150px; text-align: center; }
+  .sign .for { font-weight: 900; font-size: 9px; }
+  .sign .sig { width: 92px; height: 92px; border: 2px solid var(--primary); border-radius: 9999px; display: flex; align-items: center; justify-content: center; opacity: 0.65; transform: rotate(-12deg); }
+  .sign .sig span { font-size: 9px; font-weight: 900; color: var(--primary); text-transform: uppercase; line-height: 1.1; }
+  .sign .role { font-weight: 900; font-size: 9px; text-transform: uppercase; }
+
+  .bottom-row { display: grid; grid-template-columns: 1fr 2fr; }
+  .notes { padding: 10px; border-right: 0.5px solid var(--border); min-height: 110px; }
+  .tc { padding: 10px; min-height: 110px; }
+  .u { text-decoration: underline; }
+  .ol { margin: 0; padding-left: 16px; font-size: 9px; }
+  .ol li { margin: 2px 0; }
+
+  .approval-sign {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    border-top: 0.5px solid var(--border);
+  }
+  .approval-sign .box {
+    border-right: 0.5px solid var(--border);
+    padding: 10px 10px 18px;
+    min-height: 64px;
+  }
+  .approval-sign .box:last-child {
+    border-right: 0;
+  }
+  .approval-sign .who {
+    font-weight: 800;
+    margin-bottom: 6px;
+  }
+  .approval-sign .line {
+    border-bottom: 1px solid #000;
+    min-height: 18px;
+    padding: 0 2px 1px;
+    font-weight: 700;
+  }
+
+  @media print {
+    html, body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    table, tr, td, th { break-inside: avoid; page-break-inside: avoid; }
+    thead { display: table-header-group; }
+  }
+</style>
+
+<div class="page">
+  <div class="row b-b">
+    <div class="topbar-left">TAX INVOICE</div>
+    <div class="topbar-right">{{invoice_copy_label}}</div>
+  </div>
+
+  <div class="row-12 b-b">
+    <div class="cell b-r span-6">
+      <div class="header-wrap">
+        <div class="logo">
+          {{#if company_logo_data_uri}}
+            <img src="{{company_logo_data_uri}}" alt="Company Logo" />
+          {{/if}}
+        </div>
+        <div>
+          <h1 class="h-title">{{company_name}}</h1>
+          <p class="h-meta strong">GSTIN {{company_gstin}}</p>
+          <p class="h-meta strong">{{company_legal_name}}</p>
+          <p class="h-muted preline">{{company_address}}</p>
+          <p class="h-muted">Mobile <span class="strong">{{company_phone}}</span></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="cell span-6 pad-0">
+      <div class="info-grid b-b">
+        <div class="info b-r">
+          <div class="label">Invoice #</div>
+          <div class="value">{{invoice_number}}</div>
+        </div>
+        <div class="info">
+          <div class="label">Invoice Date</div>
+          <div class="value">{{invoice_date}}</div>
+        </div>
+      </div>
+      <div class="info-grid">
+        <div class="info b-r">
+          <div class="label">Place of Supply</div>
+          <div class="value">{{place_of_supply}}</div>
+        </div>
+        <div class="info">
+          <div class="label">Due Date</div>
+          <div class="value">{{due_date}}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row-12 b-b minh-100">
+    <div class="cell b-r span-6">
+      <div class="label strong u">Customer Details</div>
+      <div class="value">{{customer_name}}</div>
+      <div class="strong mt-6">Billing address</div>
+      <div class="preline">{{customer_address}}</div>
+      <div>Ph: {{customer_phone}}</div>
+      <div>GSTIN: {{customer_gstin}}</div>
+      <div>State: {{customer_state}}</div>
+    </div>
+    <div class="cell b-r span-3">
+      <div class="label strong u">Shipping address</div>
+      <div class="preline">{{shipping_address}}</div>
+      <div>GSTIN: {{shipping_gstin}}</div>
+      <div>State: {{shipping_state}}</div>
+    </div>
+    <div class="cell span-3">
+      <div class="label strong u">Reference</div>
+      <div class="value">{{reference}}</div>
+    </div>
+  </div>
+
+  <table aria-label="Invoice Items">
+    <thead>
+      <tr>
+        <th class="col-idx">#</th>
+        <th>Item</th>
+        <th class="col-hsn">HSN/SAC</th>
+        <th class="col-rate">Rate / Item</th>
+        <th class="col-qty">Qty</th>
+        <th class="col-taxable">Taxable Value</th>
+        <th class="col-tax">Tax Amount</th>
+        <th class="col-amount">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each item_rows}}
+        <tr>
+          <td class="col-idx">{{inc @index}}</td>
+          <td>
+            <p class="item-name">{{item}}</p>
+            {{#if details}}
+              {{#each details}}
+                <p class="item-meta">{{this}}</p>
+              {{/each}}
+            {{/if}}
+          </td>
+          <td class="col-hsn">{{hsn}}</td>
+          <td class="col-rate">{{rate}}</td>
+          <td class="col-qty">{{qty}}</td>
+          <td class="col-taxable">{{taxableValue}}</td>
+          <td class="col-tax">
+            <div>{{taxAmount}}</div>
+            {{#if taxRate}}<div class="tax-rate">({{taxRate}})</div>{{/if}}
+          </td>
+          <td class="col-amount">{{amount}}</td>
+        </tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <div class="summary-row">
+    <div class="summary-left">Total Items / Qty : {{total_items}} / {{total_qty}}</div>
+    <div class="summary-right">
+      <div class="sum-line">
+        <span class="sum-label">Taxable Amount</span>
+        <span class="sum-val">{{taxable_amount}}</span>
+      </div>
+      <div class="sum-line alt">
+        <span class="sum-label">IGST {{igst_rate}}</span>
+        <span class="sum-val">{{igst_amount}}</span>
+      </div>
+      <div class="sum-total">
+        <span class="t-label">Total</span>
+        <span class="t-val">{{total_amount}}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="amount-words">
+    Total amount (in words): <span class="strong">{{amount_words}}</span>
+  </div>
+  <div class="amount-payable">Amount Payable: {{amount_payable}}</div>
+
+  <div class="bank-row">
+    <div class="bank">
+      <h3>Bank Details</h3>
+      <div class="bank-grid">
+        <div class="k">Bank</div>
+        <div class="strong">{{bank_name}}</div>
+        <div class="k">Account #</div>
+        <div class="strong">{{bank_account_number}}</div>
+        <div class="k">IFSC</div>
+        <div class="strong">{{bank_ifsc}}</div>
+        <div class="k">Branch</div>
+        <div class="strong">{{bank_branch}}</div>
+      </div>
+    </div>
+    <div class="qr">
+      <div class="qr-title">Pay using UPI</div>
+      <div class="qr-box">
+        {{#if qr_code_data_uri}}
+          <img src="{{qr_code_data_uri}}" alt="UPI QR" />
+        {{else}}
+          <span class="qr-placeholder">QR</span>
+        {{/if}}
+      </div>
+      <div class="qr-note">Scan to verify / pay</div>
+    </div>
+    <div class="sign">
+      <div class="for">For {{company_name}}</div>
+      <div class="sig">
+        <span>
+          * SIGNATURE *<br />
+          SIGNATURE<br />
+          * SIGNATURE *
+        </span>
+      </div>
+      <div class="role">Authorized Signatory</div>
+    </div>
+  </div>
+
+  <div class="bottom-row">
+    <div class="notes">
+      <div class="strong u mb-6">Notes</div>
+      <div class="preline">{{notes}}</div>
+    </div>
+    <div class="tc">
+      <div class="strong u mb-6">Terms and Conditions</div>
+      <ol class="ol">
+        {{#each terms_rows}}
+          <li>{{text}}</li>
+        {{/each}}
+      </ol>
+    </div>
+  </div>
+
+  <div class="approval-sign" aria-label="Approval Signatures">
+    <div class="box">
+      <div class="who">Prepared By</div>
+      <div class="line">{{prepared_by}}</div>
+    </div>
+    <div class="box">
+      <div class="who">Checked By</div>
+      <div class="line">{{checked_by}}</div>
+    </div>
+    <div class="box">
+      <div class="who">Approved By</div>
+      <div class="line">{{approved_by}}</div>
+    </div>
+  </div>
+</div>
+

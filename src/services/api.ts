@@ -1,21 +1,20 @@
 import axios from 'axios';
 
 // Use Vite proxy in development (relative URL) or environment variable
-// In development, Vite proxy handles /api requests to http://localhost:3000
+// In development, Vite proxy handles /api requests to http://localhost:3000/
 // In production, use VITE_API_URL environment variable
 const getApiBaseURL = () => {
-  // If VITE_API_URL is explicitly set, use it
-  if (import.meta.env.VITE_API_URL) {
-    return `${import.meta.env.VITE_API_URL}/api`;
-  }
-  
   // In development, use relative URL to leverage Vite proxy
   if (import.meta.env.DEV) {
     return '/api';
   }
-  
-  // Production fallback
-  return 'http://localhost:3000/api';
+
+  // In production, use VITE_API_URL if set; otherwise assume same origin
+  const base = import.meta.env.VITE_API_URL || '';
+  if (base) {
+    return `${base.replace(/\/+$/, '')}/api`;
+  }
+  return '/api';
 };
 
 const api = axios.create({

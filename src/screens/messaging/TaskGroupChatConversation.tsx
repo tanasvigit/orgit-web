@@ -22,6 +22,7 @@ import { LocationMessage } from '../../components/messaging/LocationMessage';
 import { VoiceMessage } from '../../components/messaging/VoiceMessage';
 import { TaskGroupDetailsModal } from '../../components/messaging/TaskGroupDetailsModal';
 import { TaskDetailsModal } from '../../components/tasks/TaskDetailsModal';
+import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
 import { NewChatModal } from '../../components/messaging/NewChatModal';
 import { MediaUpload } from '../../components/messaging/MediaUpload';
 import { VoiceRecorder } from '../../components/messaging/VoiceRecorder';
@@ -74,6 +75,13 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const [showMediaUpload, setShowMediaUpload] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
+  const [createTaskAttachment, setCreateTaskAttachment] = useState<{
+    mediaUrl: string;
+    fileName?: string;
+    fileSize?: number;
+    mimeType?: string;
+  } | null>(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -2121,6 +2129,19 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         isMyMessage={(selectedMessage?.sender_id || selectedMessage?.senderId) === (user?.id || user?.userId)}
         isGroup={true}
         isStarred={selectedMessage?.starred || false}
+        onCreateTask={
+          selectedMessage?.message_type === 'document' && selectedMessage?.media_url
+            ? () => {
+                setCreateTaskAttachment({
+                  mediaUrl: selectedMessage.media_url,
+                  fileName: selectedMessage.file_name,
+                  fileSize: selectedMessage.file_size,
+                  mimeType: selectedMessage.mime_type,
+                });
+                setShowCreateTaskModal(true);
+              }
+            : undefined
+        }
         onReply={handleReply}
         onCopy={handleCopy}
         onEdit={handleEdit}
@@ -2157,6 +2178,26 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         visible={showLocationPicker}
         onLocationSelect={handleLocationSelect}
         onClose={() => setShowLocationPicker(false)}
+      />
+
+      <TaskCreateModal
+        visible={showCreateTaskModal}
+        onClose={() => {
+          setShowCreateTaskModal(false);
+          setCreateTaskAttachment(null);
+        }}
+        onSuccess={() => {
+          toast.success('Task created');
+          setShowCreateTaskModal(false);
+          setCreateTaskAttachment(null);
+        }}
+        initialTitle={
+          createTaskAttachment?.fileName ? `Follow up: ${createTaskAttachment.fileName}` : 'Follow up document'
+        }
+        initialDescription={
+          createTaskAttachment?.fileName ? `Document: ${createTaskAttachment.fileName}` : 'Document attached from chat'
+        }
+        documentAttachment={createTaskAttachment || undefined}
       />
     </div>
   );

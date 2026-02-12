@@ -86,5 +86,15 @@ export const documentInstanceService = {
     const res = await api.post(`${API_BASE_URL}/${id}/share`);
     return res.data.data;
   },
+
+  async markChecked(id: string): Promise<DocumentInstance> {
+    const res = await api.post(`${API_BASE_URL}/${id}/mark-checked`);
+    return res.data.data;
+  },
+
+  async markApproved(id: string): Promise<DocumentInstance> {
+    const res = await api.post(`${API_BASE_URL}/${id}/mark-approved`);
+    return res.data.data;
+  },
 };
 

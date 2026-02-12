@@ -5,6 +5,7 @@ interface MessageActionSheetProps {
   isMyMessage: boolean;
   isGroup: boolean;
   isStarred?: boolean;
+  onCreateTask?: () => void;
   onReply?: () => void;
   onCopy?: () => void;
   onEdit?: () => void;
@@ -20,6 +21,7 @@ export const MessageActionSheet: React.FC<MessageActionSheetProps> = ({
   isMyMessage,
   isGroup,
   isStarred = false,
+  onCreateTask,
   onReply,
   onCopy,
   onEdit,
@@ -38,6 +40,19 @@ export const MessageActionSheet: React.FC<MessageActionSheetProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="py-2">
+          {onCreateTask && (
+            <button
+              onClick={() => {
+                onCreateTask();
+                onClose();
+              }}
+              className="w-full flex items-center gap-4 px-6 py-4 hover:bg-gray-100 dark:hover:bg-gray-700 text-left text-base text-gray-900 dark:text-gray-100"
+            >
+              <span className="material-symbols-outlined text-2xl">assignment_add</span>
+              <span>Create Task</span>
+            </button>
+          )}
+
           {onReply && (
             <button
               onClick={() => {

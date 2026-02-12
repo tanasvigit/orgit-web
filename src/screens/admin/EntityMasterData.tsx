@@ -233,7 +233,7 @@ export const EntityMasterData: React.FC = () => {
         // Construct full URL if it's a relative path
         let imageUrl = result.data.url;
         if (imageUrl.startsWith('/')) {
-          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/';
           imageUrl = `${apiUrl}${imageUrl}`;
         }
         setFormData(prev => ({ ...prev, logoUrl: imageUrl }));

@@ -11,6 +11,7 @@ import { DocumentBuilderContent } from '../../../components/document-builder/Doc
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { organizationService } from '../../../services/organizationService';
+import { SchemaDrivenDocumentEditor } from '../../../components/document-templates/SchemaDrivenDocumentEditor';
 
 const DocumentFillerIntegration: React.FC<{ templateId: string | null; onBack: () => void; isAdmin: boolean }> = ({ templateId, onBack, isAdmin }) => {
 
@@ -149,7 +150,7 @@ const DocumentFillerIntegration: React.FC<{ templateId: string | null; onBack: (
       if (orgData.logoUrl && state.header.showLogo && !state.header.orgLogoUrl) {
         let logoUrl = orgData.logoUrl;
         if (logoUrl.startsWith('/')) {
-          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/';
           logoUrl = `${apiUrl}${logoUrl}`;
         }
         updates.orgLogoUrl = logoUrl;
@@ -185,7 +186,6 @@ const DocumentFillerIntegration: React.FC<{ templateId: string | null; onBack: (
     mutation.mutate({
       templateId,
       title,
-      status: 'draft',
       filledData: state
     });
   };
@@ -250,18 +250,206 @@ export const CreateDocument: React.FC = () => {
     }
   );
 
+  const TemplateFillRouter: React.FC<{ templateId: string; onBack: () => void; isAdmin: boolean }> = ({ templateId, onBack, isAdmin }) => {
+    const { toast } = useToast();
+    const { user } = useAuth();
+    const queryClient = useQueryClient();
+    const navigate = useNavigate();
+
+    const { data: orgData } = useQuery(
+      ['schema-org'],
+      async () => {
+        if (!user?.organizationId) return null;
+        const response =
+          user?.role === 'admin'
+            ? await organizationService.getMyOrganization()
+            : await organizationService.getById(user.organizationId);
+        return response.data.data;
+      },
+      { enabled: !!user?.organizationId }
+    );
+
+    const { data: template, isLoading, error } = useQuery(
+      ['template-fill-router', templateId],
+      async () => {
+        const res = await documentTemplateService.getById(templateId);
+        return res.data.data;
+      },
+      { enabled: !!templateId }
+    );
+
+    const createMutation = useMutation(
+      (payload: any) => documentInstanceService.create(payload),
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries('documentInstances');
+          navigate(isAdmin ? '/admin/documents' : '/documents');
+        },
+        onError: (err: any) => {
+          toast.error('Failed to create document: ' + (err.response?.data?.error || err.message));
+        },
+      }
+    );
+
+    if (isLoading) {
+      const Layout = isAdmin ? AdminLayout : EmployeeLayout;
+      return (
+        <Layout hideHeader={isAdmin}>
+          <div className="p-8">
+            <p>Loading template...</p>
+          </div>
+        </Layout>
+      );
+    }
+
+    if (error || !template) {
+      const Layout = isAdmin ? AdminLayout : EmployeeLayout;
+      return (
+        <Layout hideHeader={isAdmin}>
+          <div className="p-8">
+            <p className="text-red-600">Failed to load template.</p>
+            <div className="mt-4">
+              <Button onClick={onBack} variant="outline">
+                Back
+              </Button>
+            </div>
+          </div>
+        </Layout>
+      );
+    }
+
+    // If builder config exists, use existing Document Builder filler.
+    const configFromApi = (template as any).builderConfig || (template as any).templateSchema?._builderConfig;
+    if (configFromApi) {
+      return (
+        <DocumentBuilderProvider>
+          <DocumentFillerIntegration templateId={templateId} isAdmin={isAdmin} onBack={onBack} />
+        </DocumentBuilderProvider>
+      );
+    }
+
+    // Legacy (schema-driven) filler: locked system templates.
+    const schema = (template as any).templateSchema;
+    const editableFields = schema?.editableFields;
+    const locked = !!schema?.lockedStructure;
+
+    if (!editableFields || !Array.isArray(editableFields)) {
+      const Layout = isAdmin ? AdminLayout : EmployeeLayout;
+      return (
+        <Layout hideHeader={isAdmin}>
+          <div className="p-8">
+            <p>This template is not fillable in the web app.</p>
+            <div className="mt-4">
+              <Button onClick={onBack} variant="outline">
+                Back
+              </Button>
+            </div>
+          </div>
+        </Layout>
+      );
+    }
+
+    const Layout = isAdmin ? AdminLayout : EmployeeLayout;
+
+    const initialValues: Record<string, any> = {
+      invoice_copy_label: 'ORIGINAL FOR RECIPIENT',
+      ...((template as any).autoFillFields || {}),
+      ...((template as any).templateSchema?.defaultValues || {}),
+    };
+
+    // Best-effort org autofill (if user didn't input)
+    if (orgData) {
+      initialValues.company_name = initialValues.company_name || orgData.name || '';
+      initialValues.company_legal_name = initialValues.company_legal_name || orgData.name || '';
+      initialValues.company_gstin = initialValues.company_gstin || orgData.gst || '';
+      initialValues.company_email = initialValues.company_email || orgData.email || '';
+      initialValues.company_phone = initialValues.company_phone || orgData.mobile || '';
+      initialValues.company_address = initialValues.company_address || orgData.address || '';
+      // Note: org logo is typically a URL; PDFs are more reliable with data URI. Keep empty unless user uploads.
+    }
+
+    const computedTitle = `${template.name} - ${new Date().toLocaleDateString()}`;
+
+    const normalizeForSubmit = (data: Record<string, any>) => {
+      const out = { ...(data || {}) };
+
+      // Convert item_rows.detailsText -> item_rows.details (string[])
+      if (Array.isArray(out.item_rows)) {
+        out.item_rows = out.item_rows.map((row: any) => {
+          const r = { ...(row || {}) };
+          if (typeof r.detailsText === 'string' && r.detailsText.trim().length > 0) {
+            r.details = r.detailsText
+              .split(/\r?\n/)
+              .map((s: string) => s.trim())
+              .filter(Boolean);
+          }
+          delete r.detailsText;
+          return r;
+        });
+      }
+
+      // Auto-calc totals if left blank
+      if (Array.isArray(out.item_rows)) {
+        if (!out.total_items) out.total_items = String(out.item_rows.length);
+        if (!out.total_qty) {
+          const qty = out.item_rows.reduce((sum: number, r: any) => sum + Number(r?.qty || 0), 0);
+          out.total_qty = qty ? String(qty) : '';
+        }
+      }
+
+      return out;
+    };
+
+    return (
+      <Layout hideHeader={isAdmin}>
+        <div className="p-6 md:p-8 max-w-[1200px] mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-1">
+                {template.name}
+              </h1>
+              <p className="text-gray-500 dark:text-gray-400 text-sm">
+                {locked ? 'Structure is locked. Edit data only.' : 'Edit document data.'}
+              </p>
+            </div>
+            <Button variant="outline" onClick={onBack}>
+              <span className="material-symbols-outlined mr-2">arrow_back</span>
+              Back
+            </Button>
+          </div>
+
+          <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
+            <SchemaDrivenDocumentEditor
+              schema={schema}
+              initialValues={initialValues}
+              submitLabel={createMutation.isLoading ? 'Creating...' : 'Create Document'}
+              disabled={createMutation.isLoading}
+              onCancel={onBack}
+              onSubmit={async (formData) => {
+                const filledData = normalizeForSubmit(formData);
+                createMutation.mutate({
+                  templateId,
+                  title: computedTitle,
+                  filledData,
+                });
+              }}
+            />
+          </div>
+        </div>
+      </Layout>
+    );
+  };
+
   if (selectedTemplateId) {
     return (
-      <DocumentBuilderProvider>
-        <DocumentFillerIntegration
-          templateId={selectedTemplateId}
-          isAdmin={isAdmin}
-          onBack={() => {
-            setSelectedTemplateId(null);
-            navigate(isAdmin ? '/admin/documents/create' : '/documents/create');
-          }}
-        />
-      </DocumentBuilderProvider>
+      <TemplateFillRouter
+        templateId={selectedTemplateId}
+        isAdmin={isAdmin}
+        onBack={() => {
+          setSelectedTemplateId(null);
+          navigate(isAdmin ? '/admin/documents/create' : '/documents/create');
+        }}
+      />
     );
   }
 

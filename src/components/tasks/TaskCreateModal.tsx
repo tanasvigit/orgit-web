@@ -6,6 +6,7 @@ import { conversationService } from '../../services/conversationService';
 import { taskService } from '../../services/taskService';
 import { setTaskFinancial } from '../../utils/taskFinancialStorage';
 import { CustomDatePicker } from '../shared/CustomDatePicker';
+import { waitForSocketConnection } from '../../services/socketService';
 
 interface TaskCreateModalProps {
   visible: boolean;
@@ -16,6 +17,12 @@ interface TaskCreateModalProps {
   initialDueDate?: Date;
   complianceId?: string;
   documentId?: string;
+  documentAttachment?: {
+    mediaUrl: string;
+    fileName?: string;
+    fileSize?: number;
+    mimeType?: string;
+  };
 }
 
 export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
@@ -27,6 +34,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   initialDueDate,
   complianceId,
   documentId,
+  documentAttachment,
 }) => {
   const [taskType, setTaskType] = useState<'one_time' | 'recurring'>('one_time');
   const [title, setTitle] = useState('');
@@ -144,12 +152,13 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       const parsedFinancialValue =
         financialValue.trim().length > 0 ? Number.parseFloat(financialValue) : null;
 
-      // If no assignees selected, assign task to current user (self)
+      // If no assignees selected, treat it as a self task (assign to current user)
+      const currentUserId = (user as any)?.id || (user as any)?.userId || null;
       const fallbackAssignees =
         selectedAssignees.length > 0
           ? selectedAssignees
-          : user
-          ? [{ id: (user as any).id || (user as any).userId, name: (user as any).name }]
+          : currentUserId
+          ? [{ id: currentUserId, name: (user as any)?.name }]
           : [];
 
       const taskData: any = {
@@ -159,7 +168,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         task_owner: taskOwner,
         financial_value: Number.isFinite(parsedFinancialValue as number) ? parsedFinancialValue : null,
         finance_type: financialValue.trim().length > 0 ? financeType : null,
-        assignee_ids: fallbackAssignees.map(a => a.id),
+        assignee_ids: fallbackAssignees.map((a) => a.id),
         start_date: startDate.toISOString(),
         target_date: targetDate.toISOString(),
         due_date: dueDate.toISOString(),
@@ -190,7 +199,27 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       }
 
       const created = await taskService.createTask(taskData);
-      const taskId = (created && typeof created === 'object' && (created as any).id) ? (created as any).id : null;
+      const createdObj: any = created && typeof created === 'object' ? created : null;
+      const taskId = createdObj?.id || null;
+      const conversationId = createdObj?.conversation_id || createdObj?.conversationId || null;
+
+      // If task was created from a chat document, auto-attach that document to the task conversation.
+      if (documentAttachment?.mediaUrl && conversationId) {
+        try {
+          const sock = await waitForSocketConnection();
+          sock.emit('send_message', {
+            conversationId,
+            messageType: 'document',
+            mediaUrl: documentAttachment.mediaUrl,
+            fileName: documentAttachment.fileName,
+            fileSize: documentAttachment.fileSize,
+            mimeType: documentAttachment.mimeType,
+            content: '',
+          });
+        } catch (e) {
+          // Don't block task creation if socket send fails.
+        }
+      }
       if (taskId && (taskData.financial_value != null || taskData.finance_type)) {
         setTaskFinancial(taskId, {
           financial_value: taskData.financial_value ?? null,
@@ -555,7 +584,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
           {/* Create Button */}
           <button
             onClick={handleCreateTask}
-            disabled={createTaskLoading || !title.trim() || selectedAssignees.length === 0}
+            disabled={createTaskLoading}
             className="w-full py-3 px-4 rounded-lg bg-primary text-white font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {createTaskLoading ? (

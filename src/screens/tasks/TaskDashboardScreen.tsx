@@ -183,6 +183,14 @@ export const TaskDashboardScreen: React.FC = () => {
     const assignees = Array.isArray(task?.assignees) ? task.assignees : [];
     const creatorId = task?.created_by || task?.creator_id;
     const isCreator = currentUserId && creatorId === currentUserId;
+    const taskStatus = (task?.status || '').toLowerCase();
+
+    // Match dashboard semantics:
+    // Completed tasks created by me can remain "In Progress" for me until my final action.
+    if (isCreator && taskStatus === 'completed') {
+      return 'in_progress';
+    }
+
     const me = assignees.find((a: any) => {
       const assigneeId = a.id || a.user_id || a.userId;
       return assigneeId === currentUserId;
@@ -273,6 +281,8 @@ export const TaskDashboardScreen: React.FC = () => {
         return viewerStatus === 'in_progress' || viewerStatus === 'pending_verification';
       }
       if (statusFilter === 'completed') {
+        // Keep parity with dashboard: creator sees completed tasks in "In Progress" bucket.
+        if (isCreator && taskStatus === 'completed') return false;
         return viewerStatus === 'completed' || taskStatus === 'completed';
       }
       return true;

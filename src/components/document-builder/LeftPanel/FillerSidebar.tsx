@@ -329,7 +329,7 @@ const HeaderFiller: React.FC = () => {
             if (orgData.logoUrl && header.showLogo) {
                 let logoUrl = orgData.logoUrl;
                 if (logoUrl.startsWith('/')) {
-                    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+                    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/';
                     logoUrl = `${apiUrl}${logoUrl}`;
                 }
                 updates.orgLogoUrl = logoUrl;
