@@ -20,6 +20,11 @@ export const DocumentTemplateList: React.FC = () => {
 
   const installMutation = useMutation(
     async () => {
+      // Install System Templates: Stores complete HTML templates in database.
+      // Templates are fully dynamic - all HTML is stored in DB (headerTemplate + bodyTemplate).
+      // Once installed, templates are visible to ALL users (no organization filtering).
+      // PDF generation reads templates from DB, not from file system.
+      
       // Fetch a larger page to detect existing system templates.
       const existingRes = await documentTemplateService.getAll({ page: 1, limit: 200 });
       const existing = existingRes.data.data?.templates || [];
@@ -35,12 +40,13 @@ export const DocumentTemplateList: React.FC = () => {
       for (const def of SYSTEM_TEMPLATES) {
         const found = byKey.get(def.systemTemplateKey);
         if (!found) {
+          // Create new template: Complete HTML bodyTemplate is stored in DB
           await documentTemplateService.create({
             name: def.name,
             type: def.type,
-            status: def.status,
+            status: def.status, // 'active' - visible to all users
             headerTemplate: '',
-            bodyTemplate: def.bodyTemplate,
+            bodyTemplate: def.bodyTemplate, // Complete HTML with styles from .hbs file
             templateSchema: def.templateSchema,
             pdfSettings: def.pdfSettings || {},
           });
@@ -49,12 +55,13 @@ export const DocumentTemplateList: React.FC = () => {
         }
 
         // Update existing system templates in-place so fixes roll out.
+        // This ensures HTML templates in DB stay in sync with source .hbs files
         await documentTemplateService.update(found.id, {
           name: def.name,
           type: def.type,
           status: def.status,
           headerTemplate: found.headerTemplate || '',
-          bodyTemplate: def.bodyTemplate,
+          bodyTemplate: def.bodyTemplate, // Update HTML from source
           templateSchema: def.templateSchema,
           pdfSettings: def.pdfSettings || {},
         });
@@ -113,7 +120,8 @@ export const DocumentTemplateList: React.FC = () => {
           {isLoading ? (
             <div className="text-center py-12">Loading...</div>
           ) : (
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
               <thead className="bg-gray-50 dark:bg-gray-800">
                 <tr>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Template Name</th>
@@ -148,7 +156,8 @@ export const DocumentTemplateList: React.FC = () => {
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            </div>
           )}
         </div>
       </div>

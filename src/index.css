@@ -10,6 +10,14 @@
   html {
     height: 100%;
     overflow: hidden;
+    /* Ensure minimum font size on mobile */
+    font-size: 14px;
+  }
+
+  @media (min-width: 640px) {
+    html {
+      font-size: 16px;
+    }
   }
 
   body {
@@ -17,12 +25,46 @@
     height: 100%;
     overflow: hidden;
     width: 100%;
+    /* Ensure readable line height */
+    line-height: 1.5;
+    /* Minimum font size for readability */
+    font-size: 14px;
+  }
+
+  @media (min-width: 640px) {
+    body {
+      font-size: 16px;
+    }
   }
 
   #root {
     height: 100%;
     width: 100%;
     overflow: hidden;
+  }
+
+  /* Ensure all text is readable on mobile */
+  p, span, div, label, input, textarea, select, button {
+    font-size: inherit;
+    line-height: 1.5;
+  }
+
+  /* Minimum font sizes for different elements */
+  @media (max-width: 639px) {
+    p, span, div, label {
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    
+    input, textarea, select {
+      font-size: 16px; /* Prevents zoom on iOS */
+      line-height: 1.5;
+    }
+    
+    button {
+      font-size: 14px;
+      line-height: 1.4;
+    }
   }
 }
 

@@ -13,10 +13,7 @@ const navItems: NavItem[] = [
   { path: '/admin/messages', icon: 'chat', label: 'Messaging' },
   { path: '/admin/tasks', icon: 'check_circle', label: 'Task Management' },
   { path: '/admin/documents', icon: 'description', label: 'Document Management' },
-  // { path: '/admin/compliance', icon: 'verified_user', label: 'Compliance Management' },
-  { path: '/admin/users', icon: 'group', label: 'Employees' },
-  { path: '/admin/services', icon: 'list_alt', label: 'Service List' },
-  { path: '/admin/entities', icon: 'groups', label: 'Entity List' },
+  { path: '/admin/entity-master', icon: 'domain', label: 'Entity Master Data' },
 ];
 
 const ADMIN_STORAGE_KEY = 'admin-sidebar-minimized-by-messages';
@@ -29,6 +26,8 @@ interface AdminSidebarProps {
 export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
   const location = useLocation();
   const { user } = useAuth();
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   // Use localStorage to persist state across remounts
   const getStoredMinimizedFlag = () => {
@@ -88,6 +87,12 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
 
   // Expose toggle function to parent component
   const handleToggle = useCallback(() => {
+    // On mobile, toggle mobile menu
+    if (window.innerWidth < 768) {
+      setIsMobileOpen(prev => !prev);
+      return;
+    }
+    // On desktop, toggle collapse
     const newState = !isCollapsed;
     setIsCollapsed(newState);
     collapsedStateRef.current = newState;
@@ -197,13 +202,47 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
     }
   }, [isCollapsed, location.pathname]);
 
-  return (
-    <aside
-      className={`hidden md:flex flex-col bg-white border-r border-slate-200 h-full font-body shrink-0 z-20 transition-all duration-300 ${
-        isCollapsed ? 'w-20' : 'w-72'
-      }`}
-    >
-      <div className={`p-6 pb-2 shrink-0 relative ${isCollapsed ? 'px-4' : ''}`}>
+  // Close mobile menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isMobileOpen && window.innerWidth < 768) {
+        const target = event.target as HTMLElement;
+        if (!target.closest('aside') && !target.closest('button[title="Toggle Sidebar"]')) {
+          setIsMobileOpen(false);
+        }
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMobileOpen]);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    if (isMobileOpen && window.innerWidth < 768) {
+      setIsMobileOpen(false);
+    }
+  }, [location.pathname]);
+
+  // Auto-open settings dropdown if on a settings route
+  const isSettingsActive = 
+    location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users/') ||
+    location.pathname === '/admin/services' || location.pathname.startsWith('/admin/services/') ||
+    location.pathname === '/admin/entities' || location.pathname.startsWith('/admin/entities/') ||
+    location.pathname === '/admin/settings/organisation-structure' || location.pathname.startsWith('/admin/settings/departments') ||
+    location.pathname.startsWith('/admin/settings/designations') || location.pathname.startsWith('/admin/settings/reporting-hierarchy');
+
+  useEffect(() => {
+    if (isSettingsActive && !isCollapsed) {
+      setIsSettingsOpen(true);
+    } else if (!isSettingsActive) {
+      setIsSettingsOpen(false);
+    }
+  }, [isSettingsActive, isCollapsed]);
+
+  const sidebarContent = (
+    <>
+      {/* Desktop Header */}
+      <div className={`hidden md:block p-6 pb-2 shrink-0 relative ${isCollapsed ? 'px-4' : ''}`}>
         <div className={`flex items-center gap-3 mb-8 ${isCollapsed ? 'justify-center' : ''}`}>
           <div className="bg-primary p-2 rounded-lg text-white shadow-lg shadow-primary/20 shrink-0">
             <span className="material-symbols-outlined text-2xl">admin_panel_settings</span>
@@ -216,7 +255,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
           )}
         </div>
       </div>
-      <nav className={`flex-1 overflow-y-auto overflow-x-visible pb-2 flex flex-col gap-1 ${isCollapsed ? 'px-3' : 'px-6'}`}>
+      <nav className={`flex-1 overflow-y-auto overflow-x-visible pb-2 flex flex-col gap-1 ${isCollapsed ? 'px-3' : 'px-3 md:px-6'}`}>
         {navItems.map((item) => {
           // Special handling for Dashboard - only active when exactly /admin or /admin/
           let isActive: boolean;
@@ -229,7 +268,12 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
             <Link
               key={item.path}
               to={item.path}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 ${
+              onClick={() => {
+                if (window.innerWidth < 768) {
+                  setIsMobileOpen(false);
+                }
+              }}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 min-h-[44px] ${
                 isCollapsed ? 'justify-center' : ''
               } ${
                 isActive
@@ -251,107 +295,120 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
             </Link>
           );
         })}
-        <Link
-          to="/admin/entity-master"
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 ${
-            isCollapsed ? 'justify-center' : ''
-          } ${
-            location.pathname === '/admin/entity-master' || location.pathname.startsWith('/admin/entity-master/')
-              ? 'bg-primary text-white shadow-md shadow-primary/20'
-              : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-          }`}
-          title={isCollapsed ? 'Entity Master Data' : 'Entity Master Data'}
-        >
-          <span
-            className={`material-symbols-outlined text-[22px] shrink-0 ${
-              location.pathname === '/admin/entity-master' || location.pathname.startsWith('/admin/entity-master/')
-                ? ''
-                : 'text-slate-400 group-hover:text-slate-600 transition-colors'
+        
+        {/* Settings Dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => {
+              if (!isCollapsed) {
+                setIsSettingsOpen(!isSettingsOpen);
+              }
+            }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 min-h-[44px] ${
+              isCollapsed ? 'justify-center' : ''
+            } ${
+              isSettingsActive
+                ? 'bg-primary text-white shadow-md shadow-primary/20'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
             }`}
+            title={isCollapsed ? 'Settings' : 'Settings'}
           >
-            domain
-          </span>
-          {!isCollapsed && <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0">Entity Master Data</span>}
-        </Link>
-        {!isCollapsed && (
-          <>
-            <Link
-              to="/admin/settings/organisation-structure"
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 ${
-                location.pathname === '/admin/settings/organisation-structure' ||
-                location.pathname.startsWith('/admin/settings/departments') ||
-                location.pathname.startsWith('/admin/settings/designations') ||
-                location.pathname.startsWith('/admin/settings/reporting-hierarchy')
-                  ? 'bg-primary text-white shadow-md shadow-primary/20'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+            <span
+              className={`material-symbols-outlined text-[22px] shrink-0 ${
+                isSettingsActive
+                  ? ''
+                  : 'text-slate-400 group-hover:text-slate-600 transition-colors'
               }`}
-              title="Organisation Structure"
             >
-              <span
-                className={`material-symbols-outlined text-[22px] shrink-0 ${
+              settings
+            </span>
+            {!isCollapsed && (
+              <>
+                <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0 flex-1 text-left">Settings</span>
+                <span
+                  className={`material-symbols-outlined text-lg shrink-0 transition-transform ${
+                    isSettingsOpen ? 'rotate-180' : ''
+                  }`}
+                >
+                  expand_more
+                </span>
+              </>
+            )}
+          </button>
+          
+          {/* Dropdown Menu */}
+          {!isCollapsed && isSettingsOpen && (
+            <div className="ml-4 mt-1 space-y-1 border-l-2 border-slate-200 pl-4">
+              <Link
+                to="/admin/users"
+                onClick={() => {
+                  if (window.innerWidth < 768) {
+                    setIsMobileOpen(false);
+                  }
+                }}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
+                  location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users/')
+                    ? 'bg-primary/10 text-primary font-semibold'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg shrink-0">group</span>
+                <span className="font-medium text-sm whitespace-nowrap">Employees</span>
+              </Link>
+              <Link
+                to="/admin/services"
+                onClick={() => {
+                  if (window.innerWidth < 768) {
+                    setIsMobileOpen(false);
+                  }
+                }}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
+                  location.pathname === '/admin/services' || location.pathname.startsWith('/admin/services/')
+                    ? 'bg-primary/10 text-primary font-semibold'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg shrink-0">list_alt</span>
+                <span className="font-medium text-sm whitespace-nowrap">Service List</span>
+              </Link>
+              <Link
+                to="/admin/entities"
+                onClick={() => {
+                  if (window.innerWidth < 768) {
+                    setIsMobileOpen(false);
+                  }
+                }}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
+                  location.pathname === '/admin/entities' || location.pathname.startsWith('/admin/entities/')
+                    ? 'bg-primary/10 text-primary font-semibold'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg shrink-0">groups</span>
+                <span className="font-medium text-sm whitespace-nowrap">Entity List</span>
+              </Link>
+              <Link
+                to="/admin/settings/organisation-structure"
+                onClick={() => {
+                  if (window.innerWidth < 768) {
+                    setIsMobileOpen(false);
+                  }
+                }}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
                   location.pathname === '/admin/settings/organisation-structure' ||
                   location.pathname.startsWith('/admin/settings/departments') ||
                   location.pathname.startsWith('/admin/settings/designations') ||
                   location.pathname.startsWith('/admin/settings/reporting-hierarchy')
-                    ? ''
-                    : 'text-slate-400 group-hover:text-slate-600 transition-colors'
+                    ? 'bg-primary/10 text-primary font-semibold'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                 }`}
               >
-                account_tree
-              </span>
-              <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0">Organisation Structure</span>
-            </Link>
-            <Link
-              to="/settings"
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 ${
-                location.pathname === '/settings' || location.pathname.startsWith('/settings/')
-                  ? 'bg-primary text-white shadow-md shadow-primary/20'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-              title="Settings"
-            >
-              <span
-                className={`material-symbols-outlined text-[22px] shrink-0 ${
-                  location.pathname === '/settings' || location.pathname.startsWith('/settings/')
-                    ? ''
-                    : 'text-slate-400 group-hover:text-slate-600 transition-colors'
-                }`}
-              >
-                settings
-              </span>
-              <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0">Settings</span>
-            </Link>
-          </>
-        )}
-        {isCollapsed && (
-          <>
-            <Link
-              to="/admin/settings/organisation-structure"
-              className={`flex items-center justify-center px-3 py-2.5 rounded-lg transition-colors ${
-                location.pathname === '/admin/settings/organisation-structure' ||
-                location.pathname.startsWith('/admin/settings/departments') ||
-                location.pathname.startsWith('/admin/settings/designations') ||
-                location.pathname.startsWith('/admin/settings/reporting-hierarchy')
-                  ? 'bg-primary text-white shadow-md shadow-primary/20'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-              title="Organisation Structure"
-            >
-              <span className="material-symbols-outlined text-[22px]">account_tree</span>
-            </Link>
-            <Link
-              to="/settings"
-              className={`flex items-center justify-center px-3 py-2.5 rounded-lg transition-colors ${
-                location.pathname === '/settings' || location.pathname.startsWith('/settings/')
-                  ? 'bg-primary text-white shadow-md shadow-primary/20'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-              title="Settings"
-            >
-              <span className="material-symbols-outlined text-[22px]">settings</span>
-            </Link>
-          </>
-        )}
+                <span className="material-symbols-outlined text-lg shrink-0">account_tree</span>
+                <span className="font-medium text-sm whitespace-nowrap">Organisation Structure</span>
+              </Link>
+            </div>
+          )}
+        </div>
       </nav>
       <div className={`shrink-0 p-4 border-t border-slate-100 ${isCollapsed ? 'px-2' : ''}`}>
         <Link
@@ -379,7 +436,56 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
           )}
         </Link>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile Overlay */}
+      {isMobileOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setIsMobileOpen(false)}
+        />
+      )}
+      
+      {/* Desktop Sidebar */}
+      <aside
+        className={`hidden md:flex flex-col bg-white border-r border-slate-200 h-full font-body shrink-0 z-20 transition-all duration-300 ${
+          isCollapsed ? 'w-20' : 'w-72'
+        }`}
+      >
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile Sidebar */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 md:hidden flex flex-col bg-white border-r border-slate-200 shadow-xl transition-transform duration-300 w-72 ${
+          isMobileOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {/* Mobile Header */}
+        <div className="flex items-center justify-between p-4 border-b border-slate-200 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="bg-primary p-2 rounded-lg text-white shadow-lg shadow-primary/20 shrink-0">
+              <span className="material-symbols-outlined text-xl">admin_panel_settings</span>
+            </div>
+            <div className="flex flex-col min-w-0">
+              <h1 className="text-slate-900 text-base font-extrabold tracking-tight leading-none truncate">ORGIT</h1>
+              <span className="text-[10px] text-slate-500 font-medium">Enterprise Admin</span>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsMobileOpen(false)}
+            className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="Close menu"
+          >
+            <span className="material-symbols-outlined text-xl">close</span>
+          </button>
+        </div>
+        {sidebarContent}
+      </aside>
+    </>
   );
 };
 

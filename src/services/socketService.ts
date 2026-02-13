@@ -1,10 +1,9 @@
 import { io, Socket } from 'socket.io-client';
+import { getBackendBaseUrl } from '@/config/env';
 
 const getSocketURL = () => {
   if (import.meta.env.VITE_SOCKET_URL) return import.meta.env.VITE_SOCKET_URL;
-  if (import.meta.env.DEV) return 'http://localhost:3000';
-  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
-  return '';
+  return getBackendBaseUrl();
 };
 
 const SOCKET_URL = getSocketURL();

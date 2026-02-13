@@ -78,39 +78,24 @@ export const EmployeeLayout: React.FC<EmployeeLayoutProps> = ({
       {/* Main Content Area with Header */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-background-light dark:bg-background-dark">
         {!hideHeader && (
-          <header className="h-16 border-b border-border-light dark:border-border-dark bg-surface-light/80 dark:bg-surface-dark/80 backdrop-blur-md flex items-center justify-between px-8 shrink-0 z-50 sticky top-0">
-            <div className="flex items-center gap-4">
+          <header className="h-16 border-b border-border-light dark:border-border-dark bg-surface-light/80 dark:bg-surface-dark/80 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 md:px-8 shrink-0 z-50 sticky top-0">
+            <div className="flex items-center gap-2 sm:gap-4">
               <button 
                 onClick={() => sidebarToggleRef.current?.()}
-                className="p-2 rounded-lg text-text-main-light dark:text-text-main-dark hover:bg-slate-100 dark:hover:bg-gray-700 transition-colors"
+                className="p-2 rounded-lg text-text-main-light dark:text-text-main-dark hover:bg-slate-100 dark:hover:bg-gray-700 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
                 title="Toggle Sidebar"
+                aria-label="Toggle Sidebar"
               >
-                <span className="material-symbols-outlined">menu</span>
+                <span className="material-symbols-outlined text-xl">menu</span>
               </button>
-              <div className="flex items-center gap-2 text-sm text-text-muted dark:text-gray-400">
-                <span>Dashboard</span>
-                <span className="material-symbols-outlined text-base">chevron_right</span>
-                <span className="font-semibold text-text-main-light dark:text-text-main-dark">{breadcrumb.current}</span>
+              <div className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm text-text-muted dark:text-gray-400">
+                <span className="hidden sm:inline">Dashboard</span>
+                <span className="material-symbols-outlined text-sm sm:text-base">chevron_right</span>
+                <span className="font-semibold text-text-main-light dark:text-text-main-dark truncate max-w-[120px] sm:max-w-none">{breadcrumb.current}</span>
               </div>
             </div>
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 sm:gap-4 md:gap-6">
               {headerActions}
-              {!hideSearch && (
-                <div className="relative hidden sm:block">
-                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-muted dark:text-gray-400 text-[18px]">
-                    search
-                  </span>
-                  <input
-                    className="bg-slate-100 dark:bg-gray-800 border border-transparent hover:border-border-light dark:hover:border-border-dark focus:border-primary-600 rounded-full py-2 pl-10 pr-4 text-sm text-slate-900 dark:text-white focus:ring-0 focus:outline-none w-64 placeholder:text-slate-500 dark:placeholder:text-gray-400 transition-all"
-                    placeholder="Search..."
-                    type="text"
-                  />
-                </div>
-              )}
-              <button className="relative text-text-muted dark:text-gray-400 hover:text-primary-700 dark:hover:text-primary-400 transition-colors">
-                <span className="material-symbols-outlined">notifications</span>
-                <span className="absolute top-0.5 right-0.5 size-2 bg-red-500 rounded-full ring-2 ring-white dark:ring-gray-800"></span>
-              </button>
               <button className="text-text-muted dark:text-gray-400 hover:text-primary-700 dark:hover:text-primary-400 transition-colors">
                 <span className="material-symbols-outlined">help</span>
               </button>

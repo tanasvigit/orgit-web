@@ -99,24 +99,8 @@ export const SuperAdminHeader: React.FC<SuperAdminHeaderProps> = ({
             </React.Fragment>
           ))}
         </nav>
-        {showSearch && (
-          <div className="hidden lg:flex relative">
-            <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <span className="material-symbols-outlined text-gray-400">search</span>
-            </span>
-            <input
-              className="w-64 pl-10 pr-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-slate-800 text-sm focus:border-super-admin-primary focus:ring-1 focus:ring-super-admin-primary outline-none transition-all placeholder-gray-400 dark:placeholder-gray-500"
-              placeholder={searchPlaceholder}
-              type="text"
-            />
-          </div>
-        )}
       </div>
       <div className="flex items-center gap-4">
-        <button className="relative p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-full transition-colors">
-          <span className="material-symbols-outlined">notifications</span>
-          <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-super-admin-surface-light dark:border-super-admin-surface-dark"></span>
-        </button>
         <button className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-super-admin-primary dark:hover:text-white text-sm font-medium px-3 py-1.5 rounded-lg border border-transparent hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
           <span className="material-symbols-outlined text-lg">help</span>
           <span>Help</span>

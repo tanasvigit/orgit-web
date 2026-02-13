@@ -134,6 +134,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
           isOpen ? 'rotate-45' : 'hover:scale-110'
         }`}
         title="Create"
+        aria-label="Create"
       >
         <span className="material-symbols-outlined text-3xl">
           {isOpen ? 'close' : 'add'}

@@ -1,20 +1,11 @@
 import axios from 'axios';
+import { getBackendBaseUrl } from '@/config/env';
 
-// Use Vite proxy in development (relative URL) or environment variable
-// In development, Vite proxy handles /api requests to http://localhost:3000/
-// In production, use VITE_API_URL environment variable
+// Use Vite proxy in development (relative URL) or VITE_API_URL from .env
 const getApiBaseURL = () => {
-  // In development, use relative URL to leverage Vite proxy
-  if (import.meta.env.DEV) {
-    return '/api';
-  }
-
-  // In production, use VITE_API_URL if set; otherwise assume same origin
-  const base = import.meta.env.VITE_API_URL || '';
-  if (base) {
-    return `${base.replace(/\/+$/, '')}/api`;
-  }
-  return '/api';
+  if (import.meta.env.DEV) return '/api';
+  const base = getBackendBaseUrl();
+  return base ? `${base}/api` : '/api';
 };
 
 const api = axios.create({

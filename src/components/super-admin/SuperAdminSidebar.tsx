@@ -24,10 +24,38 @@ export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRe
   const location = useLocation();
   const { user } = useAuth();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   const handleToggle = useCallback(() => {
+    // On mobile, toggle mobile menu
+    if (window.innerWidth < 768) {
+      setIsMobileOpen(prev => !prev);
+      return;
+    }
+    // On desktop, toggle collapse
     setIsCollapsed(prev => !prev);
   }, []);
+
+  // Close mobile menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isMobileOpen && window.innerWidth < 768) {
+        const target = event.target as HTMLElement;
+        if (!target.closest('aside') && !target.closest('button[aria-label*="Sidebar"]')) {
+          setIsMobileOpen(false);
+        }
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMobileOpen]);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    if (isMobileOpen && window.innerWidth < 768) {
+      setIsMobileOpen(false);
+    }
+  }, [location.pathname]);
 
   // Expose toggle function via ref
   useEffect(() => {
@@ -36,13 +64,10 @@ export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRe
     }
   }, [onToggleRef, handleToggle]);
 
-  return (
-    <aside
-      className={`bg-super-admin-surface-light dark:bg-super-admin-surface-dark border-r border-super-admin-border-light dark:border-super-admin-border-dark flex-shrink-0 flex flex-col transition-all duration-300 z-20 overflow-visible ${
-        isCollapsed ? 'w-20' : 'w-72'
-      }`}
-    >
-      <div className={`h-20 flex items-center border-b border-super-admin-border-light dark:border-super-admin-border-dark relative ${
+  const sidebarContent = (
+    <>
+      {/* Desktop Header */}
+      <div className={`hidden md:flex h-20 items-center border-b border-super-admin-border-light dark:border-super-admin-border-dark relative ${
         isCollapsed ? 'px-4 justify-center' : 'px-6'
       }`}>
         <div className={`flex items-center gap-3 ${isCollapsed ? '' : ''}`}>
@@ -71,7 +96,12 @@ export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRe
             <Link
               key={item.path}
               to={item.path}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group min-w-0 ${
+              onClick={() => {
+                if (window.innerWidth < 768) {
+                  setIsMobileOpen(false);
+                }
+              }}
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group min-w-0 min-h-[44px] ${
                 isCollapsed ? 'justify-center' : ''
               } ${
                 isActive
@@ -117,7 +147,56 @@ export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRe
           )}
         </div>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile Overlay */}
+      {isMobileOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setIsMobileOpen(false)}
+        />
+      )}
+      
+      {/* Desktop Sidebar */}
+      <aside
+        className={`hidden md:flex bg-super-admin-surface-light dark:bg-super-admin-surface-dark border-r border-super-admin-border-light dark:border-super-admin-border-dark flex-shrink-0 flex flex-col transition-all duration-300 z-20 overflow-visible ${
+          isCollapsed ? 'w-20' : 'w-72'
+        }`}
+      >
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile Sidebar */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 md:hidden flex flex-col bg-super-admin-surface-light dark:bg-super-admin-surface-dark border-r border-super-admin-border-light dark:border-super-admin-border-dark shadow-xl transition-transform duration-300 w-72 ${
+          isMobileOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {/* Mobile Header */}
+        <div className="flex items-center justify-between h-20 px-4 border-b border-super-admin-border-light dark:border-super-admin-border-dark shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="bg-super-admin-primary text-white p-2 rounded-lg shadow-sm shrink-0">
+              <span className="material-symbols-outlined text-lg">admin_panel_settings</span>
+            </div>
+            <div className="flex flex-col min-w-0">
+              <h1 className="text-base font-bold tracking-tight text-gray-900 dark:text-white leading-none truncate">ORGIT</h1>
+              <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Enterprise Admin</span>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsMobileOpen(false)}
+            className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="Close menu"
+          >
+            <span className="material-symbols-outlined text-xl">close</span>
+          </button>
+        </div>
+        {sidebarContent}
+      </aside>
+    </>
   );
 };
 

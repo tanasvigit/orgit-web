@@ -36,7 +36,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   documentId,
   documentAttachment,
 }) => {
-  const [taskType, setTaskType] = useState<'one_time' | 'recurring'>('one_time');
+  const [isRecurring, setIsRecurring] = useState(false); // Toggle for recurrence (default: disabled = one_time)
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [taskOwner, setTaskOwner] = useState<'self' | 'contacts'>('self');
@@ -109,7 +109,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
 
   // Reset form
   const resetForm = () => {
-    setTaskType('one_time');
+    setIsRecurring(false);
     setTitle('');
     setDescription('');
     setTaskOwner('self');
@@ -164,7 +164,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       const taskData: any = {
         title: title.trim(),
         description: taskDescription,
-        task_type: taskType,
+        task_type: isRecurring ? 'recurring' : 'one_time',
         task_owner: taskOwner,
         financial_value: Number.isFinite(parsedFinancialValue as number) ? parsedFinancialValue : null,
         finance_type: financialValue.trim().length > 0 ? financeType : null,
@@ -172,7 +172,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         start_date: startDate.toISOString(),
         target_date: targetDate.toISOString(),
         due_date: dueDate.toISOString(),
-        recurrence_type: taskType === 'recurring' ? recurrenceType : null,
+        recurrence_type: isRecurring ? recurrenceType : null,
         recurrence_interval: 1,
         auto_escalate: autoEscalate,
         // Mobile stores documentId/complianceId in metadata (backend may ignore; kept for parity)
@@ -239,51 +239,28 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div 
-        className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl"
+        className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl mx-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-primary dark:bg-primary/90 rounded-t-2xl">
-          <h2 className="text-white text-lg font-bold">Create Task</h2>
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 bg-primary dark:bg-primary/90 rounded-t-2xl shrink-0">
+          <h2 className="text-white text-base sm:text-lg font-bold">Create Task</h2>
           <button
             onClick={onClose}
-            className="text-white hover:bg-white/20 rounded-full p-1 transition-colors"
+            className="text-white hover:bg-white/20 rounded-full p-2 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="Close modal"
           >
             <span className="material-symbols-outlined text-xl">close</span>
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Task Type Tabs */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setTaskType('one_time')}
-              className={`flex-1 py-2 px-4 rounded-lg font-semibold transition-colors ${
-                taskType === 'one_time'
-                  ? 'bg-primary text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-              }`}
-            >
-              One-Time Task
-            </button>
-            <button
-              onClick={() => setTaskType('recurring')}
-              className={`flex-1 py-2 px-4 rounded-lg font-semibold transition-colors ${
-                taskType === 'recurring'
-                  ? 'bg-primary text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-              }`}
-            >
-              Recurring Task
-            </button>
-          </div>
-
-          {/* Task Title */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
+          {/* 1. Task Title */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm sm:text-base font-semibold text-gray-700 dark:text-gray-300 mb-2">
               Task Title
             </label>
             <input
@@ -292,30 +269,13 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g., Q3 Financial Review"
               readOnly={!!initialTitle}
-              className={`w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 ${
+              className={`w-full px-4 py-3 sm:py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm sm:text-base text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-colors min-h-[44px] ${
                 initialTitle ? 'bg-gray-50 dark:bg-gray-700 cursor-not-allowed' : 'bg-white dark:bg-gray-700'
               }`}
             />
           </div>
 
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Description
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Add detailed instructions..."
-              rows={4}
-              readOnly={!!initialDescription}
-              className={`w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none ${
-                initialDescription ? 'bg-gray-50 dark:bg-gray-700 cursor-not-allowed' : 'bg-white dark:bg-gray-700'
-              }`}
-            />
-          </div>
-
-          {/* Assigned To */}
+          {/* 2. Assigned To */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
               Assigned To
@@ -325,7 +285,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
               className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-left flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
             >
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary">people</span>
+                <span className="material-symbols-outlined text-primary text-lg">people</span>
                 <span className="text-gray-700 dark:text-gray-300">
                   {selectedAssignees.length > 0
                     ? `${selectedAssignees.length} selected`
@@ -380,7 +340,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             </div>
           )}
 
-          {/* Schedule Section */}
+          {/* 3. SCHEDULE */}
           <div>
             <h3 className="text-sm font-bold uppercase text-gray-500 dark:text-gray-400 mb-4 tracking-wider">
               SCHEDULE
@@ -430,21 +390,48 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             </div>
           </div>
 
-          {/* Recurrence Type (if recurring) */}
-          {taskType === 'recurring' && (
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+          {/* 4. Recurrence Toggle */}
+          <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+            <div className="flex-1">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
                 Recurrence
+              </label>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {isRecurring ? 'This is a recurring task' : 'This is a one-time task'}
+              </p>
+            </div>
+            <button
+              onClick={() => setIsRecurring(!isRecurring)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 ${
+                isRecurring ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
+              }`}
+              role="switch"
+              aria-checked={isRecurring}
+              aria-label={isRecurring ? 'Recurring task enabled' : 'One-time task (recurrence disabled)'}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  isRecurring ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Recurrence Options (only visible when toggle is enabled) */}
+          {isRecurring && (
+            <div className="animate-in fade-in slide-in-from-top-2 duration-200">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                Recurrence Frequency
               </label>
               <div className="flex gap-2">
                 {(['weekly', 'monthly', 'quarterly', 'yearly'] as const).map((type) => (
                   <button
                     key={type}
                     onClick={() => setRecurrenceType(type)}
-                    className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                    className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${
                       recurrenceType === type
-                        ? 'bg-primary text-white'
-                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
                     }`}
                   >
                     {type.charAt(0).toUpperCase() + type.slice(1)}
@@ -454,7 +441,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             </div>
           )}
 
-          {/* Task Owner */}
+          {/* 5. Task Owner */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
               Task Owner
@@ -467,10 +454,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                     setTaskOwner(owner);
                     if (owner !== 'contacts') setTaskOwnerUserId(null);
                   }}
-                  className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                  className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${
                     taskOwner === owner
-                      ? 'bg-primary text-white'
-                      : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                      ? 'bg-primary text-white shadow-sm'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
                   }`}
                 >
                   {owner === 'self' ? 'Self' : 'Contacts'}
@@ -523,10 +510,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             </div>
           )}
 
-          {/* Financial Value (Optional) */}
+          {/* 6. Financial Value (Optional) */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Financial Value (Optional)
+              Financial Value <span className="text-gray-400 font-normal">(Optional)</span>
             </label>
             <input
               type="text"
@@ -534,13 +521,13 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
               value={financialValue}
               onChange={(e) => setFinancialValue(e.target.value)}
               placeholder="Enter amount"
-              className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white dark:bg-gray-700"
+              className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white dark:bg-gray-700 transition-colors"
             />
           </div>
 
           {/* Finance Type (only show if financial value entered) */}
           {financialValue.trim().length > 0 && (
-            <div>
+            <div className="animate-in fade-in slide-in-from-top-2 duration-200">
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 Type of Finance
               </label>
@@ -549,10 +536,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                   <button
                     key={type}
                     onClick={() => setFinanceType(type)}
-                    className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                    className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${
                       financeType === type
-                        ? 'bg-primary text-white'
-                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
                     }`}
                   >
                     {type.charAt(0).toUpperCase() + type.slice(1)}
@@ -562,16 +549,41 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             </div>
           )}
 
-          {/* Auto Escalate Toggle */}
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-              Auto Escalate
+          {/* 7. Description */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+              Description
             </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Add detailed instructions..."
+              rows={4}
+              readOnly={!!initialDescription}
+              className={`w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none transition-colors ${
+                initialDescription ? 'bg-gray-50 dark:bg-gray-700 cursor-not-allowed' : 'bg-white dark:bg-gray-700'
+              }`}
+            />
+          </div>
+
+          {/* 8. Auto Escalate */}
+          <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+            <div className="flex-1">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                Auto Escalate
+              </label>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Automatically escalate task if not completed on time
+              </p>
+            </div>
             <button
               onClick={() => setAutoEscalate(!autoEscalate)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 ${
                 autoEscalate ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
               }`}
+              role="switch"
+              aria-checked={autoEscalate}
+              aria-label={autoEscalate ? 'Auto escalate enabled' : 'Auto escalate disabled'}
             >
               <span
                 className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -585,7 +597,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
           <button
             onClick={handleCreateTask}
             disabled={createTaskLoading}
-            className="w-full py-3 px-4 rounded-lg bg-primary text-white font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-3 px-4 rounded-lg bg-primary text-white text-sm sm:text-base font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
           >
             {createTaskLoading ? (
               <>
@@ -603,16 +615,17 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
 
         {/* Assignee Selection Modal - Centered in middle of screen */}
         {showAssigneeModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowAssigneeModal(false)}>
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowAssigneeModal(false)}>
             <div 
-              className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl max-h-[80vh] flex flex-col mx-4"
+              className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl max-h-[80vh] flex flex-col mx-auto"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Select Assignees</h3>
+              <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">Select Assignees</h3>
                 <button
                   onClick={() => setShowAssigneeModal(false)}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                  aria-label="Close modal"
                 >
                   <span className="material-symbols-outlined text-xl">close</span>
                 </button>
@@ -627,7 +640,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                       <button
                         key={user.id}
                         onClick={() => toggleAssignee(user)}
-                        className={`w-full flex items-center gap-3 p-3 rounded-lg mb-2 transition-colors ${
+                        className={`w-full flex items-center gap-3 p-3 rounded-lg mb-2 transition-colors min-h-[44px] ${
                           isSelected
                             ? 'bg-primary/10 border-2 border-primary'
                             : 'bg-gray-100 dark:bg-gray-700 border-2 border-transparent hover:bg-gray-200 dark:hover:bg-gray-600'
@@ -651,16 +664,16 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                 )}
               </div>
               {/* Done Button */}
-              <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3">
+              <div className="px-4 sm:px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3 shrink-0">
                 <button
                   onClick={() => setShowAssigneeModal(false)}
-                  className="flex-1 px-4 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors font-medium"
+                  className="flex-1 px-4 py-3 bg-gray-200 dark:bg-gray-700 text-sm sm:text-base text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors font-medium min-h-[44px]"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => setShowAssigneeModal(false)}
-                  className="flex-1 px-4 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold flex items-center justify-center gap-2"
+                  className="flex-1 px-4 py-3 bg-primary text-white text-sm sm:text-base rounded-lg hover:bg-primary/90 transition-colors font-semibold flex items-center justify-center gap-2 min-h-[44px]"
                 >
                   <span className="material-symbols-outlined text-sm">check</span>
                   Done

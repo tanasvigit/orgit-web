@@ -294,20 +294,6 @@ export const Login: React.FC = () => {
               )}
             </label>
 
-            {/* Forgot Password Link */}
-            <div className="text-right">
-              <button
-                type="button"
-                onClick={() => {
-                  // TODO: Implement forgot password flow
-                  toast.info('Forgot password feature coming soon');
-                }}
-                className="text-sm text-primary hover:text-primary/80 underline decoration-primary/30 underline-offset-2 transition-colors"
-              >
-                Forgot Password?
-              </button>
-            </div>
-
             {error && (
               <div className="mt-2 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
                 <p className="text-red-600 dark:text-red-400 text-sm font-medium flex items-center gap-2">

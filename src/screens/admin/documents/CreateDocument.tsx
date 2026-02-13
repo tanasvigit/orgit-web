@@ -11,6 +11,7 @@ import { DocumentBuilderContent } from '../../../components/document-builder/Doc
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { organizationService } from '../../../services/organizationService';
+import { getBackendBaseUrlWithSlash } from '../../../config/env';
 import { SchemaDrivenDocumentEditor } from '../../../components/document-templates/SchemaDrivenDocumentEditor';
 import { InlineDocumentEditor } from '../../../components/document-templates/InlineDocumentEditor';
 
@@ -151,8 +152,7 @@ const DocumentFillerIntegration: React.FC<{ templateId: string | null; onBack: (
       if (orgData.logoUrl && state.header.showLogo && !state.header.orgLogoUrl) {
         let logoUrl = orgData.logoUrl;
         if (logoUrl.startsWith('/')) {
-          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/';
-          logoUrl = `${apiUrl}${logoUrl}`;
+          logoUrl = `${getBackendBaseUrlWithSlash()}${logoUrl.replace(/^\//, '')}`;
         }
         updates.orgLogoUrl = logoUrl;
       }

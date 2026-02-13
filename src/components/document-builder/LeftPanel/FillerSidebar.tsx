@@ -3,6 +3,7 @@ import { useDocumentBuilder, TableBlock, TextBlock, KeyValueBlock, SignatureBloc
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { organizationService } from '../../../services/organizationService';
+import { getBackendBaseUrlWithSlash } from '../../../config/env';
 
 const TextFiller: React.FC<{ section: TextBlock }> = ({ section }) => {
     // In a real implementation, we would extract {{data}} variables and show inputs.
@@ -329,8 +330,7 @@ const HeaderFiller: React.FC = () => {
             if (orgData.logoUrl && header.showLogo) {
                 let logoUrl = orgData.logoUrl;
                 if (logoUrl.startsWith('/')) {
-                    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/';
-                    logoUrl = `${apiUrl}${logoUrl}`;
+                    logoUrl = `${getBackendBaseUrlWithSlash()}${logoUrl.replace(/^\//, '')}`;
                 }
                 updates.orgLogoUrl = logoUrl;
             }

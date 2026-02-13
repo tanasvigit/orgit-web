@@ -2051,7 +2051,7 @@ export const DirectChatConversation: React.FC = () => {
       )}
 
       {/* Footer */}
-      <div className="p-4 bg-surface-light dark:bg-surface-dark border-t border-border-light dark:border-border-dark relative">
+      <div className="p-3 sm:p-4 bg-surface-light dark:bg-surface-dark border-t border-border-light dark:border-border-dark relative shrink-0">
         {/* File upload preview strip */}
         {pendingAttachments.length > 0 && (
           <div className="flex gap-3 overflow-x-auto pb-4 mb-2 -mx-2 px-2 scroll-smooth max-w-5xl mx-auto" style={{ scrollbarWidth: 'thin' }}>
@@ -2166,36 +2166,38 @@ export const DirectChatConversation: React.FC = () => {
           </div>
         )}
 
-        <div className="flex items-center gap-3 max-w-5xl mx-auto bg-gray-100 dark:bg-background-dark/70 p-2 rounded-2xl border border-border-light dark:border-border-dark">
+        <div className="flex items-center gap-2 sm:gap-3 max-w-5xl mx-auto bg-gray-100 dark:bg-background-dark/70 p-2 sm:p-3 rounded-2xl border border-border-light dark:border-border-dark relative">
           {/* Plus button */}
           <button
             type="button"
-            className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-all disabled:opacity-50"
+            className="p-2 sm:p-2.5 text-primary hover:bg-primary/10 rounded-xl transition-all disabled:opacity-50 min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0"
             onClick={() => setShowAttachmentMenu((prev) => !prev)}
             disabled={uploadingMedia}
             title="More options"
+            aria-label="More options"
           >
             {uploadingMedia ? (
               <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" />
             ) : (
-              <span className="material-icons-round">add_circle</span>
+              <span className="material-icons-round text-lg sm:text-xl">add_circle</span>
             )}
           </button>
 
           {/* Quick image shortcut (opens media picker) */}
           <button
             type="button"
-            className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            className="p-2 sm:p-2.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0"
             onClick={() => setShowMediaUpload(true)}
             disabled={uploadingMedia}
             title="Send photo or video"
+            aria-label="Send photo or video"
           >
-            <span className="material-icons-round">image</span>
+            <span className="material-icons-round text-lg sm:text-xl">image</span>
           </button>
 
           {/* Input */}
           <textarea
-            className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-gray-900 dark:text-gray-100 resize-none max-h-32 placeholder-gray-400 dark:placeholder-gray-500 py-2 px-2"
+            className="flex-1 bg-transparent border-none focus:ring-0 text-sm sm:text-base text-gray-900 dark:text-gray-100 resize-none max-h-32 placeholder-gray-400 dark:placeholder-gray-500 py-2 sm:py-2.5 px-2 sm:px-3 min-h-[44px] leading-relaxed"
             placeholder={editingMessage ? 'Edit message...' : pendingAttachments.length > 0 ? 'Add a caption...' : 'Type a message...'}
             rows={1}
             value={message}
@@ -2211,11 +2213,12 @@ export const DirectChatConversation: React.FC = () => {
           {/* Emoji */}
           <button
             type="button"
-            className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            className="p-2 sm:p-2.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0"
             onClick={() => setShowEmojiPicker(true)}
             title="Emoji"
+            aria-label="Emoji"
           >
-            <span className="material-icons-round">sentiment_satisfied_alt</span>
+            <span className="material-icons-round text-lg sm:text-xl">sentiment_satisfied_alt</span>
           </button>
 
           {/* Send */}
@@ -2223,12 +2226,16 @@ export const DirectChatConversation: React.FC = () => {
             type="button"
             onClick={handleSend}
             disabled={(!message.trim() && !replyingTo && !editingMessage && pendingAttachments.length === 0) || sendMessageMutation.isLoading || uploadingMedia}
-            className="p-3 bg-primary hover:bg-primary-dark text-white rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 transition-opacity flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+            className="p-2.5 sm:p-3 bg-primary hover:bg-primary-dark text-white rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 transition-opacity flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] shrink-0"
+            aria-label="Send message"
           >
-            <span className="material-icons-round -rotate-45 translate-x-[1px] -translate-y-[1px]">
+            <span className="material-icons-round text-lg sm:text-xl -rotate-45 translate-x-[1px] -translate-y-[1px]">
               send
             </span>
           </button>
+
+          {/* Spacer for FAB - reserves space so send button doesn't get hidden */}
+          <div className="w-12 sm:w-14 md:w-16 lg:w-20 flex-shrink-0"></div>
         </div>
       </div>
 

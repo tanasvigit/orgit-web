@@ -7,6 +7,11 @@
 node_modules/
 dist/
 
+# Environment (keep .env.example)
+.env
+.env.local
+.env.*.local
+
 # Compiled Java class files
 *.class
 

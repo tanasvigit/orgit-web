@@ -7,6 +7,7 @@ import { entityMasterBulkService } from '../../services/entityMasterBulkService'
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import api from '../../services/api';
+import { getBackendBaseUrlWithSlash } from '../../config/env';
 import { masterDataService } from '../../services/masterDataService';
 
 export const EntityMasterData: React.FC = () => {
@@ -233,8 +234,7 @@ export const EntityMasterData: React.FC = () => {
         // Construct full URL if it's a relative path
         let imageUrl = result.data.url;
         if (imageUrl.startsWith('/')) {
-          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/';
-          imageUrl = `${apiUrl}${imageUrl}`;
+          imageUrl = `${getBackendBaseUrlWithSlash()}${imageUrl.replace(/^\//, '')}`;
         }
         setFormData(prev => ({ ...prev, logoUrl: imageUrl }));
         toast.success('Logo uploaded successfully!');
