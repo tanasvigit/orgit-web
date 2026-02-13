@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>Tax Invoice</title>
+
+<style>
+body {
+    width: 794px;
+    margin: 0 auto;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    color: #000;
+}
+
+.invoice-container {
+    border: 1px solid #000;
+    padding: 0;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+td, th {
+    border: 1px solid #000;
+    padding: 6px;
+    vertical-align: top;
+}
+
+.header-title {
+    text-align: center;
+    font-weight: bold;
+    font-size: 16px;
+    letter-spacing: 1px;
+    padding: 8px 0;
+    border-bottom: 1px solid #000;
+}
+
+.company-name {
+    font-weight: bold;
+    font-size: 16px;
+}
+
+.bold {
+    font-weight: bold;
+}
+
+.right {
+    text-align: right;
+}
+
+.center {
+    text-align: center;
+}
+
+.small {
+    font-size: 11px;
+}
+
+.items-table th {
+    font-weight: bold;
+    text-align: center;
+}
+
+.totals-table td {
+    font-weight: bold;
+}
+
+.no-border {
+    border: none !important;
+}
+
+@media print {
+    body {
+        margin: 0;
+    }
+}
+</style>
+
+</head>
+<body>
+
+<div class="invoice-container">
+
+<!-- TITLE -->
+<div class="header-title">
+    TAX INVOICE
+</div>
+
+<!-- TOP SECTION: 50% | 25% | 25% (explicit widths - no merging) -->
+<table>
+<tr>
+<td style="width:50%;">
+    <div class="company-name">{{company_name}}</div>
+    GSTIN: {{company_gstin}}<br>
+    {{company_address}}<br>
+    Mobile: {{company_phone}}
+</td>
+
+<td style="width:25%;">
+    <div class="bold">Invoice #</div>
+    {{invoice_number}}<br><br>
+
+    <div class="bold">Place of Supply:</div>
+    {{place_of_supply}}
+</td>
+
+<td style="width:25%;">
+    <div class="bold">Invoice Date:</div>
+    {{invoice_date}}<br><br>
+
+    <div class="bold">Due Date:</div>
+    {{due_date}}
+</td>
+</tr>
+</table>
+
+<!-- CUSTOMER + SHIPPING: 50% | 50% (explicit - no merging) -->
+<table>
+<tr>
+<td style="width:50%;">
+    <div class="bold">Customer Details:</div>
+    {{customer_name}}<br>
+    {{customer_address}}<br>
+    Ph: {{customer_phone}}
+</td>
+
+<td style="width:50%;">
+    <div class="bold">Shipping Address:</div>
+    {{shipping_address}}
+</td>
+</tr>
+</table>
+
+<!-- ITEMS -->
+<table class="items-table">
+<thead>
+<tr>
+<th style="width:5%;">#</th>
+<th style="width:25%;">Item</th>
+<th style="width:10%;">HSN/SAC</th>
+<th style="width:10%;">Rate</th>
+<th style="width:5%;">Qty</th>
+<th style="width:15%;">Taxable Value</th>
+<th style="width:15%;">Tax Amount</th>
+<th style="width:15%;">Amount</th>
+</tr>
+</thead>
+
+<tbody>
+{{#each item_rows}}
+<tr>
+<td style="width:5%;">{{inc @index}}</td>
+<td style="width:25%;">{{item}}</td>
+<td style="width:10%;">{{hsn}}</td>
+<td style="width:10%;">{{rate}}</td>
+<td style="width:5%;">{{qty}}</td>
+<td style="width:15%;">{{taxableValue}}</td>
+<td style="width:15%;">{{taxAmount}}</td>
+<td style="width:15%;">{{amount}}</td>
+</tr>
+{{/each}}
+</tbody>
+</table>
+
+<!-- TOTALS -->
+<table class="totals-table">
+<tr>
+<td style="width:75%;" class="right">Taxable Amount</td>
+<td style="width:25%;" class="right">₹ {{taxable_amount}}</td>
+</tr>
+<tr>
+<td class="right">IGST {{igst_rate}}%</td>
+<td class="right">₹ {{igst_amount}}</td>
+</tr>
+<tr>
+<td class="right" style="font-size:14px;">Total</td>
+<td class="right" style="font-size:14px;">₹ {{total_amount}}</td>
+</tr>
+</table>
+
+<!-- AMOUNT IN WORDS -->
+<table>
+<tr>
+<td>
+<span class="bold">Total amount (in words):</span>
+{{amount_words}}
+</td>
+</tr>
+</table>
+
+<!-- BANK + QR (no signature stamp) -->
+<table>
+<tr>
+<td style="width:50%;">
+    <div class="bold">Bank Details:</div>
+    Bank: {{bank_name}}<br>
+    Account #: {{bank_account_number}}<br>
+    IFSC: {{bank_ifsc}}<br>
+    Branch: {{bank_branch}}
+</td>
+
+<td style="width:50%;" class="center">
+    <div class="bold">Pay using UPI:</div>
+    {{#if qr_code_data_uri}}
+    <img src="{{qr_code_data_uri}}" alt="UPI QR" style="max-width:120px;max-height:120px;" />
+    {{else}}
+    <span class="small">[QR Code]</span>
+    {{/if}}
+</td>
+</tr>
+</table>
+
+<!-- NOTES + TERMS -->
+<table>
+<tr>
+<td style="width:50%;">
+    <div class="bold">Notes:</div>
+    {{notes}}
+</td>
+
+<td style="width:50%;">
+    <div class="bold">Terms and Conditions:</div>
+    <ol style="margin:0;padding-left:16px;">
+    {{#each terms_rows}}
+    <li>{{text}}</li>
+    {{/each}}
+    </ol>
+</td>
+</tr>
+</table>
+
+</div>
+
+</body>
+</html>

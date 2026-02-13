@@ -12,6 +12,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { organizationService } from '../../../services/organizationService';
 import { SchemaDrivenDocumentEditor } from '../../../components/document-templates/SchemaDrivenDocumentEditor';
+import { InlineDocumentEditor } from '../../../components/document-templates/InlineDocumentEditor';
 
 const DocumentFillerIntegration: React.FC<{ templateId: string | null; onBack: () => void; isAdmin: boolean }> = ({ templateId, onBack, isAdmin }) => {
 
@@ -329,7 +330,14 @@ export const CreateDocument: React.FC = () => {
     }
 
     // Legacy (schema-driven) filler: locked system templates.
-    const schema = (template as any).templateSchema;
+    let schema = (template as any).templateSchema;
+    if (typeof schema === 'string') {
+      try {
+        schema = JSON.parse(schema);
+      } catch {
+        schema = {};
+      }
+    }
     const editableFields = schema?.editableFields;
     const locked = !!schema?.lockedStructure;
 
@@ -354,7 +362,7 @@ export const CreateDocument: React.FC = () => {
     const initialValues: Record<string, any> = {
       invoice_copy_label: 'ORIGINAL FOR RECIPIENT',
       ...((template as any).autoFillFields || {}),
-      ...((template as any).templateSchema?.defaultValues || {}),
+      ...(schema?.defaultValues || {}),
     };
 
     // Best-effort org autofill (if user didn't input)
@@ -370,10 +378,48 @@ export const CreateDocument: React.FC = () => {
 
     const computedTitle = `${template.name} - ${new Date().toLocaleDateString()}`;
 
+    const systemTemplateKey = (schema?.systemTemplateKey || (template as any).type || '') as string;
+    const useInlineEditor = /tax-invoice|payment-voucher|tax_invoice|payment_voucher/i.test(systemTemplateKey);
+
+    if (useInlineEditor) {
+      return (
+        <Layout hideHeader={isAdmin}>
+          <div className="flex flex-col h-full">
+            <div className="shrink-0 flex items-center justify-between px-6 py-4 bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-4">
+                <button type="button" onClick={onBack} className="text-gray-500 hover:text-gray-700">
+                  <span className="material-symbols-outlined">arrow_back</span>
+                </button>
+                <div>
+                  <h1 className="text-lg font-bold text-gray-900 dark:text-white">{template.name}</h1>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Edit fields directly on the document</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden min-h-0">
+              <InlineDocumentEditor
+                schema={schema}
+                initialValues={initialValues}
+                submitLabel={createMutation.isLoading ? 'Creating...' : 'Create Document'}
+                disabled={createMutation.isLoading}
+                onCancel={onBack}
+                onSubmit={async (formData) => {
+                  createMutation.mutate({
+                    templateId,
+                    title: computedTitle,
+                    filledData: formData,
+                  });
+                }}
+              />
+            </div>
+          </div>
+        </Layout>
+      );
+    }
+
     const normalizeForSubmit = (data: Record<string, any>) => {
       const out = { ...(data || {}) };
 
-      // Convert item_rows.detailsText -> item_rows.details (string[])
       if (Array.isArray(out.item_rows)) {
         out.item_rows = out.item_rows.map((row: any) => {
           const r = { ...(row || {}) };
@@ -388,7 +434,6 @@ export const CreateDocument: React.FC = () => {
         });
       }
 
-      // Auto-calc totals if left blank
       if (Array.isArray(out.item_rows)) {
         if (!out.total_items) out.total_items = String(out.item_rows.length);
         if (!out.total_qty) {
