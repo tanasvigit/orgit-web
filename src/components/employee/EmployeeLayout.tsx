@@ -78,7 +78,7 @@ export const EmployeeLayout: React.FC<EmployeeLayoutProps> = ({
       {/* Main Content Area with Header */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-background-light dark:bg-background-dark">
         {!hideHeader && (
-          <header className="h-16 border-b border-border-light dark:border-border-dark bg-surface-light/80 dark:bg-surface-dark/80 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 md:px-8 shrink-0 z-50 sticky top-0">
+          <header className="h-16 border-b border-border-light dark:border-border-dark bg-surface-light/80 dark:bg-surface-dark/80 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 md:px-8 shrink-0 z-[100] sticky top-0">
             <div className="flex items-center gap-2 sm:gap-4">
               <button 
                 onClick={() => sidebarToggleRef.current?.()}
@@ -100,11 +100,14 @@ export const EmployeeLayout: React.FC<EmployeeLayoutProps> = ({
                 <span className="material-symbols-outlined">help</span>
               </button>
               
-              {/* Profile Dropdown */}
+              {/* Profile Dropdown - fixed positioning so it appears above task/message header */}
               <div className="relative" ref={profileMenuRef}>
                 <button
+                  type="button"
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
                   className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-gray-700 transition-colors"
+                  aria-expanded={showProfileMenu}
+                  aria-haspopup="true"
                 >
                   {user?.profilePhotoUrl ? (
                     <img
@@ -128,21 +131,23 @@ export const EmployeeLayout: React.FC<EmployeeLayoutProps> = ({
                     </div>
                     <div className="py-1">
                       <button
+                        type="button"
                         onClick={() => {
                           setShowProfileMenu(false);
                           navigate('/profile');
                         }}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-slate-700 dark:text-gray-200 hover:bg-slate-50 dark:hover:bg-gray-700 transition-colors"
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-slate-700 dark:text-gray-200 hover:bg-slate-50 dark:hover:bg-gray-700 transition-colors text-left"
                       >
                         <span className="material-symbols-outlined text-lg">person</span>
                         View Profile
                       </button>
                       <button
+                        type="button"
                         onClick={() => {
                           setShowProfileMenu(false);
                           navigate('/settings');
                         }}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-slate-700 dark:text-gray-200 hover:bg-slate-50 dark:hover:bg-gray-700 transition-colors"
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-slate-700 dark:text-gray-200 hover:bg-slate-50 dark:hover:bg-gray-700 transition-colors text-left"
                       >
                         <span className="material-symbols-outlined text-lg">settings</span>
                         Settings
@@ -150,8 +155,9 @@ export const EmployeeLayout: React.FC<EmployeeLayoutProps> = ({
                     </div>
                     <div className="border-t border-slate-100 dark:border-gray-700 pt-1">
                       <button
+                        type="button"
                         onClick={handleLogout}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left w-full"
                       >
                         <span className="material-symbols-outlined text-lg">logout</span>
                         Sign Out

@@ -31,9 +31,11 @@ import { extractUploadedMedia } from '../../utils/chatMedia';
 
 interface TaskGroupChatConversationProps {
   conversationId?: string; // Optional prop to override useParams
+  /** When true, render only chat content + modals (no layout). Parent provides task list layout. */
+  embedInTaskDashboard?: boolean;
 }
 
-export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps> = ({ conversationId: propConversationId }) => {
+export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps> = ({ conversationId: propConversationId, embedInTaskDashboard = false }) => {
   const { conversationId: paramConversationId, taskId: routeTaskId } = useParams<{ conversationId?: string; taskId?: string }>();
   // Use prop if provided, otherwise use param from route
   const conversationId = propConversationId || paramConversationId;
@@ -44,15 +46,16 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
   // Check if accessed from task module route (not from messages route)
-  // If pathname matches /tasks/... or /admin/tasks/... pattern, we're in task module
+  // If pathname matches /tasks/... or /admin/tasks/... pattern, we're in task module (or embedded in task dashboard)
   const isFromTaskModule =
-    /^\/tasks(\/|$)/.test(location.pathname) || /^\/admin\/tasks(\/|$)/.test(location.pathname);
+    embedInTaskDashboard || /^\/tasks(\/|$)/.test(location.pathname) || /^\/admin\/tasks(\/|$)/.test(location.pathname);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<any[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<any>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hasMarkedAsReadRef = useRef<boolean>(false);
+  const attachmentMenuInputRef = useRef<HTMLInputElement>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -70,6 +73,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showTaskGroupDetails, setShowTaskGroupDetails] = useState(false);
+  const [openGroupDetailsForAddMembers, setOpenGroupDetailsForAddMembers] = useState(false);
   const [showTaskDetails, setShowTaskDetails] = useState(false);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [showMediaUpload, setShowMediaUpload] = useState(false);
@@ -968,6 +972,26 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     addFileToPending(file, type);
     setShowMediaUpload(false);
     setShowAttachmentMenu(false);
+  };
+
+  const openAttachmentPicker = (accept: string) => {
+    setShowAttachmentMenu(false);
+    if (attachmentMenuInputRef.current) {
+      attachmentMenuInputRef.current.accept = accept;
+      attachmentMenuInputRef.current.value = '';
+      attachmentMenuInputRef.current.click();
+    }
+  };
+
+  const handleAttachmentMenuFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fileType = file.type;
+    let type: 'image' | 'video' | 'audio' | 'document' = 'document';
+    if (fileType.startsWith('image/')) type = 'image';
+    else if (fileType.startsWith('video/')) type = 'video';
+    else if (fileType.startsWith('audio/')) type = 'audio';
+    handleMediaSelectAddToPreview(file, type);
   };
 
   // Handle media upload (mirror DirectChat + mobile)
@@ -1965,15 +1989,12 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           </div>
         )}
 
-        {/* Plus menu (attachments) */}
+        {/* Plus menu (attachments): Upload File, Upload Image, Upload Video, Add Member (Task Group) */}
         {showAttachmentMenu && (
           <div className="absolute bottom-[calc(100%+12px)] left-6 w-56 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl shadow-2xl overflow-hidden py-2 z-20">
             <button
               type="button"
-              onClick={() => {
-                setShowAttachmentMenu(false);
-                setShowMediaUpload(true);
-              }}
+              onClick={() => openAttachmentPicker('*/*')}
               className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
             >
               <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:scale-110 transition-transform">
@@ -1983,38 +2004,46 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             </button>
             <button
               type="button"
+              onClick={() => openAttachmentPicker('image/*')}
+              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
+            >
+              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:scale-110 transition-transform">
+                <span className="material-icons-round text-base">image</span>
+              </div>
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Upload Image</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openAttachmentPicker('video/*')}
+              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
+            >
+              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:scale-110 transition-transform">
+                <span className="material-icons-round text-base">videocam</span>
+              </div>
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Upload Video</span>
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 setShowAttachmentMenu(false);
-                setShowLocationPicker(true);
+                setOpenGroupDetailsForAddMembers(true);
+                setShowTaskGroupDetails(true);
               }}
               className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
             >
-              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform">
-                <span className="material-icons-round text-base">location_on</span>
+              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:scale-110 transition-transform">
+                <span className="material-icons-round text-base">person_add</span>
               </div>
-              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Share Location</span>
-            </button>
-            <button
-              type="button"
-              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
-            >
-              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform">
-                <span className="material-icons-round text-base">contact_page</span>
-              </div>
-              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Send Contact</span>
-            </button>
-            <div className="mx-4 my-1 h-px bg-gray-100 dark:bg-slate-800" />
-            <button
-              type="button"
-              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
-            >
-              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform">
-                <span className="material-icons-round text-base">poll</span>
-              </div>
-              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Create Poll</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Add Member (For Task Group)</span>
             </button>
           </div>
         )}
+        <input
+          ref={attachmentMenuInputRef}
+          type="file"
+          className="hidden"
+          onChange={handleAttachmentMenuFileChange}
+        />
 
         <div className="flex flex-col gap-1 max-w-5xl mx-auto">
           <div className="flex items-center gap-2 sm:gap-3 bg-gray-100 dark:bg-background-dark/70 p-2 sm:p-3 rounded-2xl border border-border-light dark:border-border-dark relative">
@@ -2210,6 +2239,37 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     </div>
   );
 
+  // When embedded in Task Dashboard: no layout, only chat content + modals (parent has task list)
+  if (embedInTaskDashboard) {
+    return (
+      <>
+        <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden h-full">
+          {mainContent}
+        </div>
+        <TaskDetailsModal
+          visible={showTaskDetails}
+          onClose={() => setShowTaskDetails(false)}
+          taskId={effectiveTaskId || undefined}
+        />
+        <TaskGroupDetailsModal
+          visible={showTaskGroupDetails}
+          onClose={() => {
+            setShowTaskGroupDetails(false);
+            setOpenGroupDetailsForAddMembers(false);
+          }}
+          taskId={taskId}
+          conversationId={conversationId}
+          conversationData={conversationData}
+          openAddMembers={openGroupDetailsForAddMembers}
+        />
+        <NewChatModal
+          visible={showNewChatModal}
+          onClose={() => setShowNewChatModal(false)}
+        />
+      </>
+    );
+  }
+
   // Wrap in appropriate layout matching DirectChatConversation structure
   // If accessed from task module, use full width (no conversation list sidebar)
   if (isFromTaskModule) {
@@ -2283,10 +2343,14 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         {/* Task Group Details Modal */}
         <TaskGroupDetailsModal
           visible={showTaskGroupDetails}
-          onClose={() => setShowTaskGroupDetails(false)}
+          onClose={() => {
+            setShowTaskGroupDetails(false);
+            setOpenGroupDetailsForAddMembers(false);
+          }}
           taskId={taskId}
           conversationId={conversationId}
           conversationData={conversationData}
+          openAddMembers={openGroupDetailsForAddMembers}
         />
 
         {/* New Chat Modal */}
@@ -2317,10 +2381,14 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       {/* Task Group Details Modal */}
       <TaskGroupDetailsModal
         visible={showTaskGroupDetails}
-        onClose={() => setShowTaskGroupDetails(false)}
+        onClose={() => {
+          setShowTaskGroupDetails(false);
+          setOpenGroupDetailsForAddMembers(false);
+        }}
         taskId={taskId}
         conversationId={conversationId}
         conversationData={conversationData}
+        openAddMembers={openGroupDetailsForAddMembers}
       />
 
       {/* New Chat Modal */}

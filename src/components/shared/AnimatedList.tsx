@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { motion, useInView } from 'motion/react';
+import { motion } from 'framer-motion';
 
 interface AnimatedItemProps {
   children: React.ReactNode;
@@ -10,16 +10,14 @@ interface AnimatedItemProps {
 }
 
 const AnimatedItem = ({ children, delay = 0, index, onMouseEnter, onClick }: AnimatedItemProps) => {
-  const ref = useRef(null);
-  const inView = useInView(ref, { amount: 0.5, triggerOnce: false });
   return (
     <motion.div
-      ref={ref}
       data-index={index}
       onMouseEnter={onMouseEnter}
       onClick={onClick}
       initial={{ scale: 0.7, opacity: 0 }}
-      animate={inView ? { scale: 1, opacity: 1 } : { scale: 0.7, opacity: 0 }}
+      whileInView={{ scale: 1, opacity: 1 }}
+      viewport={{ amount: 0.5, once: false }}
       transition={{ duration: 0.2, delay }}
       className="mb-4 cursor-pointer"
     >

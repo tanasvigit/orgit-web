@@ -52,7 +52,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, headerAction
       <AdminSidebar onToggleRef={sidebarToggleRef} />
       <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-background">
         {!hideHeader && (
-          <header className="h-16 border-b border-border bg-surface/80 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 md:px-8 shrink-0 z-10 sticky top-0">
+          <header className="h-16 border-b border-border bg-surface/80 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 md:px-8 shrink-0 z-[100] sticky top-0">
             <div className="flex items-center gap-2 sm:gap-4">
               <button 
                 onClick={() => sidebarToggleRef.current?.()}
@@ -71,11 +71,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, headerAction
             <div className="flex items-center gap-2 sm:gap-4 md:gap-6">
               {headerActions}
               
-              {/* Profile Dropdown */}
-              <div className="relative z-[100]" ref={profileMenuRef}>
+              {/* Profile Dropdown - fixed positioning so it appears above task/message header */}
+              <div className="relative" ref={profileMenuRef}>
                 <button
+                  type="button"
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
                   className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                  aria-expanded={showProfileMenu}
+                  aria-haspopup="true"
                 >
                   {user?.profilePhotoUrl ? (
                     <img
@@ -92,28 +95,30 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, headerAction
                 </button>
 
                 {showProfileMenu && (
-                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-slate-200 py-2 z-[100]">
+                  <div className="fixed right-6 top-16 w-56 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-[9999]">
                     <div className="px-4 py-3 border-b border-slate-100">
                       <p className="text-sm font-semibold text-slate-900">{user?.name || 'Admin'}</p>
                       <p className="text-xs text-slate-500 truncate">{user?.email || 'admin@orgit.com'}</p>
                     </div>
                     <div className="py-1">
                       <button
+                        type="button"
                         onClick={() => {
                           setShowProfileMenu(false);
                           navigate('/profile');
                         }}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors text-left"
                       >
                         <span className="material-symbols-outlined text-lg">person</span>
                         View Profile
                       </button>
                       <button
+                        type="button"
                         onClick={() => {
                           setShowProfileMenu(false);
                           navigate('/settings');
                         }}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors text-left"
                       >
                         <span className="material-symbols-outlined text-lg">settings</span>
                         Settings
@@ -121,8 +126,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, headerAction
                     </div>
                     <div className="border-t border-slate-100 pt-1">
                       <button
+                        type="button"
                         onClick={handleLogout}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors text-left w-full"
                       >
                         <span className="material-symbols-outlined text-lg">logout</span>
                         Sign Out

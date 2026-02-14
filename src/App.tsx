@@ -83,16 +83,17 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     return <Navigate to="/login" replace />;
   }
 
-  // Allow admin users to access settings routes
+  // Allow admin/super_admin to access settings and profile routes
   const isSettingsRoute = location.pathname.startsWith('/settings');
-  
-  // Redirect admin users to admin dashboard (except for settings routes)
-  if (user?.role === 'admin' && !isSettingsRoute) {
+  const isProfileRoute = location.pathname.startsWith('/profile');
+
+  // Redirect admin users to admin dashboard (except for settings and profile routes)
+  if (user?.role === 'admin' && !isSettingsRoute && !isProfileRoute) {
     return <Navigate to="/admin" replace />;
   }
 
-  // Redirect super_admin users to super admin dashboard (except for settings routes)
-  if (user?.role === 'super_admin' && !isSettingsRoute) {
+  // Redirect super_admin users to super admin dashboard (except for settings and profile routes)
+  if (user?.role === 'super_admin' && !isSettingsRoute && !isProfileRoute) {
     return <Navigate to="/super-admin" replace />;
   }
 
@@ -223,7 +224,7 @@ function App() {
               path="/tasks/task-group/:conversationId"
               element={
                 <ProtectedRoute>
-                  <TaskGroupChatConversation />
+                  <TaskDashboardScreen />
                 </ProtectedRoute>
               }
             />
@@ -523,7 +524,7 @@ function App() {
               path="/admin/tasks/task-group/:conversationId"
               element={
                 <AdminProtectedRoute>
-                  <TaskGroupChatConversation />
+                  <TaskDashboardScreen />
                 </AdminProtectedRoute>
               }
             />
@@ -644,6 +645,14 @@ function App() {
               element={
                 <AdminProtectedRoute>
                   <EntityList />
+                </AdminProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/settings"
+              element={
+                <AdminProtectedRoute>
+                  <SettingsScreen />
                 </AdminProtectedRoute>
               }
             />

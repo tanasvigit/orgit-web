@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 interface NavItem {
@@ -25,6 +25,7 @@ interface AdminSidebarProps {
 
 export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -223,8 +224,9 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
     }
   }, [location.pathname]);
 
-  // Auto-open settings dropdown if on a settings route
-  const isSettingsActive = 
+  // Auto-open settings dropdown and highlight Settings when on SettingsScreen or any settings route
+  const isSettingsActive =
+    location.pathname === '/admin/settings' ||
     location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users/') ||
     location.pathname === '/admin/services' || location.pathname.startsWith('/admin/services/') ||
     location.pathname === '/admin/entities' || location.pathname.startsWith('/admin/entities/') ||
@@ -296,14 +298,9 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
           );
         })}
         
-        {/* Settings Dropdown */}
+        {/* Settings: icon + label navigate; chevron toggles dropdown */}
         <div className="relative">
-          <button
-            onClick={() => {
-              if (!isCollapsed) {
-                setIsSettingsOpen(!isSettingsOpen);
-              }
-            }}
+          <div
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 min-h-[44px] ${
               isCollapsed ? 'justify-center' : ''
             } ${
@@ -311,31 +308,44 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                 ? 'bg-primary text-white shadow-md shadow-primary/20'
                 : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
             }`}
-            title={isCollapsed ? 'Settings' : 'Settings'}
           >
-            <span
-              className={`material-symbols-outlined text-[22px] shrink-0 ${
-                isSettingsActive
-                  ? ''
-                  : 'text-slate-400 group-hover:text-slate-600 transition-colors'
-              }`}
+            <button
+              type="button"
+              onClick={() => {
+                navigate('/admin/settings');
+                if (window.innerWidth < 768) setIsMobileOpen(false);
+              }}
+              className={`flex items-center gap-3 min-w-0 flex-1 text-left ${isCollapsed ? 'justify-center' : ''}`}
+              title={isCollapsed ? 'Settings' : 'Settings'}
             >
-              settings
-            </span>
+              <span
+                className={`material-symbols-outlined text-[22px] shrink-0 ${
+                  isSettingsActive ? '' : 'text-slate-400 group-hover:text-slate-600 transition-colors'
+                }`}
+              >
+                settings
+              </span>
+              {!isCollapsed && (
+                <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0 flex-1">Settings</span>
+              )}
+            </button>
             {!isCollapsed && (
-              <>
-                <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0 flex-1 text-left">Settings</span>
-                <span
-                  className={`material-symbols-outlined text-lg shrink-0 transition-transform ${
-                    isSettingsOpen ? 'rotate-180' : ''
-                  }`}
-                >
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsSettingsOpen(!isSettingsOpen);
+                }}
+                className="p-1 rounded hover:bg-slate-200/50 transition-colors shrink-0"
+                aria-label="Toggle settings menu"
+              >
+                <span className={`material-symbols-outlined text-lg shrink-0 transition-transform ${isSettingsOpen ? 'rotate-180' : ''}`}>
                   expand_more
                 </span>
-              </>
+              </button>
             )}
-          </button>
-          
+          </div>
+
           {/* Dropdown Menu */}
           {!isCollapsed && isSettingsOpen && (
             <div className="ml-4 mt-1 space-y-1 border-l-2 border-slate-200 pl-4">

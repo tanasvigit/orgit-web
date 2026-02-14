@@ -39,6 +39,7 @@ export const DirectChatConversation: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<any>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const attachmentMenuInputRef = useRef<HTMLInputElement>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   
@@ -1441,6 +1442,27 @@ export const DirectChatConversation: React.FC = () => {
     setShowAttachmentMenu(false);
   };
 
+  // Open file picker from "+" menu (Upload File / Image / Video)
+  const openAttachmentPicker = (accept: string) => {
+    setShowAttachmentMenu(false);
+    if (attachmentMenuInputRef.current) {
+      attachmentMenuInputRef.current.accept = accept;
+      attachmentMenuInputRef.current.value = '';
+      attachmentMenuInputRef.current.click();
+    }
+  };
+
+  const handleAttachmentMenuFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fileType = file.type;
+    let type: 'image' | 'video' | 'audio' | 'document' = 'document';
+    if (fileType.startsWith('image/')) type = 'image';
+    else if (fileType.startsWith('video/')) type = 'video';
+    else if (fileType.startsWith('audio/')) type = 'audio';
+    handleMediaSelectAddToPreview(file, type);
+  };
+
   // Handle voice note
   const handleVoiceNoteComplete = async (audioBlob: Blob) => {
     setUploadingMedia(true);
@@ -2115,15 +2137,12 @@ export const DirectChatConversation: React.FC = () => {
           </div>
         )}
 
-        {/* Plus menu (attachments) */}
+        {/* Plus menu (attachments): Upload File, Upload Image, Upload Video */}
         {showAttachmentMenu && (
           <div className="absolute bottom-[calc(100%+12px)] left-6 w-56 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl shadow-2xl overflow-hidden py-2 z-20">
             <button
               type="button"
-              onClick={() => {
-                setShowAttachmentMenu(false);
-                setShowMediaUpload(true);
-              }}
+              onClick={() => openAttachmentPicker('*/*')}
               className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
             >
               <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:scale-110 transition-transform">
@@ -2133,38 +2152,32 @@ export const DirectChatConversation: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={() => {
-                setShowAttachmentMenu(false);
-                setShowLocationPicker(true);
-              }}
+              onClick={() => openAttachmentPicker('image/*')}
               className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
             >
-              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform">
-                <span className="material-icons-round text-base">location_on</span>
+              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:scale-110 transition-transform">
+                <span className="material-icons-round text-base">image</span>
               </div>
-              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Share Location</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Upload Image</span>
             </button>
             <button
               type="button"
+              onClick={() => openAttachmentPicker('video/*')}
               className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
             >
-              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform">
-                <span className="material-icons-round text-base">contact_page</span>
+              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:scale-110 transition-transform">
+                <span className="material-icons-round text-base">videocam</span>
               </div>
-              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Send Contact</span>
-            </button>
-            <div className="mx-4 my-1 h-px bg-gray-100 dark:bg-slate-800" />
-            <button
-              type="button"
-              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
-            >
-              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform">
-                <span className="material-icons-round text-base">poll</span>
-              </div>
-              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Create Poll</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Upload Video</span>
             </button>
           </div>
         )}
+        <input
+          ref={attachmentMenuInputRef}
+          type="file"
+          className="hidden"
+          onChange={handleAttachmentMenuFileChange}
+        />
 
         <div className="flex items-center gap-2 sm:gap-3 max-w-5xl mx-auto bg-gray-100 dark:bg-background-dark/70 p-2 sm:p-3 rounded-2xl border border-border-light dark:border-border-dark relative">
           {/* Plus button */}

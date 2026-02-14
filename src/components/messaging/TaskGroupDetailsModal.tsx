@@ -16,6 +16,8 @@ interface TaskGroupDetailsModalProps {
   taskId: string | null | undefined;
   conversationId?: string | null;
   conversationData?: any;
+  /** When true, open the modal with Add Members section expanded (e.g. from "+" menu) */
+  openAddMembers?: boolean;
 }
 
 export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
@@ -24,6 +26,7 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
   taskId,
   conversationId,
   conversationData,
+  openAddMembers = false,
 }) => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -31,6 +34,12 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin';
   const [showAddMembers, setShowAddMembers] = useState(false);
+
+  React.useEffect(() => {
+    if (visible && openAddMembers) {
+      setShowAddMembers(true);
+    }
+  }, [visible, openAddMembers]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
 

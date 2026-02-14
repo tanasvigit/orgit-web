@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useMutation, useQueryClient } from 'react-query';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -10,10 +10,12 @@ import AnimatedList from '../../components/shared/AnimatedList';
 
 export const SettingsScreen: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const isAdmin = user?.role === 'admin';
+  // Show All Settings when user is admin OR when on admin settings route (/admin/settings)
+  const isAdmin = user?.role === 'admin' || location.pathname === '/admin/settings';
   const bulkFileInputRef = useRef<HTMLInputElement>(null);
   const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
 

@@ -308,14 +308,9 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
           );
         })}
         
-        {/* Settings Dropdown */}
+        {/* Settings: icon + label navigate to Settings page; chevron toggles dropdown */}
         <div className="relative">
-          <button
-            onClick={() => {
-              if (!isCollapsed) {
-                setIsSettingsOpen(!isSettingsOpen);
-              }
-            }}
+          <div
             className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group min-h-[44px] ${
               isCollapsed ? 'justify-center' : ''
             } ${
@@ -323,14 +318,35 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
                 ? 'bg-primary text-white shadow-md shadow-primary/20'
                 : 'text-gray-400 hover:text-primary hover:bg-secondary/50 dark:hover:bg-primary/10'
             }`}
-            title={isCollapsed ? 'Settings' : ''}
           >
-            <span className={`material-icons-outlined text-2xl shrink-0 ${isSettingsActive ? '' : 'group-hover:text-primary'}`}>
-              settings
-            </span>
+            <button
+              type="button"
+              onClick={() => {
+                navigate('/settings');
+                if (window.innerWidth < 768) setIsMobileOpen(false);
+              }}
+              className={`flex items-center gap-3 min-w-0 flex-1 text-left ${
+                isCollapsed ? 'justify-center' : ''
+              }`}
+              title={isCollapsed ? 'Settings' : ''}
+            >
+              <span className={`material-icons-outlined text-2xl shrink-0 ${isSettingsActive ? '' : 'group-hover:text-primary'}`}>
+                settings
+              </span>
+              {!isCollapsed && (
+                <span className="font-medium text-sm whitespace-nowrap flex-1">Settings</span>
+              )}
+            </button>
             {!isCollapsed && (
-              <>
-                <span className="font-medium text-sm whitespace-nowrap flex-1 text-left">Settings</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsSettingsOpen(!isSettingsOpen);
+                }}
+                className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors shrink-0"
+                aria-label="Toggle settings menu"
+              >
                 <span
                   className={`material-icons-outlined text-lg shrink-0 transition-transform ${
                     isSettingsOpen ? 'rotate-180' : ''
@@ -338,9 +354,9 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
                 >
                   expand_more
                 </span>
-              </>
+              </button>
             )}
-          </button>
+          </div>
           
           {/* Dropdown Menu */}
           {!isCollapsed && isSettingsOpen && (

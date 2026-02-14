@@ -1,29 +1,113 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery, useQueryClient } from 'react-query';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useQuery, useQueries, useQueryClient } from 'react-query';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { conversationService } from '../../services/conversationService';
+import { taskService } from '../../services/taskService';
+import { masterDataService, TaskServiceItem } from '../../services/masterDataService';
 import { waitForSocketConnection } from '../../services/socketService';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
-import { ConversationList } from '../../components/messaging/ConversationList';
+import { TaskGroupChatConversation } from '../messaging/TaskGroupChatConversation';
 import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
 import { format } from 'date-fns';
+
+/**
+ * Derive task list status from task details (from getTask).
+ * Mirrors Task Details page logic: "In Progress" = any assignee has accepted (has_accepted / accepted_at).
+ */
+function getTaskStatusCategory(task: any): StatusFilter | null {
+  if (!task) return null;
+  const status = (task.status || '').toLowerCase().replace(/\s+/g, '_');
+  const due = task.due_date || task.dueDate;
+  const now = Date.now();
+
+  if (status === 'completed') return 'completed';
+  if (due && new Date(due).getTime() < now) return 'overdue';
+  if (due) {
+    const daysUntil = (new Date(due).getTime() - now) / 86400000;
+    if (daysUntil >= 0 && daysUntil <= 3) return 'duesoon';
+  }
+  // In Progress: task-level status OR any assignee has accepted (same as Task Details page)
+  if (status === 'inprogress' || status === 'in_progress') return 'inprogress';
+  const statusForUser = task.current_user_status || task.currentUserStatus || {};
+  if (statusForUser.has_accepted || statusForUser.accepted_at) return 'inprogress';
+  const assignees = Array.isArray(task.assignees) ? task.assignees : [];
+  const anyAccepted = assignees.some(
+    (a: any) => a.accepted_at || a.has_accepted
+  );
+  if (anyAccepted) return 'inprogress';
+  return 'todo';
+}
+
+const STATUS_LABELS: Record<Exclude<StatusFilter, 'all'>, string> = {
+  todo: 'To Do',
+  inprogress: 'In Progress',
+  duesoon: 'Due Soon',
+  overdue: 'Overdue',
+  completed: 'Completed',
+};
+const STATUS_ICONS: Record<Exclude<StatusFilter, 'all'>, string> = {
+  todo: 'today',
+  inprogress: 'pending_actions',
+  duesoon: 'schedule',
+  overdue: 'priority_high',
+  completed: 'task_alt',
+};
+const STATUS_COLORS: Record<Exclude<StatusFilter, 'all'>, string> = {
+  todo: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
+  inprogress: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
+  duesoon: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
+  overdue: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300',
+  completed: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
+};
 
 export type StatusFilter = 'all' | 'todo' | 'overdue' | 'duesoon' | 'inprogress' | 'completed';
 
 export const TaskDashboardScreen: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { conversationId: selectedConversationId } = useParams<{ conversationId?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin';
   const [searchQuery, setSearchQuery] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
   const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
   const socketRef = React.useRef<any>(null);
+
+  // Fetch all task services (recurring + one_time) for search suggestions
+  const { data: taskServicesData } = useQuery(
+    'task-services-all',
+    async () => {
+      const [recurring, oneTime] = await Promise.all([
+        masterDataService.getTaskServices('recurring'),
+        masterDataService.getTaskServices('one_time'),
+      ]);
+      const recurringList = (recurring.data?.data ?? recurring.data ?? []) as TaskServiceItem[];
+      const oneTimeList = (oneTime.data?.data ?? oneTime.data ?? []) as TaskServiceItem[];
+      const byId = new Map<string, TaskServiceItem>();
+      [...recurringList, ...oneTimeList].forEach((s) => {
+        if (s?.id && !byId.has(s.id)) byId.set(s.id, s);
+      });
+      return Array.from(byId.values());
+    },
+    { staleTime: 5 * 60 * 1000 }
+  );
+  const allTaskServices: TaskServiceItem[] = Array.isArray(taskServicesData) ? taskServicesData : [];
+
+  // Filter suggestions by search query (e.g. "G" or "GS" -> GSTR 1, GSTR 9)
+  const suggestions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return allTaskServices.filter((s) => (s.title || '').toLowerCase().includes(q));
+  }, [searchQuery, allTaskServices]);
 
   // Status filter from URL (dashboard card navigation) or local state
   const statusFromUrl = searchParams.get('status');
@@ -53,12 +137,62 @@ export const TaskDashboardScreen: React.FC = () => {
   );
 
   // Filter to only task groups
-  const taskGroups = React.useMemo(() => {
+  const taskGroups = useMemo(() => {
     return conversations.filter(conv => conv.isTaskGroup || conv.is_task_group);
   }, [conversations]);
 
-  // Filter task groups by status filter
-  const filteredTaskGroups = React.useMemo(() => {
+  // Fetch conversation details for each task group to get taskId (from task details page)
+  const detailsResults = useQueries(
+    taskGroups.map((conv) => ({
+      queryKey: ['conversation-details', conv.id || conv.conversationId],
+      queryFn: () => conversationService.getConversationDetails(conv.id || conv.conversationId),
+      enabled: !!(conv.id || conv.conversationId),
+    }))
+  );
+
+  // Build convId -> taskId from details
+  const taskIdByConvId = useMemo(() => {
+    const map: Record<string, string> = {};
+    taskGroups.forEach((conv, i) => {
+      const convId = conv.id || conv.conversationId;
+      const details = detailsResults[i]?.data as any;
+      const taskId = details?.taskId || details?.task_id;
+      if (convId && taskId) map[convId] = taskId;
+    });
+    return map;
+  }, [taskGroups, detailsResults]);
+
+  // Unique task IDs to fetch task details
+  const uniqueTaskIds = useMemo(
+    () => [...new Set(Object.values(taskIdByConvId).filter(Boolean))],
+    [taskIdByConvId]
+  );
+
+  // Fetch task details for each task (status comes from task details)
+  const taskDetailsQueries = useQueries(
+    uniqueTaskIds.map((taskId) => ({
+      queryKey: ['task', taskId],
+      queryFn: () => taskService.getTask(taskId),
+      enabled: !!taskId,
+    }))
+  );
+
+  // Map convId -> task (from task details)
+  const taskByConvId = useMemo(() => {
+    const taskByTaskId: Record<string, any> = {};
+    uniqueTaskIds.forEach((taskId, i) => {
+      const data = taskDetailsQueries[i]?.data;
+      if (data) taskByTaskId[taskId] = data;
+    });
+    const map: Record<string, any> = {};
+    Object.entries(taskIdByConvId).forEach(([convId, taskId]) => {
+      if (taskByTaskId[taskId]) map[convId] = taskByTaskId[taskId];
+    });
+    return map;
+  }, [taskIdByConvId, uniqueTaskIds, taskDetailsQueries]);
+
+  // Filter task groups by search and by status (using task details)
+  const filteredTaskGroups = useMemo(() => {
     let filtered = taskGroups;
 
     // Apply search filter
@@ -67,16 +201,22 @@ export const TaskDashboardScreen: React.FC = () => {
       filtered = filtered.filter(conv => {
         const nameMatch = conv.name?.toLowerCase().includes(query);
         const lastMessageMatch = conv.lastMessage?.content?.toLowerCase().includes(query);
-        const memberMatch = conv.otherMembers?.some(member => 
+        const memberMatch = conv.otherMembers?.some(member =>
           member.name?.toLowerCase().includes(query)
         );
         return nameMatch || lastMessageMatch || memberMatch;
       });
     }
 
-    // Apply status filter (this would need task data - for now, we'll filter by conversation name/content)
-    // TODO: If you have task status in conversation data, filter here
-    // For now, we'll show all task groups and let the status filter be handled in the main content area
+    // Apply status filter using task details
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(conv => {
+        const convId = conv.id || conv.conversationId;
+        const task = taskByConvId[convId];
+        const category = getTaskStatusCategory(task);
+        return category === statusFilter;
+      });
+    }
 
     // Sort: pinned first, then by last message time
     return filtered.sort((a, b) => {
@@ -84,12 +224,12 @@ export const TaskDashboardScreen: React.FC = () => {
       const bPinned = b.isPinned || b.is_pinned || false;
       if (aPinned && !bPinned) return -1;
       if (!aPinned && bPinned) return 1;
-      
+
       const aTime = new Date(a.lastMessageTime || a.last_message_time || 0).getTime();
       const bTime = new Date(b.lastMessageTime || b.last_message_time || 0).getTime();
       return bTime - aTime;
     });
-  }, [taskGroups, searchQuery, statusFilter]);
+  }, [taskGroups, searchQuery, statusFilter, taskByConvId]);
 
   // Update conversation with new message (matching mobile pattern)
   const updateConversationWithNewMessage = (message: any) => {
@@ -300,26 +440,103 @@ export const TaskDashboardScreen: React.FC = () => {
           </button>
         </div>
         
-        {/* Search Bar */}
-        <div className="relative mb-4">
-          <span className="absolute inset-y-0 left-3 flex items-center text-gray-400 dark:text-gray-500">
-            <span className="material-icons-outlined text-lg">search</span>
-          </span>
-          <input
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-surface-dark focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-400 transition-all"
-            placeholder="Search task groups..."
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-              aria-label="Clear search"
-            >
-              <span className="material-icons-outlined text-lg">close</span>
-            </button>
+        {/* Google-style Search Box: input + suggestions in one container */}
+        <div
+          className={`relative mb-4 rounded-2xl border bg-white dark:bg-surface-dark overflow-hidden transition-all duration-200 z-10 ${
+            showSuggestions && suggestions.length > 0
+              ? 'border-primary/40 shadow-lg shadow-primary/5 dark:shadow-primary/10'
+              : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-md'
+          }`}
+          ref={suggestionsRef}
+        >
+          <div className="relative flex items-center">
+            <span className="absolute left-4 flex items-center text-gray-400 dark:text-gray-500 pointer-events-none">
+              <span className="material-icons-outlined text-xl">search</span>
+            </span>
+            <input
+              ref={searchInputRef}
+              className="w-full pl-12 pr-12 py-3.5 bg-transparent border-0 text-base text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-0 focus:outline-none"
+              placeholder="Search tasks (e.g. G, GS for GSTR 1, GSTR 9…)"
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setShowSuggestions(true);
+                setHighlightedIndex(-1);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+              onKeyDown={(e) => {
+                if (!showSuggestions || suggestions.length === 0) {
+                  if (e.key === 'Escape') setShowSuggestions(false);
+                  return;
+                }
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setHighlightedIndex((i) => (i < suggestions.length - 1 ? i + 1 : 0));
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setHighlightedIndex((i) => (i > 0 ? i - 1 : suggestions.length - 1));
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const item = suggestions[highlightedIndex >= 0 ? highlightedIndex : 0];
+                  if (item?.title) {
+                    setSearchQuery(item.title);
+                    setShowSuggestions(false);
+                    setHighlightedIndex(-1);
+                  }
+                } else if (e.key === 'Escape') {
+                  setShowSuggestions(false);
+                  setHighlightedIndex(-1);
+                }
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setShowSuggestions(false);
+                  setHighlightedIndex(-1);
+                  searchInputRef.current?.focus();
+                }}
+                className="absolute right-3 flex items-center justify-center w-8 h-8 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-gray-300 transition-colors"
+                aria-label="Clear search"
+              >
+                <span className="material-icons-outlined text-lg">close</span>
+              </button>
+            )}
+          </div>
+          {showSuggestions && suggestions.length > 0 && (
+            <>
+              <div className="border-t border-gray-100 dark:border-gray-700" />
+              <div className="max-h-60 overflow-y-auto py-1">
+                {suggestions.map((item, index) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setSearchQuery(item.title || '');
+                      setShowSuggestions(false);
+                      setHighlightedIndex(-1);
+                      searchInputRef.current?.focus();
+                    }}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
+                      index === highlightedIndex
+                        ? 'bg-gray-100 dark:bg-gray-700/80 text-gray-900 dark:text-white'
+                        : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800/50'
+                    }`}
+                  >
+                    <span className="material-icons-outlined text-[22px] text-gray-400 dark:text-gray-500 shrink-0">search</span>
+                    <span className="font-medium truncate">{item.title}</span>
+                    {item.frequency && (
+                      <span className="ml-auto text-xs text-gray-500 dark:text-gray-400 shrink-0">{item.frequency}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
 
@@ -407,11 +624,18 @@ export const TaskDashboardScreen: React.FC = () => {
                 };
 
                 const timeDisplay = formatTime(lastMessageTime);
+                const task = taskByConvId[convId];
+                const taskStatusCategory = getTaskStatusCategory(task);
+                const isSelected = selectedConversationId === convId;
 
                 return (
                   <div
                     key={convId}
-                    className="group p-3 rounded-xl transition-all duration-200 cursor-pointer flex items-center gap-3 hover:bg-white dark:hover:bg-surface-dark hover:shadow-md hover:scale-[1.02] active:scale-[0.98] border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
+                    className={`group p-3 rounded-xl transition-all duration-200 cursor-pointer flex items-center gap-3 hover:bg-white dark:hover:bg-surface-dark hover:shadow-md hover:scale-[1.02] active:scale-[0.98] border ${
+                      isSelected
+                        ? 'bg-primary/10 dark:bg-primary/20 border-primary shadow-md'
+                        : 'border-transparent hover:border-gray-200 dark:hover:border-gray-700'
+                    }`}
                     onClick={() => {
                       navigate(isAdmin ? `/admin/tasks/task-group/${convId}` : `/tasks/task-group/${convId}`);
                     }}
@@ -437,13 +661,27 @@ export const TaskDashboardScreen: React.FC = () => {
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-baseline mb-1">
-                        <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate group-hover:text-primary dark:group-hover:text-primary/80 transition-colors">
+                      <div className="flex justify-between items-start gap-2 mb-1">
+                        <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate group-hover:text-primary dark:group-hover:text-primary/80 transition-colors flex-1 min-w-0">
                           {convName}
                         </h4>
-                        {timeDisplay && (
-                          <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0 ml-2">{timeDisplay}</span>
-                        )}
+                        <div className="flex flex-col items-end flex-shrink-0">
+                          {timeDisplay && (
+                            <span className="text-xs text-gray-400 dark:text-gray-500">{timeDisplay}</span>
+                          )}
+                          {/* Task status indicator - top right of card (from task details) */}
+                          {taskStatusCategory && taskStatusCategory !== 'all' && (
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide mt-0.5 ${STATUS_COLORS[taskStatusCategory]}`}
+                              title={STATUS_LABELS[taskStatusCategory]}
+                            >
+                              <span className="material-icons-outlined" style={{ fontSize: '10px' }}>
+                                {STATUS_ICONS[taskStatusCategory]}
+                              </span>
+                              {STATUS_LABELS[taskStatusCategory]}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="flex items-center gap-1.5">
                         {lastMessage && (
@@ -472,7 +710,7 @@ export const TaskDashboardScreen: React.FC = () => {
               <span className="material-icons-outlined text-4xl text-gray-400 dark:text-gray-600">
                 {searchQuery ? 'search_off' : 'groups'}
               </span>
-            </div>
+        </div>
             <p className="text-gray-600 dark:text-gray-400 font-medium mb-1">
               {searchQuery ? 'No task groups found' : 'No task groups yet'}
             </p>
@@ -480,14 +718,14 @@ export const TaskDashboardScreen: React.FC = () => {
               <>
                 <p className="text-gray-500 dark:text-gray-500 text-sm mb-4 text-center">
                   Create your first task to get started
-                </p>
-                <button
+          </p>
+          <button
                   onClick={() => setShowTaskCreateModal(true)}
                   className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg font-semibold text-sm shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 active:scale-95"
-                >
+          >
                   <span className="material-icons-outlined text-lg">add</span>
                   <span>Create Task</span>
-                </button>
+          </button>
               </>
             )}
           </div>
@@ -496,8 +734,13 @@ export const TaskDashboardScreen: React.FC = () => {
     </div>
   );
 
-  // Main content (right side - empty state)
-  const mainContent = (
+  // Main content (right side): chat when a task group is selected, otherwise empty state
+  const mainContent = selectedConversationId ? (
+    <TaskGroupChatConversation
+      conversationId={selectedConversationId}
+      embedInTaskDashboard
+    />
+  ) : (
     <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-gray-500 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       <div className="text-center px-6">
         <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
@@ -507,15 +750,15 @@ export const TaskDashboardScreen: React.FC = () => {
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-sm">
           Select a task group from the list to view details and manage tasks
         </p>
-        <button
-          onClick={() => setShowTaskCreateModal(true)}
+            <button
+              onClick={() => setShowTaskCreateModal(true)}
           className="inline-flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary/90 text-white rounded-xl font-semibold text-sm shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all duration-200 hover:scale-105 active:scale-95"
-        >
+            >
           <span className="material-icons-outlined text-lg">add</span>
           <span>Create New Task</span>
-        </button>
-      </div>
-    </div>
+            </button>
+                </div>
+              </div>
   );
 
   if (isAdmin) {
@@ -524,11 +767,11 @@ export const TaskDashboardScreen: React.FC = () => {
         <div className="flex h-full">
           <div className="w-80 md:w-96 bg-background-light dark:bg-background-dark flex flex-col border-r border-border-light dark:border-border-dark relative">
             {taskGroupListContent}
-          </div>
+              </div>
           <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden">
             {mainContent}
-          </div>
-        </div>
+                </div>
+              </div>
 
         {/* Floating Create Button (Mobile/Tablet) */}
         <button
@@ -558,7 +801,7 @@ export const TaskDashboardScreen: React.FC = () => {
       <div className="flex h-full">
         <div className="w-80 md:w-96 bg-background-light dark:bg-background-dark flex flex-col border-r border-border-light dark:border-border-dark relative">
           {taskGroupListContent}
-        </div>
+              </div>
         <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden">
           {mainContent}
         </div>
