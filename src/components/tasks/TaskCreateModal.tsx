@@ -44,9 +44,17 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [financialValue, setFinancialValue] = useState<string>('');
   const [financeType, setFinanceType] = useState<'income' | 'expense'>('income');
   const [selectedAssignees, setSelectedAssignees] = useState<any[]>([]);
-  const [startDate, setStartDate] = useState(new Date());
-  const [targetDate, setTargetDate] = useState(new Date());
-  const [dueDate, setDueDate] = useState(new Date());
+  const setDateTo9AM = (d: Date) => {
+    d.setHours(9, 0, 0, 0);
+    return d;
+  };
+  const [startDate, setStartDate] = useState(() => setDateTo9AM(new Date()));
+  const [targetDate, setTargetDate] = useState(() => setDateTo9AM(new Date()));
+  const [dueDate, setDueDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return setDateTo9AM(d);
+  });
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showTargetPicker, setShowTargetPicker] = useState(false);
   const [showDuePicker, setShowDuePicker] = useState(false);
@@ -58,19 +66,22 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const { toast } = useToast();
   const { user } = useAuth();
 
-  // Initialize form with initial values when modal opens
+  // Initialize form with initial values when modal opens (all dates default to 9:00 AM)
   useEffect(() => {
     if (visible) {
       setTitle(initialTitle);
       setDescription(initialDescription);
       if (initialDueDate) {
-        setDueDate(initialDueDate);
-        setTargetDate(initialDueDate);
+        const d = new Date(initialDueDate);
+        d.setHours(9, 0, 0, 0);
+        setDueDate(d);
+        setTargetDate(new Date(d));
       } else {
         const defaultDueDate = new Date();
         defaultDueDate.setDate(defaultDueDate.getDate() + 30);
+        defaultDueDate.setHours(9, 0, 0, 0);
         setDueDate(defaultDueDate);
-        setTargetDate(defaultDueDate);
+        setTargetDate(new Date(defaultDueDate));
       }
     }
   }, [visible, initialTitle, initialDescription, initialDueDate]);
@@ -107,7 +118,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     });
   };
 
-  // Reset form
+  // Reset form (all dates default to 9:00 AM)
   const resetForm = () => {
     setIsRecurring(false);
     setTitle('');
@@ -117,9 +128,14 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     setFinancialValue('');
     setFinanceType('income');
     setSelectedAssignees([]);
-    setStartDate(new Date());
-    setTargetDate(new Date());
-    setDueDate(new Date());
+    const today9am = new Date();
+    today9am.setHours(9, 0, 0, 0);
+    setStartDate(today9am);
+    setTargetDate(new Date(today9am));
+    const due30 = new Date();
+    due30.setDate(due30.getDate() + 30);
+    due30.setHours(9, 0, 0, 0);
+    setDueDate(due30);
     setRecurrenceType('weekly');
     setAutoEscalate(false);
     setReportingMemberId(null);
@@ -239,7 +255,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
       <div 
         className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl mx-auto"
         onClick={(e) => e.stopPropagation()}
@@ -615,7 +631,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
 
         {/* Assignee Selection Modal - Centered in middle of screen */}
         {showAssigneeModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowAssigneeModal(false)}>
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowAssigneeModal(false)}>
             <div 
               className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl max-h-[80vh] flex flex-col mx-auto"
               onClick={(e) => e.stopPropagation()}
@@ -690,6 +706,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             onChange={setStartDate}
             onClose={() => setShowStartPicker(false)}
             title="Start Date"
+            hideTimePicker
           />
         )}
 
@@ -699,6 +716,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             onChange={setTargetDate}
             onClose={() => setShowTargetPicker(false)}
             title="Target Date"
+            hideTimePicker
           />
         )}
 
@@ -708,6 +726,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             onChange={setDueDate}
             onClose={() => setShowDuePicker(false)}
             title="Due Date"
+            hideTimePicker
           />
         )}
       </div>

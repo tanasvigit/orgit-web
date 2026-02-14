@@ -5,20 +5,38 @@ interface CustomDatePickerProps {
   onChange: (date: Date) => void;
   onClose: () => void;
   title: string;
+  /** When true, hide time picker and use defaultTime (e.g. 9:00 AM) for the selected date */
+  hideTimePicker?: boolean;
+  /** Default time when hideTimePicker is true. Defaults to 9:00 AM. */
+  defaultTime?: { hour: number; minute: number };
 }
+
+const DEFAULT_TIME_9AM = { hour: 9, minute: 0 };
 
 export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
   value,
   onChange,
   onClose,
   title,
+  hideTimePicker = false,
+  defaultTime = DEFAULT_TIME_9AM,
 }) => {
-  const [tempDate, setTempDate] = useState(new Date(value));
+  const [tempDate, setTempDate] = useState(() => {
+    const d = new Date(value);
+    if (hideTimePicker) {
+      d.setHours(defaultTime.hour, defaultTime.minute, 0, 0);
+    }
+    return d;
+  });
   const [currentView, setCurrentView] = useState<'calendar' | 'time'>('calendar');
 
   useEffect(() => {
-    setTempDate(new Date(value));
-  }, [value]);
+    const d = new Date(value);
+    if (hideTimePicker) {
+      d.setHours(defaultTime.hour, defaultTime.minute, 0, 0);
+    }
+    setTempDate(d);
+  }, [value, hideTimePicker, defaultTime.hour, defaultTime.minute]);
 
   const getDaysInMonth = (year: number, month: number) => {
     // month is 1-based (1-12), convert to 0-based for JavaScript Date
@@ -58,8 +76,13 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
   const handleDayClick = (day: number) => {
     const newDate = new Date(tempDate);
     newDate.setDate(day);
-    setTempDate(newDate);
-    setCurrentView('time');
+    if (hideTimePicker) {
+      newDate.setHours(defaultTime.hour, defaultTime.minute, 0, 0);
+      setTempDate(newDate);
+    } else {
+      setTempDate(newDate);
+      setCurrentView('time');
+    }
   };
 
   const handleTimeChange = (field: 'hour' | 'minute', val: number) => {
@@ -197,23 +220,25 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
               })}
             </div>
 
-            {/* Time Selection Toggle */}
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <button
-                onClick={() => setCurrentView('time')}
-                className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              >
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Time</span>
-                <span className="text-sm text-gray-900 dark:text-white font-semibold">
-                  {currentHour.toString().padStart(2, '0')}:{currentMinute.toString().padStart(2, '0')}
-                </span>
-              </button>
-            </div>
+            {/* Time Selection Toggle - hidden when hideTimePicker (e.g. task creation: default 9:00 AM) */}
+            {!hideTimePicker && (
+              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <button
+                  onClick={() => setCurrentView('time')}
+                  className="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                >
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Time</span>
+                  <span className="text-sm text-gray-900 dark:text-white font-semibold">
+                    {currentHour.toString().padStart(2, '0')}:{currentMinute.toString().padStart(2, '0')}
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Time Selection View */}
-        {currentView === 'time' && (
+        {/* Time Selection View - hidden when hideTimePicker */}
+        {!hideTimePicker && currentView === 'time' && (
           <div className="p-6">
             <button
               onClick={() => setCurrentView('calendar')}
