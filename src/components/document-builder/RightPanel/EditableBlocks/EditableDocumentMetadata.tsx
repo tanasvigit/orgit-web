@@ -54,11 +54,23 @@ export const EditableDocumentMetadata: React.FC = () => {
                         <span className="font-semibold">Date:</span>{' '}
                         <input
                             type="date"
+                            min={new Date().toISOString().split('T')[0]}
                             className="bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-primary rounded px-1 py-0.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors inline-block"
                             value={getValue('date') || new Date().toISOString().split('T')[0]}
-                            onChange={(e) => handleFieldChange('date', e.target.value)}
+                            onChange={(e) => {
+                              const selectedDate = e.target.value;
+                              if (selectedDate && new Date(selectedDate) < new Date().setHours(0, 0, 0, 0)) {
+                                alert('Cannot select a past date. Please choose today or a future date.');
+                                return;
+                              }
+                              handleFieldChange('date', selectedDate);
+                            }}
                             onFocus={() => handleFieldFocus('date')}
                             onBlur={() => handleFieldBlur('date')}
+                            onInvalid={(e) => {
+                              e.preventDefault();
+                              alert('Cannot select a past date. Please choose today or a future date.');
+                            }}
                         />
                     </div>
                     <div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { format } from 'date-fns';
+import { parseTimestamp, formatChatTime, formatChatDate } from '../../utils/chatTime';
 import { messageService } from '../../services/messageService';
 import { conversationService } from '../../services/conversationService';
 import { taskService } from '../../services/taskService';
@@ -625,47 +625,18 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Format time helper
-  const formatTime = (timestamp?: string) => {
-    if (!timestamp) return '';
-    try {
-      return format(new Date(timestamp), 'h:mm a');
-    } catch {
-      return '';
-    }
-  };
+  // Format time helper – device local (mirrors mobile formatTime / formatTimeHHMM)
+  const formatTime = (timestamp?: string) => formatChatTime(timestamp);
 
-  // Format date helper
-  const formatDate = (timestamp?: string) => {
-    if (!timestamp) return '';
-    try {
-      const date = new Date(timestamp);
-      const today = new Date();
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
+  // Format date helper – device local (Today, Yesterday, or date; mirrors mobile formatDate)
+  const formatDate = (timestamp?: string) => formatChatDate(timestamp);
 
-      if (date.toDateString() === today.toDateString()) {
-        return 'Today';
-      } else if (date.toDateString() === yesterday.toDateString()) {
-        return 'Yesterday';
-      } else {
-        return format(date, 'MMM d, yyyy');
-      }
-    } catch {
-      return '';
-    }
-  };
-
-  // Should show date separator
+  // Should show date separator – use parseTimestamp for device-local date comparison
   const shouldShowDateSeparator = (currentMessage: any, previousMessage: any) => {
     if (!previousMessage) return true;
-    try {
-      const currentDate = new Date(currentMessage.created_at).toDateString();
-      const previousDate = new Date(previousMessage.created_at).toDateString();
-      return currentDate !== previousDate;
-    } catch {
-      return false;
-    }
+    const currentDate = parseTimestamp(currentMessage.created_at)?.toDateString();
+    const previousDate = parseTimestamp(previousMessage.created_at)?.toDateString();
+    return currentDate != null && previousDate != null && currentDate !== previousDate;
   };
 
   // Handle typing (with debouncing)

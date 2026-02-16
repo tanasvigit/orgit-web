@@ -137,6 +137,15 @@ export const TaskDashboardScreen: React.FC = () => {
     }
   );
 
+  // Fetch tasks directly (to show newly assigned tasks that might not have conversations yet)
+  const { data: directTasks = [] } = useQuery(
+    'tasks',
+    () => taskService.getTasks(),
+    {
+      refetchInterval: 30000, // Refetch every 30 seconds
+    }
+  );
+
   // Filter to only task groups
   const taskGroups = useMemo(() => {
     return conversations.filter(conv => conv.isTaskGroup || conv.is_task_group);
@@ -191,6 +200,58 @@ export const TaskDashboardScreen: React.FC = () => {
     });
     return map;
   }, [taskIdByConvId, uniqueTaskIds, taskDetailsQueries]);
+
+  // Get task IDs that already have conversations
+  const tasksWithConversations = useMemo(() => {
+    return new Set(Object.values(taskIdByConvId).filter(Boolean));
+  }, [taskIdByConvId]);
+
+  // Get tasks without conversations (newly assigned tasks)
+  const tasksWithoutConversations = useMemo(() => {
+    if (!Array.isArray(directTasks)) return [];
+    const currentUserId = user?.id || (user as any)?.userId;
+    let filtered = directTasks.filter((task: any) => {
+      if (!task?.id) return false;
+      // Skip if task already has a conversation
+      if (tasksWithConversations.has(task.id)) return false;
+      // Skip deleted tasks
+      if (isTaskDeleted(task)) return false;
+      // Only show tasks where current user is an assignee
+      const assignees = Array.isArray(task.assignees) ? task.assignees : [];
+      const isAssigned = assignees.some((a: any) => {
+        const assigneeId = a.id || a.user_id || a.userId;
+        return assigneeId === currentUserId;
+      });
+      // Also check current_user_status
+      const hasCurrentUserStatus = task.current_user_status != null;
+      return isAssigned || hasCurrentUserStatus;
+    });
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((task: any) => {
+        const titleMatch = task.title?.toLowerCase().includes(query);
+        const descMatch = task.description?.toLowerCase().includes(query);
+        return titleMatch || descMatch;
+      });
+    }
+
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter((task: any) => {
+        const category = getTaskStatusCategory(task);
+        return category === statusFilter;
+      });
+    }
+
+    // Sort by created date (newest first)
+    return filtered.sort((a: any, b: any) => {
+      const aTime = new Date(a.created_at || a.createdAt || 0).getTime();
+      const bTime = new Date(b.created_at || b.createdAt || 0).getTime();
+      return bTime - aTime;
+    });
+  }, [directTasks, tasksWithConversations, user, searchQuery, statusFilter]);
 
   // Filter task groups by search and by status (using task details). Hide deleted tasks from list (still visible in Messages with deleted indicator).
   const filteredTaskGroups = useMemo(() => {
@@ -711,7 +772,141 @@ export const TaskDashboardScreen: React.FC = () => {
               })}
             </div>
           </div>
-        ) : (
+        ) : null}
+
+        {/* Tasks Without Conversations (Newly Assigned) */}
+        {tasksWithoutConversations.length > 0 && (
+          <div>
+            <h3 className="flex items-center text-xs font-bold text-primary uppercase tracking-wider mb-3 px-2">
+              <span className="material-icons-round text-sm mr-1">assignment</span>
+              Pending Tasks ({tasksWithoutConversations.length})
+            </h3>
+            <div className="space-y-1">
+              {tasksWithoutConversations.map((task: any) => {
+                const taskId = task.id;
+                const taskTitle = task.title || 'Untitled Task';
+                const taskStatusCategory = getTaskStatusCategory(task);
+                const currentUserId = user?.id || (user as any)?.userId;
+                const creatorId = task.created_by || task.creator_id;
+                const isCreator = creatorId === currentUserId;
+                const currentUserStatus = task.current_user_status || {};
+                const hasAccepted = currentUserStatus.has_accepted || false;
+                const hasRejected = currentUserStatus.has_rejected || false;
+                const canAccept = !isCreator && !hasAccepted && !hasRejected;
+                const canReject = !isCreator && !hasRejected && !hasAccepted;
+
+                // Handle accept
+                const handleAccept = async (e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  try {
+                    await taskService.acceptTask(taskId);
+                    toast.success('Task accepted');
+                    queryClient.invalidateQueries('tasks');
+                    queryClient.invalidateQueries('conversations');
+                    queryClient.invalidateQueries(['task', taskId]);
+                    queryClient.invalidateQueries(['dashboard']);
+                    queryClient.invalidateQueries(['dashboard-statistics']);
+                  } catch (error: any) {
+                    toast.error(error.response?.data?.error || 'Failed to accept task');
+                  }
+                };
+
+                // Handle reject
+                const handleReject = async (e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  const reason = prompt('Please provide a reason for rejecting this task:');
+                  if (!reason || reason.trim() === '') {
+                    toast.error('Please provide a reason');
+                    return;
+                  }
+                  try {
+                    await taskService.rejectTask(taskId, reason.trim());
+                    toast.success('Task rejected');
+                    queryClient.invalidateQueries('tasks');
+                    queryClient.invalidateQueries('conversations');
+                    queryClient.invalidateQueries(['task', taskId]);
+                    queryClient.invalidateQueries(['dashboard']);
+                    queryClient.invalidateQueries(['dashboard-statistics']);
+                  } catch (error: any) {
+                    toast.error(error.response?.data?.error || 'Failed to reject task');
+                  }
+                };
+
+                return (
+                  <div
+                    key={taskId}
+                    className="group p-3 rounded-xl transition-all duration-200 border border-gray-200 dark:border-gray-700 hover:bg-white dark:hover:bg-surface-dark hover:shadow-md"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 dark:from-amber-600 dark:to-amber-700 flex items-center justify-center shadow-sm">
+                          <span className="material-icons-round text-white text-2xl">
+                            assignment
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-start gap-2 mb-1">
+                          <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate flex-1 min-w-0">
+                            {taskTitle}
+                          </h4>
+                          {taskStatusCategory && taskStatusCategory !== 'all' && (
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${STATUS_COLORS[taskStatusCategory]}`}
+                            >
+                              <span className="material-icons-outlined" style={{ fontSize: '10px' }}>
+                                {STATUS_ICONS[taskStatusCategory]}
+                              </span>
+                              {STATUS_LABELS[taskStatusCategory]}
+                            </span>
+                          )}
+                        </div>
+                        {task.description && (
+                          <p className="text-xs text-gray-600 dark:text-gray-400 truncate mb-2">
+                            {task.description.length > 80 ? `${task.description.substring(0, 80)}...` : task.description}
+                          </p>
+                        )}
+                        {(canAccept || canReject) && (
+                          <div className="flex gap-2 mt-2">
+                            {canAccept && (
+                              <button
+                                onClick={handleAccept}
+                                className="flex-1 px-3 py-1.5 bg-primary hover:bg-primary/90 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1"
+                              >
+                                <span className="material-icons-outlined text-sm">check</span>
+                                Accept
+                              </button>
+                            )}
+                            {canReject && (
+                              <button
+                                onClick={handleReject}
+                                className="flex-1 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1"
+                              >
+                                <span className="material-icons-outlined text-sm">close</span>
+                                Reject
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {(hasAccepted || hasRejected) && (
+                          <div className="mt-2">
+                            <span className={`text-xs font-medium ${
+                              hasAccepted ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                            }`}>
+                              {hasAccepted ? '✓ Accepted' : '✗ Rejected'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {filteredTaskGroups.length === 0 && tasksWithoutConversations.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 px-4">
             <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-4">
               <span className="material-icons-outlined text-4xl text-gray-400 dark:text-gray-600">
@@ -719,7 +914,7 @@ export const TaskDashboardScreen: React.FC = () => {
               </span>
         </div>
             <p className="text-gray-600 dark:text-gray-400 font-medium mb-1">
-              {searchQuery ? 'No task groups found' : 'No task groups yet'}
+              {searchQuery ? 'No tasks found' : 'No tasks yet'}
             </p>
             {!searchQuery && (
               <>

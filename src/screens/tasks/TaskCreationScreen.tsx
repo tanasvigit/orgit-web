@@ -12,7 +12,7 @@ import { AdminLayout } from '../../components/admin/AdminLayout';
 
 export const TaskCreationScreen: React.FC = () => {
   const navigate = useNavigate();
-  const { toast } = useToast();
+  const location = useLocation();
   const [taskType, setTaskType] = useState<'one_time' | 'recurring'>('one_time');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -40,6 +40,42 @@ export const TaskCreationScreen: React.FC = () => {
   );
 
   const users = usersData || [];
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
+
+  // Check if form has any data entered by user
+  const hasFormData = () => {
+    return (
+      title.trim().length > 0 ||
+      description.trim().length > 0 ||
+      selectedAssignees.length > 0 ||
+      financialValue.trim().length > 0 ||
+      taskType === 'recurring' ||
+      taskOwner !== 'self' ||
+      taskOwnerUserId !== null ||
+      reportingMemberId !== null ||
+      autoEscalate
+    );
+  };
+
+  // Handle cancel with confirmation if data exists
+  const handleCancel = () => {
+    if (hasFormData()) {
+      toast.confirm('You have unsaved changes. Are you sure you want to leave?', {
+        confirmLabel: 'Discard',
+        cancelLabel: 'Cancel',
+        onConfirm: () => {
+          navigate(-1);
+        },
+        onCancel: () => {
+          // Do nothing, stay on page
+        },
+      });
+    } else {
+      navigate(-1);
+    }
+  };
 
   // Format date time helper
   const formatDateTime = (date: Date) => {
@@ -134,7 +170,7 @@ export const TaskCreationScreen: React.FC = () => {
       {/* Header */}
       <div className="sticky top-0 z-50 bg-primary dark:bg-primary/90 backdrop-blur-md border-b border-primary/20 px-4 h-14 flex items-center justify-between shadow-md">
         <button
-          onClick={() => navigate(-1)}
+          onClick={handleCancel}
           className="text-white hover:bg-white/20 rounded-lg px-3 py-1.5 transition-colors font-medium"
         >
           Cancel

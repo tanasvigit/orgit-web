@@ -9,6 +9,8 @@ interface CustomDatePickerProps {
   hideTimePicker?: boolean;
   /** Default time when hideTimePicker is true. Defaults to 9:00 AM. */
   defaultTime?: { hour: number; minute: number };
+  /** When true, prevents selecting past dates. Defaults to true. */
+  preventPastDates?: boolean;
 }
 
 const DEFAULT_TIME_9AM = { hour: 9, minute: 0 };
@@ -20,6 +22,7 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
   title,
   hideTimePicker = false,
   defaultTime = DEFAULT_TIME_9AM,
+  preventPastDates = true,
 }) => {
   const [tempDate, setTempDate] = useState(() => {
     const d = new Date(value);
@@ -29,6 +32,7 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
     return d;
   });
   const [currentView, setCurrentView] = useState<'calendar' | 'time'>('calendar');
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   useEffect(() => {
     const d = new Date(value);
@@ -74,6 +78,12 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
   const minutes = Array.from({ length: 60 }, (_, i) => i);
 
   const handleDayClick = (day: number) => {
+    if (isPastDate(day, currentMonth, currentYear)) {
+      setValidationError('Cannot select a past date. Please choose today or a future date.');
+      setTimeout(() => setValidationError(null), 3000);
+      return;
+    }
+    setValidationError(null);
     const newDate = new Date(tempDate);
     newDate.setDate(day);
     if (hideTimePicker) {
@@ -92,6 +102,19 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
     } else {
       newDate.setMinutes(val);
     }
+    // Check if the selected date/time is in the past
+    if (isPastDateTime(newDate)) {
+      setValidationError('Cannot select a past date/time. Please choose a future date/time.');
+      setTimeout(() => setValidationError(null), 3000);
+      // Reset to today's date/time
+      const today = new Date();
+      if (hideTimePicker) {
+        today.setHours(defaultTime.hour, defaultTime.minute, 0, 0);
+      }
+      setTempDate(today);
+      return;
+    }
+    setValidationError(null);
     setTempDate(newDate);
   };
 
@@ -114,6 +137,12 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
   };
 
   const handleConfirm = () => {
+    if (preventPastDates && isPastDateTime(tempDate)) {
+      setValidationError('Cannot select a past date/time. Please choose today or a future date.');
+      setTimeout(() => setValidationError(null), 3000);
+      return;
+    }
+    setValidationError(null);
     onChange(tempDate);
     onClose();
   };
@@ -125,6 +154,21 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
       currentMonth === today.getMonth() + 1 &&
       currentYear === today.getFullYear()
     );
+  };
+
+  const isPastDate = (day: number, month: number, year: number) => {
+    if (!preventPastDates) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkDate = new Date(year, month - 1, day);
+    checkDate.setHours(0, 0, 0, 0);
+    return checkDate < today;
+  };
+
+  const isPastDateTime = (date: Date) => {
+    if (!preventPastDates) return false;
+    const now = new Date();
+    return date < now;
   };
 
   return (
@@ -149,6 +193,13 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
             Done
           </button>
         </div>
+
+        {/* Validation Error Message */}
+        {validationError && (
+          <div className="mx-6 mt-4 px-4 py-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <p className="text-sm text-red-600 dark:text-red-400">{validationError}</p>
+          </div>
+        )}
 
         {/* Calendar View */}
         {currentView === 'calendar' && (
@@ -201,13 +252,17 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
 
                 const isSelected = day === currentDay;
                 const isTodayDay = isToday(day);
+                const isPast = isPastDate(day, currentMonth, currentYear);
 
                 return (
                   <button
                     key={day}
                     onClick={() => handleDayClick(day)}
+                    disabled={isPast}
                     className={`aspect-square flex items-center justify-center rounded-lg text-sm font-medium transition-colors ${
-                      isSelected
+                      isPast
+                        ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-50'
+                        : isSelected
                         ? 'bg-primary text-white shadow-md'
                         : isTodayDay
                         ? 'bg-primary/20 text-primary border-2 border-primary'

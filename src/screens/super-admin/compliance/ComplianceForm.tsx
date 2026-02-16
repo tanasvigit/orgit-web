@@ -244,10 +244,22 @@ export const ComplianceForm: React.FC = () => {
                   </label>
                   <input
                     type="date"
+                    min={new Date().toISOString().split('T')[0]}
                     disabled={isReadOnly}
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
                     value={formData.effectiveDate}
-                    onChange={(e) => setFormData({ ...formData, effectiveDate: e.target.value })}
+                    onChange={(e) => {
+                      const selectedDate = e.target.value;
+                      if (selectedDate && new Date(selectedDate) < new Date().setHours(0, 0, 0, 0)) {
+                        alert('Cannot select a past date. Please choose today or a future date.');
+                        return;
+                      }
+                      setFormData({ ...formData, effectiveDate: selectedDate });
+                    }}
+                    onInvalid={(e) => {
+                      e.preventDefault();
+                      alert('Cannot select a past date. Please choose today or a future date.');
+                    }}
                   />
                 </div>
 

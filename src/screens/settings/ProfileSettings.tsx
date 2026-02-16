@@ -9,6 +9,7 @@ import { AdminLayout } from '../../components/admin/AdminLayout';
 export const ProfileSettings: React.FC = () => {
   const navigate = useNavigate();
   const { user, updateUser } = useAuth();
+  const { toast } = useToast();
   const isAdmin = user?.role === 'admin';
   const [name, setName] = useState(user?.name || '');
   const [bio, setBio] = useState(user?.bio || user?.about || '');
@@ -36,7 +37,7 @@ export const ProfileSettings: React.FC = () => {
       const response = await authService.uploadProfilePhoto(file);
       if (response.success && response.data?.url) {
         setProfilePhoto(response.data.url);
-        updateUser({ ...user, profilePhotoUrl: response.data.url });
+        updateUser({ ...user, profilePhotoUrl: response.data.url, profile_photo: response.data.url });
         toast.success('Profile photo updated successfully');
       }
     } catch (error) {
@@ -45,6 +46,35 @@ export const ProfileSettings: React.FC = () => {
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleDeletePhoto = async () => {
+    if (!profilePhoto) return;
+    
+    toast.confirm('Are you sure you want to delete your profile photo?', {
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      onConfirm: async () => {
+        try {
+          const response = await authService.deleteProfilePhoto();
+          if (response.success) {
+            setProfilePhoto(null);
+            // Refetch user data from backend to ensure consistency
+            const userResponse = await authService.getCurrentUser();
+            if (userResponse.success && userResponse.data) {
+              updateUser(userResponse.data);
+            } else {
+              // Fallback: update optimistically if refetch fails
+              updateUser({ ...user, profilePhotoUrl: null, profile_photo: null, profile_photo_url: null });
+            }
+            toast.success('Profile photo deleted successfully');
+          }
+        } catch (error: any) {
+          console.error('Delete error:', error);
+          toast.error(error.response?.data?.error || 'Failed to delete profile photo');
+        }
+      },
+    });
   };
 
   const handleSave = async () => {
@@ -109,11 +139,21 @@ export const ProfileSettings: React.FC = () => {
             <div className="flex-shrink-0">
               <div className="relative">
                 {profilePhoto ? (
-                  <img
-                    src={profilePhoto}
-                    alt="Profile"
-                    className="w-32 h-32 rounded-full object-cover border-4 border-white dark:border-gray-800 shadow-lg"
-                  />
+                  <>
+                    <img
+                      src={profilePhoto}
+                      alt="Profile"
+                      className="w-32 h-32 rounded-full object-cover border-4 border-white dark:border-gray-800 shadow-lg"
+                    />
+                    <button
+                      onClick={handleDeletePhoto}
+                      className="absolute top-0 right-0 p-2 bg-red-500 rounded-full border-2 border-white dark:border-gray-800 shadow-lg hover:bg-red-600 transition-colors"
+                      title="Delete Photo"
+                      disabled={uploading}
+                    >
+                      <span className="material-icons-outlined text-white text-sm">delete</span>
+                    </button>
+                  </>
                 ) : (
                   <div className="w-32 h-32 rounded-full bg-gray-300 dark:bg-gray-700 flex items-center justify-center">
                     <span className="material-icons-outlined text-6xl text-gray-500">person</span>
@@ -130,14 +170,26 @@ export const ProfileSettings: React.FC = () => {
               </div>
             </div>
             <div className="flex-1 w-full md:w-auto">
-              <button
-                onClick={pickImage}
-                disabled={uploading}
-                className="px-6 py-2.5 flex items-center gap-2 text-primary hover:bg-primary/10 rounded-lg transition-colors disabled:opacity-50 font-medium border border-primary/20"
-              >
-                <span className="material-icons-outlined">camera_alt</span>
-                Change Photo
-              </button>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={pickImage}
+                  disabled={uploading}
+                  className="px-6 py-2.5 flex items-center gap-2 text-primary hover:bg-primary/10 rounded-lg transition-colors disabled:opacity-50 font-medium border border-primary/20"
+                >
+                  <span className="material-icons-outlined">camera_alt</span>
+                  {profilePhoto ? 'Change Photo' : 'Add Photo'}
+                </button>
+                {profilePhoto && (
+                  <button
+                    onClick={handleDeletePhoto}
+                    disabled={uploading}
+                    className="px-6 py-2.5 flex items-center gap-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50 font-medium border border-red-200 dark:border-red-800"
+                  >
+                    <span className="material-icons-outlined">delete</span>
+                    Delete Photo
+                  </button>
+                )}
+              </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">JPG, PNG or GIF. Max size 5MB</p>
               <input
                 ref={fileInputRef}

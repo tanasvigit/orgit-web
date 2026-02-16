@@ -67,6 +67,45 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const { toast } = useToast();
   const { user } = useAuth();
 
+  // Check if form has any data entered by user
+  const hasFormData = () => {
+    // Check if title has been modified (not just initial value)
+    const titleModified = title.trim() && title.trim() !== initialTitle;
+    // Check if description has been modified (not just initial value)
+    const descriptionModified = description.trim() && description.trim() !== initialDescription;
+    // Check other fields
+    const hasOtherData = 
+      selectedAssignees.length > 0 ||
+      financialValue.trim().length > 0 ||
+      isRecurring ||
+      taskOwner !== 'self' ||
+      taskOwnerUserId !== null ||
+      reportingMemberId !== null ||
+      autoEscalate;
+    
+    return titleModified || descriptionModified || hasOtherData;
+  };
+
+  // Handle close with confirmation if data exists
+  const handleClose = () => {
+    if (hasFormData()) {
+      toast.confirm('You have unsaved changes. Are you sure you want to close?', {
+        confirmLabel: 'Discard',
+        cancelLabel: 'Cancel',
+        onConfirm: () => {
+          resetForm();
+          onClose();
+        },
+        onCancel: () => {
+          // Do nothing, stay in modal
+        },
+      });
+    } else {
+      resetForm();
+      onClose();
+    }
+  };
+
   // Initialize form with initial values when modal opens (all dates default to 9:00 AM)
   useEffect(() => {
     if (visible) {
@@ -293,7 +332,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={handleClose}>
       <div 
         className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl mx-auto"
         onClick={(e) => e.stopPropagation()}
@@ -302,7 +341,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         <div className="flex items-center justify-between px-4 sm:px-6 py-4 bg-primary dark:bg-primary/90 rounded-t-2xl shrink-0">
           <h2 className="text-white text-base sm:text-lg font-bold">Create Task</h2>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-white hover:bg-white/20 rounded-full p-2 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
             aria-label="Close modal"
           >

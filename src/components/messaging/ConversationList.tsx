@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { format } from 'date-fns';
+import { formatChatListTimestamp } from '../../utils/chatTime';
 import { Conversation } from '../../services/conversationService';
 import { useAuth } from '../../context/AuthContext';
 
@@ -31,26 +31,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
 
-  const formatTime = (dateString?: string) => {
-    if (!dateString) return '';
-    try {
-      const date = new Date(dateString);
-      const now = new Date();
-      const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
-      
-      if (diffInHours < 24) {
-        return format(date, 'h:mm a');
-      } else if (diffInHours < 48) {
-        return 'Yesterday';
-      } else if (diffInHours < 168) {
-        return format(date, 'EEE');
-      } else {
-        return format(date, 'MMM d');
-      }
-    } catch {
-      return '';
-    }
-  };
+  const formatTime = (dateString?: string) => formatChatListTimestamp(dateString);
 
   const getConversationName = (conv: Conversation) => {
     // For direct chats, prioritize otherMembers name

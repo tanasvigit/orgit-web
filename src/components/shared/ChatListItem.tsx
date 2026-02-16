@@ -1,6 +1,6 @@
 import React from 'react';
 import { Avatar } from './Avatar';
-import { format } from 'date-fns';
+import { formatChatListTimestamp } from '../../utils/chatTime';
 
 interface ChatListItemProps {
   id: string;
@@ -30,17 +30,7 @@ export const ChatListItem: React.FC<ChatListItemProps> = ({
   priority,
   onClick,
 }) => {
-  const formatTimestamp = (date?: string) => {
-    if (!date) return '';
-    const msgDate = new Date(date);
-    const today = new Date();
-    const diffDays = Math.floor((today.getTime() - msgDate.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) return format(msgDate, 'h:mm a');
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return format(msgDate, 'EEE');
-    return format(msgDate, 'MMM d');
-  };
+  const formatTimestamp = (date?: string) => formatChatListTimestamp(date);
 
   return (
     <div
