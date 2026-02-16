@@ -365,20 +365,27 @@ export const CreateDocument: React.FC = () => {
       ...(schema?.defaultValues || {}),
     };
 
-    // Best-effort org autofill (if user didn't input)
+    const systemTemplateKey = (schema?.systemTemplateKey || (template as any).type || '') as string;
+    const isPaymentVoucher = /payment-voucher|payment_voucher/i.test(systemTemplateKey);
+
+    // Best-effort org autofill from Entity Master Data
     if (orgData) {
       initialValues.company_name = initialValues.company_name || orgData.name || '';
       initialValues.company_legal_name = initialValues.company_legal_name || orgData.name || '';
       initialValues.company_gstin = initialValues.company_gstin || orgData.gst || '';
       initialValues.company_email = initialValues.company_email || orgData.email || '';
-      initialValues.company_phone = initialValues.company_phone || orgData.mobile || '';
+      initialValues.company_phone = initialValues.company_phone || orgData.phoneNumber || orgData.mobile || '';
       initialValues.company_address = initialValues.company_address || orgData.address || '';
-      // Note: org logo is typically a URL; PDFs are more reliable with data URI. Keep empty unless user uploads.
+      if (isPaymentVoucher) {
+        initialValues.address_line1 = initialValues.address_line1 || orgData.addressLine1 || '';
+        initialValues.address_line2 = initialValues.address_line2 || orgData.addressLine2 || '';
+        initialValues.city = initialValues.city || (typeof orgData.city === 'string' ? orgData.city : orgData.city?.name) || '';
+        initialValues.pincode = initialValues.pincode || orgData.pinCode || '';
+        initialValues.company_logo_url = initialValues.company_logo_url || orgData.logoUrl || orgData.logo_url || '';
+      }
     }
 
     const computedTitle = `${template.name} - ${new Date().toLocaleDateString()}`;
-
-    const systemTemplateKey = (schema?.systemTemplateKey || (template as any).type || '') as string;
     const useInlineEditor = /tax-invoice|payment-voucher|tax_invoice|payment_voucher/i.test(systemTemplateKey);
 
     if (useInlineEditor) {

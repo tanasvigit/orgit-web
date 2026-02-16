@@ -47,10 +47,15 @@ export default {
         "bubble-incoming": "#ffffff",
         "border-light": "#E5E7EB", // Match code.html
         "border-dark": "#374151", // Match code.html
+        // Task Details design
+        "card-light": "#FFFFFF",
+        "card-dark": "#1E293B",
+        "task-primary": "#7C3AED",
       },
       fontFamily: {
         display: ["Public Sans", "sans-serif"],
         body: ["Noto Sans", "sans-serif"],
+        task: ["Inter", "sans-serif"],
       },
       borderRadius: {
         DEFAULT: "0.25rem",

@@ -7,6 +7,7 @@ import { dashboardService } from '../../services/dashboardService';
 import { useAuth } from '../../context/AuthContext';
 import { taskService } from '../../services/taskService';
 import { mergeTaskWithFinancial } from '../../utils/taskFinancialStorage';
+import { isTaskDeleted } from '../../utils/taskUtils';
 
 export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -96,7 +97,7 @@ export const AdminDashboard: React.FC = () => {
   const flattenTasksStructure = (tasks: any): any[] => {
     const result: any[] = [];
     if (!tasks) return result;
-    if (Array.isArray(tasks)) return tasks;
+    if (Array.isArray(tasks)) return tasks.filter((t) => t && t.id && !isTaskDeleted(t));
     if (typeof tasks === 'object') {
       Object.values(tasks).forEach((category: any) => {
         if (Array.isArray(category)) {
@@ -114,7 +115,7 @@ export const AdminDashboard: React.FC = () => {
         }
       });
     }
-    return result;
+    return result.filter((t) => t && t.id && !isTaskDeleted(t));
   };
 
   // Fetch full task details for a small set so assignees/progress stays accurate.

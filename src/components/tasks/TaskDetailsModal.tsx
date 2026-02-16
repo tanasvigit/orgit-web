@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { taskService } from '../../services/taskService';
 import { useAuth } from '../../context/AuthContext';
@@ -19,6 +20,9 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [processing, setProcessing] = useState(false);
@@ -261,6 +265,27 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
             <p className="text-gray-700 dark:text-gray-200 leading-relaxed text-base">
               {displayTask.description}
             </p>
+          </div>
+        )}
+
+        {/* Related document – open via app route so DocumentViewer calls GET /api/document-instances/:id */}
+        {(displayTask.document_instance_id || (displayTask as any).documentInstanceId) && (
+          <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm p-6 md:p-8">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-primary dark:text-purple-400 mb-3">
+              Related document
+            </h3>
+            <button
+              type="button"
+              onClick={() => {
+                const docId = displayTask.document_instance_id || (displayTask as any).documentInstanceId;
+                onClose();
+                navigate(isAdmin ? `/admin/documents/${docId}` : `/documents/${docId}`);
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10 dark:bg-primary/20 text-primary dark:text-primary font-semibold text-sm hover:bg-primary/20 dark:hover:bg-primary/30 transition-colors"
+            >
+              <span className="material-symbols-outlined text-lg">description</span>
+              View document
+            </button>
           </div>
         )}
 

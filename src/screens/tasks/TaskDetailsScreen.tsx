@@ -157,30 +157,8 @@ export const TaskDetailsScreen: React.FC = () => {
     }
   };
 
-  // Get status color
-  const getStatusColor = (status?: string) => {
-    switch (status) {
-      case 'pending': return '#F59E0B';
-      case 'in_progress': return '#7C3AED';
-      case 'completed': return '#10B981';
-      case 'rejected': return '#EF4444';
-      default: return '#6B7280';
-    }
-  };
-
-  // Get global status label
-  const getStatusLabel = (status?: string) => {
-    switch (status) {
-      case 'pending': return 'TODO';
-      case 'in_progress': return 'In Progress';
-      case 'completed': return 'Completed';
-      case 'rejected': return 'Rejected';
-      default: return status || 'Unknown';
-    }
-  };
-
   // Check if user can accept/reject
-  const isAssigned = normalizedTask?.assignees?.some((a: any) => (a.id || a.user_id || a.userId) === (user?.id || user?.userId));
+  const isAssigned = normalizedTask?.assignees?.some((a: any) => (a.id || a.user_id || a.userId) === (user?.id || (user as any)?.userId));
   const currentUserStatus = normalizedTask?.current_user_status;
   const hasAccepted = currentUserStatus?.has_accepted || false;
   const hasRejected = currentUserStatus?.has_rejected || false;
@@ -548,9 +526,6 @@ export const TaskDetailsScreen: React.FC = () => {
   const displayTask = mergeTaskWithFinancial(normalizedTask || task);
   
   const viewerStatus = getViewerStatusForCurrentUser();
-  const statusColor = getStatusColor(
-    viewerStatus === 'pending_verification' ? 'in_progress' : viewerStatus
-  );
   const isOverdue = displayTask.due_date && new Date(displayTask.due_date) < new Date() && displayTask.status !== 'completed';
 
   // Hero badge label: use viewer status, but override to Overdue when needed
@@ -572,61 +547,108 @@ export const TaskDetailsScreen: React.FC = () => {
     }
   })();
 
-  const content = (
-    <div className="p-6 md:p-8">
-      {/* Page Header */}
-      <div className="flex items-center gap-4 mb-8">
-        <button 
-          onClick={() => navigate(-1)} 
-          className="flex items-center justify-center w-11 h-11 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400 transition-colors border border-gray-200 dark:border-gray-700"
-          aria-label="Back"
-        >
-          <span className="material-symbols-outlined text-xl">arrow_back</span>
-        </button>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white truncate">
-            Task Details
-          </h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">
-            View and manage task information
-          </p>
-        </div>
-      </div>
+  // Hero status badge color (design: amber for Pending Approval, etc.)
+  const getHeroBadgeClass = () => {
+    if (isOverdue && viewerStatus !== 'completed') {
+      return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400';
+    }
+    switch (viewerStatus) {
+      case 'pending':
+        return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+      case 'in_progress':
+        return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+      case 'pending_verification':
+        return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+      case 'completed':
+        return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
+      default:
+        return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+    }
+  };
 
-      <main className="max-w-4xl mx-auto space-y-6">
-        {/* Hero: Title + Status (read-only) */}
-        <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden">
-          <div className="p-6 md:p-8">
-            <div className="flex flex-wrap items-center gap-3 mb-4">
-              <span
-                className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm"
-                style={{ backgroundColor: heroStatusLabel === 'Overdue' ? '#EF4444' : statusColor }}
-              >
+  // Timeline current step for User Progress Analytics
+  const getTimelineCurrentStep = (): string => {
+    if (viewerStatus === 'completed') return 'completed';
+    if (isOverdue) return 'overdue';
+    if (viewerStatus === 'in_progress' || viewerStatus === 'pending_verification') return 'in_progress';
+    if (viewerStatus === 'pending') return 'start';
+    return 'in_progress';
+  };
+  const timelineStep = getTimelineCurrentStep();
+
+  const content = (
+    <div className="p-0 font-task min-h-screen bg-background-light dark:bg-background-dark">
+      {/* Sticky Header - Design style */}
+      <header className="border-b border-slate-200 dark:border-slate-800 bg-card-light dark:bg-card-dark sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => navigate(-1)}
+              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors"
+              aria-label="Back"
+            >
+              <span className="material-symbols-outlined text-slate-500">arrow_back</span>
+            </button>
+            <div className="flex flex-col">
+              <h1 className="text-sm font-semibold text-slate-900 dark:text-white">Task Details</h1>
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span>Dashboard</span>
+                <span className="material-symbols-outlined text-[10px]">chevron_right</span>
+                <span>{isAdmin ? 'Admin Panel' : 'Tasks'}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-task-primary flex items-center justify-center text-white text-sm font-bold">
+              {(user?.name || (user as any)?.email || 'U').charAt(0).toUpperCase()}
+            </div>
+            <span className="material-symbols-outlined text-slate-400">expand_more</span>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto py-8 px-4 space-y-6">
+        {/* Hero: Title + Status (Design style) */}
+        <section className="bg-card-light dark:bg-card-dark rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-8">
+          <div className="flex flex-col gap-6">
+            <div>
+              <span className={`px-3 py-1 text-xs font-semibold rounded-full mb-3 inline-block ${getHeroBadgeClass()}`}>
                 {heroStatusLabel}
               </span>
+              <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">{displayTask.title}</h2>
+              <p className="text-slate-500 dark:text-slate-400 mt-2 text-sm flex items-center gap-4">
+                <span>Created: {formatDate(displayTask.created_at)}</span>
+                {displayTask.id && (
+                  <>
+                    <span className="w-1 h-1 bg-slate-300 dark:bg-slate-600 rounded-full"></span>
+                    <span className="font-mono">ID: #{displayTask.id.slice(0, 8).toUpperCase()}</span>
+                  </>
+                )}
+              </p>
             </div>
-            <h2 className="text-2xl md:text-3xl font-bold leading-tight text-gray-900 dark:text-white mb-4">{displayTask.title}</h2>
-            <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-              <span className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-lg text-gray-400">calendar_today</span>
-                Created {formatDate(displayTask.created_at)}
-              </span>
-              {displayTask.id && (
-                <span className="flex items-center gap-2 text-gray-400 dark:text-gray-500">
-                  <span className="text-gray-300 dark:text-gray-600">•</span>
-                  #{displayTask.id.slice(0, 8).toUpperCase()}
-                </span>
-              )}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-6 border-t border-slate-100 dark:border-slate-800">
+              <div className="space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Start Date</p>
+                <p className="text-base font-semibold text-slate-900 dark:text-white">{formatDate(displayTask.start_date)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Target Date</p>
+                <p className="text-base font-semibold text-slate-900 dark:text-white">{formatDate(displayTask.target_date)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-task-primary">Due Date</p>
+                <p className="text-base font-bold text-task-primary">{formatDate(displayTask.due_date)}</p>
+              </div>
             </div>
             {(displayTask.financial_value != null || displayTask.finance_type) && isCreator && (
-              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
                 <span
                   className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-semibold ${
                     displayTask.finance_type === 'income'
                       ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
                       : displayTask.finance_type === 'expense'
                       ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                   }`}
                 >
                   {displayTask.finance_type === 'income' ? 'Income' : displayTask.finance_type === 'expense' ? 'Expense' : 'Finance'}
@@ -635,86 +657,160 @@ export const TaskDetailsScreen: React.FC = () => {
               </div>
             )}
           </div>
-        </div>
+        </section>
 
-        {/* Description Card */}
-        {displayTask.description && (
-          <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm p-6 md:p-8">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-primary dark:text-purple-400 mb-3">
-              Description
-            </h3>
-            <p className="text-gray-700 dark:text-gray-200 leading-relaxed text-base">
-              {displayTask.description}
-            </p>
-          </div>
-        )}
-
-        {/* Date Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm p-5 flex flex-col gap-2 hover:shadow-md transition-shadow">
-            <span className="flex items-center gap-2 text-xs font-semibold text-primary dark:text-purple-400 uppercase tracking-wider">
-              <span className="material-symbols-outlined text-base">play_circle</span>
-              Start date
-            </span>
-            <span className="text-base font-semibold text-gray-900 dark:text-white">
-              {formatDate(displayTask.start_date)}
-            </span>
-          </div>
-          <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm p-5 flex flex-col gap-2 hover:shadow-md transition-shadow">
-            <span className="flex items-center gap-2 text-xs font-semibold text-primary dark:text-purple-400 uppercase tracking-wider">
-              <span className="material-symbols-outlined text-base">flag</span>
-              Target date
-            </span>
-            <span className="text-base font-semibold text-gray-900 dark:text-white">
-              {formatDate(displayTask.target_date)}
-            </span>
-          </div>
-          <div className="rounded-2xl border-2 border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/20 shadow-sm p-5 flex flex-col gap-2 hover:shadow-md transition-shadow">
-            <span className="flex items-center gap-2 text-xs font-bold text-primary dark:text-purple-400 uppercase tracking-wider">
-              <span className="material-symbols-outlined text-base">event</span>
-              Due date
-            </span>
-            <span className="text-lg font-bold text-primary dark:text-purple-300">
-              {formatDate(displayTask.due_date)}
-            </span>
-          </div>
-        </div>
-
-        {/* Assigned To Card - Full Details + Member Completion Flow */}
-        <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-sm p-6 md:p-8">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-primary dark:text-purple-400">
-              Assigned to
-            </h3>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              {assignees.length || 0} {assignees.length === 1 ? 'Assignee' : 'Assignees'}
-            </span>
-          </div>
-
-          {/* Progress Bar - EXACT mobile logic */}
-          {memberStats && (
-            <div className="mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Team Progress</span>
-                <span className="text-sm font-semibold text-gray-600 dark:text-gray-400">
-                  {memberStats.completed}/{memberStats.total} completed
-                </span>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            {/* User Progress Analytics - Design timeline */}
+            <section className="bg-card-light dark:bg-card-dark rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+              <h3 className="text-xs font-bold text-task-primary uppercase tracking-widest mb-8">User Progress Analytics</h3>
+              <div className="space-y-0 pl-2">
+                <style>{`
+                  .timeline-line { position: absolute; left: 7px; top: 24px; bottom: -8px; width: 2px; }
+                  .timeline-item:last-child .timeline-line { display: none; }
+                `}</style>
+                <div className="relative timeline-item pb-10">
+                  <div className="timeline-line bg-slate-200 dark:bg-slate-700"></div>
+                  <div className={`absolute left-0 w-4 h-4 rounded-full border-4 border-white dark:border-card-dark z-10 ${timelineStep === 'start' ? 'bg-task-primary' : 'bg-slate-400'}`}></div>
+                  <div className="pl-8 -mt-1">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Start Date</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{displayTask.start_date ? new Date(displayTask.start_date).toLocaleDateString() : 'Not set'}</p>
+                  </div>
+                </div>
+                <div className="relative timeline-item pb-10">
+                  <div className="timeline-line bg-slate-200 dark:bg-slate-700"></div>
+                  <div className={`absolute left-0 w-4 h-4 rounded-full z-10 ${timelineStep === 'in_progress' ? 'bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.4)] animate-pulse' : 'bg-slate-400 border-4 border-white dark:border-card-dark'}`}></div>
+                  <div className="pl-8 -mt-1">
+                    <p className={`text-sm font-bold ${timelineStep === 'in_progress' ? 'text-amber-500' : 'text-slate-500'}`}>In Progress</p>
+                  </div>
+                </div>
+                <div className="relative timeline-item pb-10">
+                  <div className="timeline-line bg-slate-200 dark:bg-slate-700"></div>
+                  <div className={`absolute left-0 w-4 h-4 rounded-full border-4 border-white dark:border-card-dark z-10 ${timelineStep === 'target' ? 'bg-task-primary' : 'bg-slate-400'}`}></div>
+                  <div className="pl-8 -mt-1">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Target Date</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{displayTask.target_date ? new Date(displayTask.target_date).toLocaleDateString() : 'Not set'}</p>
+                  </div>
+                </div>
+                <div className="relative timeline-item pb-10">
+                  <div className="timeline-line bg-slate-200 dark:bg-slate-700"></div>
+                  <div className={`absolute left-0 w-4 h-4 rounded-full border-2 z-10 ${timelineStep === 'due_soon' ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20' : 'border-slate-300 bg-white dark:bg-slate-800'}`}></div>
+                  <div className="pl-8 -mt-1">
+                    <p className={`text-sm font-medium ${timelineStep === 'due_soon' ? 'text-amber-500' : 'text-slate-500'}`}>Due Soon</p>
+                  </div>
+                </div>
+                <div className="relative timeline-item pb-10">
+                  <div className="timeline-line bg-slate-200 dark:bg-slate-700"></div>
+                  <div className={`absolute left-0 w-4 h-4 rounded-full border-4 border-white dark:border-card-dark z-10 ${timelineStep === 'due_date' ? 'bg-task-primary' : 'bg-slate-400'}`}></div>
+                  <div className="pl-8 -mt-1">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Due Date</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{displayTask.due_date ? new Date(displayTask.due_date).toLocaleDateString() : 'Not set'}</p>
+                  </div>
+                </div>
+                <div className="relative timeline-item pb-10">
+                  <div className="timeline-line bg-slate-200 dark:bg-slate-700"></div>
+                  <div className={`absolute left-0 w-4 h-4 rounded-full border-2 z-10 ${timelineStep === 'overdue' ? 'border-rose-500 bg-rose-50 dark:bg-rose-900/20' : 'border-slate-300 bg-white dark:bg-slate-800'}`}></div>
+                  <div className="pl-8 -mt-1">
+                    <p className={`text-sm font-medium ${timelineStep === 'overdue' ? 'text-rose-500' : 'text-slate-400'}`}>Overdue</p>
+                  </div>
+                </div>
+                <div className="relative timeline-item">
+                  <div className={`absolute left-0 w-4 h-4 rounded-full border-2 z-10 ${timelineStep === 'completed' ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300 bg-white dark:bg-slate-800'}`}></div>
+                  <div className="pl-8 -mt-1">
+                    <p className={`text-sm font-medium ${timelineStep === 'completed' ? 'text-emerald-500' : 'text-slate-400'}`}>Completed</p>
+                  </div>
+                </div>
               </div>
-              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
-                <div 
-                  className="bg-green-500 h-2.5 rounded-full transition-all duration-300"
-                  style={{ width: `${memberStats.progress}%` }}
-                />
-              </div>
-            </div>
-          )}
+            </section>
 
-          {/* Assignees List with Full Details */}
-          {assignees && assignees.length > 0 ? (
-            <div className="space-y-3">
-              {assignees.map((assignee: any) => {
+            {/* Description Card */}
+            {displayTask.description && (
+              <section className="bg-card-light dark:bg-card-dark rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                <h3 className="text-xs font-bold text-task-primary uppercase tracking-widest mb-3">Description</h3>
+                <p className="text-slate-700 dark:text-slate-200 leading-relaxed text-base">{displayTask.description}</p>
+              </section>
+            )}
+
+            {/* Related document */}
+            {(displayTask.document_instance_id || (displayTask as any).documentInstanceId) && (
+              <section className="bg-card-light dark:bg-card-dark rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                <h3 className="text-xs font-bold text-task-primary uppercase tracking-widest mb-3">Related document</h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const docId = displayTask.document_instance_id || (displayTask as any).documentInstanceId;
+                    navigate(isAdmin ? `/admin/documents/${docId}` : `/documents/${docId}`);
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-task-primary/10 text-task-primary font-semibold text-sm hover:bg-task-primary/20 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-lg">description</span>
+                  View document
+                </button>
+              </section>
+            )}
+
+            {/* Activity Log - Design style */}
+            <section className="bg-card-light dark:bg-card-dark rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+              <h3 className="text-xs font-bold text-task-primary uppercase tracking-widest mb-6">Activity Log</h3>
+              <div className="space-y-4">
+                {displayTask.activities && displayTask.activities.length > 0 ? (
+                  displayTask.activities.slice(0, 5).map((activity: any) => (
+                    <div key={activity.id} className="flex justify-between items-start">
+                      <p className="text-sm text-slate-600 dark:text-slate-400">
+                        {activity.message || `${activity.activity_type} - ${activity.new_value || ''}`}
+                      </p>
+                      <span className="text-[10px] text-slate-400 whitespace-nowrap">{formatDate(activity.created_at)}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex justify-between items-start">
+                    <p className="text-sm text-slate-600 dark:text-slate-400">
+                      Task &quot;{displayTask.title}&quot; created{isCreator ? ' (self task - auto started)' : ''}
+                    </p>
+                    <span className="text-[10px] text-slate-400 whitespace-nowrap">{formatDate(displayTask.created_at)}</span>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+
+          {/* Right column - Task Members */}
+          <div className="space-y-6">
+            <section className="bg-card-light dark:bg-card-dark rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                <h3 className="text-xs font-bold text-task-primary uppercase tracking-widest">Task Members</h3>
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-task-primary/20 text-task-primary text-xs font-semibold hover:bg-task-primary/5 transition-colors"
+                  onClick={() => {}}
+                >
+                  <span className="material-symbols-outlined text-sm">person_add</span>
+                  Add
+                </button>
+              </div>
+              <div className="p-6 space-y-6">
+                {/* Progress Bar - Design style */}
+                <div>
+                  <div className="flex justify-between items-end mb-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Team Progress</p>
+                    <p className="text-[10px] font-bold text-task-primary uppercase tracking-tighter">
+                      {memberStats ? `${memberStats.completed}/${memberStats.total} Completed` : '0/0 Completed'}
+                    </p>
+                  </div>
+                  <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-task-primary rounded-full transition-all duration-300"
+                      style={{ width: `${memberStats?.progress ?? 0}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Assignees List - Design style */}
+                {assignees && assignees.length > 0 ? (
+                  <div className="space-y-4">
+                    {assignees.map((assignee: any) => {
                 const assigneeId = assignee.id || assignee.user_id || assignee.userId;
-                const currentUserId = user?.id || user?.userId;
+                const currentUserId = user?.id || (user as any)?.userId;
                 const isCurrentUser = assigneeId === currentUserId;
                 // EXACT mobile logic: memberCompleted checks completed_at (NOT verified_at)
                 const memberCompleted =
@@ -758,115 +854,64 @@ export const TaskDetailsScreen: React.FC = () => {
                 return (
                   <div
                     key={assigneeId || assignee.id || assignee.userId}
-                    className={`flex items-start gap-4 p-4 rounded-lg border transition-colors ${
-                      assignee.has_accepted
-                        ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-                        : 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600'
-                    } ${isCurrentUser ? 'ring-2 ring-primary/30' : ''}`}
+                    className="flex items-center gap-4 group cursor-pointer"
                   >
-                    {/* Profile Photo - EXACT mobile logic */}
+                    {/* Avatar - Design: rounded-2xl */}
                     <div className="relative flex-shrink-0">
                       {assignee.profile_photo_url || assignee.profile_photo ? (
                         <img
                           src={assignee.profile_photo_url || assignee.profile_photo}
                           alt={assignee.name || 'Assignee'}
-                          className="w-14 h-14 rounded-full object-cover border-2 border-white dark:border-slate-700"
+                          className="w-12 h-12 rounded-2xl object-cover shadow-sm"
                         />
                       ) : (
-                        <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-white font-bold text-lg border-2 border-white dark:border-slate-700">
+                        <div
+                          className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-bold text-lg shadow-sm"
+                          style={{ backgroundColor: statusLabel === 'Completed' ? '#2E7D32' : statusLabel === 'In Progress' ? '#7C3AED' : '#6366F1' }}
+                        >
                           {(assignee.name || '?').charAt(0).toUpperCase()}
                         </div>
                       )}
-                      {/* EXACT mobile logic: Show checkmark badge if completed */}
                       {memberCompleted && (
-                        <div 
+                        <div
                           className="absolute -bottom-1 -right-1 size-5 rounded-full border-2 border-white dark:border-slate-800 flex items-center justify-center shadow-sm"
                           style={{ backgroundColor: statusColor }}
                         >
                           <span className="material-symbols-outlined text-white text-xs">check</span>
                         </div>
                       )}
-                      {/* EXACT mobile logic: Show reporting member badge */}
                       {isReportingMemberForTask && (
-                        <div 
-                          className="absolute -top-1 -right-1 size-5 rounded-full border-2 border-white dark:border-slate-800 flex items-center justify-center shadow-sm"
-                          style={{ backgroundColor: '#7C3AED' }}
+                        <div
+                          className="absolute -top-1 -right-1 size-5 rounded-full border-2 border-white dark:border-slate-800 flex items-center justify-center shadow-sm bg-task-primary"
                         >
                           <span className="material-symbols-outlined text-white text-[10px]">shield</span>
                         </div>
                       )}
                     </div>
 
-                    {/* Details */}
+                    {/* Details - Design style */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <h4 className="text-base font-bold text-gray-900 dark:text-white truncate">
-                              {assignee.name || 'Unknown User'}
-                            </h4>
-                            {isCurrentUser && (
-                              <span className="px-2 py-0.5 bg-primary/20 text-primary text-xs font-semibold rounded-full whitespace-nowrap">
-                                (You)
-                              </span>
-                            )}
-                            {isReportingMemberForTask && (
-                              <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-semibold rounded-full whitespace-nowrap">
-                                - Reporting Member
-                              </span>
-                            )}
-                          </div>
-                          {/* EXACT mobile logic: Status row with dot and label */}
-                          <div className="flex items-center gap-2 mb-2">
-                            <div 
-                              className="w-2 h-2 rounded-full"
-                              style={{ backgroundColor: statusColor }}
-                            />
-                            <span 
-                              className="text-sm font-medium"
-                              style={{ color: statusColor }}
-                            >
-                              {statusLabel}
-                              {memberVerified && ' ✓ Verified'}
-                            </span>
-                          </div>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{assignee.name || 'Unknown User'}</p>
+                        {isReportingMemberForTask && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 rounded font-bold uppercase">Reporting</span>
+                        )}
+                        {isCurrentUser && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 rounded font-bold uppercase">(You)</span>
+                        )}
                       </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                        {/* Mobile Number */}
-                        {assignee.mobile || assignee.phone ? (
-                          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
-                            <span className="material-symbols-outlined text-base text-gray-400">phone</span>
-                            <span className="font-medium">{(assignee.mobile || assignee.phone).replace(/^\+91/, '')}</span>
-                          </div>
-                        ) : assignee.email ? (
-                          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
-                            <span className="material-symbols-outlined text-base text-gray-400">email</span>
-                            <span className="font-medium">{assignee.email}</span>
-                          </div>
-                        ) : null}
-
-                        {/* Department */}
-                        {assignee.department ? (
-                          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
-                            <span className="material-symbols-outlined text-base text-gray-400">business</span>
-                            <span className="font-medium">{assignee.department}</span>
-                          </div>
-                        ) : null}
-
-                        {/* Designation */}
-                        {assignee.designation ? (
-                          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
-                            <span className="material-symbols-outlined text-base text-gray-400">badge</span>
-                            <span className="font-medium">{assignee.designation}</span>
-                          </div>
-                        ) : null}
+                      <div className="flex items-center gap-1.5 text-xs font-medium" style={{ color: statusColor }}>
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: statusColor }}></span>
+                        {statusLabel}
+                        {memberVerified && ' ✓ Verified'}
                       </div>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        {(assignee.mobile || assignee.phone || assignee.email || '—').replace(/^\+91/, '')}
+                      </p>
                     </div>
 
-                    {/* EXACT mobile logic: Verified indicator and Verify button */}
-                    <div className="flex flex-col items-end justify-center gap-2">
+                    {/* Verify button - preserve functionality */}
+                    <div className="flex flex-col items-end justify-center gap-2 shrink-0">
                       {memberCompleted && memberVerified && (
                         <div className="flex items-center justify-center">
                           <span className="material-symbols-outlined text-green-500 text-xl">check_circle</span>
@@ -909,51 +954,43 @@ export const TaskDetailsScreen: React.FC = () => {
                     </div>
                   </div>
                 );
-              })}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-              <span className="material-symbols-outlined text-4xl mb-2 opacity-50">person_off</span>
-              <p className="text-sm">No assignees for this task</p>
-            </div>
-          )}
-
-          {/* Summary Footer */}
-          {assignees && assignees.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-4 text-gray-600 dark:text-gray-400">
-                  <span className="flex items-center gap-1">
-                    <span className="material-symbols-outlined text-base">people</span>
-                    <span className="font-medium">{assignees.length} Total</span>
-                  </span>
-                  <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
-                    <span className="material-symbols-outlined text-base">check_circle</span>
-                    <span className="font-medium">
-                      {assignees.filter((a: any) => a.has_accepted).length} Accepted
-                    </span>
-                  </span>
-                  <span className="flex items-center gap-1 text-orange-600 dark:text-orange-400">
-                    <span className="material-symbols-outlined text-base">schedule</span>
-                    <span className="font-medium">
-                      {assignees.filter((a: any) => !a.has_accepted).length} Pending
-                    </span>
-                  </span>
-                </div>
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+                    <span className="material-symbols-outlined text-4xl mb-2 opacity-50">person_off</span>
+                    <p className="text-sm">No assignees for this task</p>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+              {/* Summary Footer - Design style */}
+              {assignees && assignees.length > 0 && (
+                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 border-t border-slate-100 dark:border-slate-800 flex gap-4 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  <div className="flex items-center gap-1">
+                    <span className="material-symbols-outlined text-xs">group</span>
+                    {assignees.length} Total
+                  </div>
+                  <div className="flex items-center gap-1 text-emerald-500">
+                    <span className="material-symbols-outlined text-xs">check_circle</span>
+                    {assignees.filter((a: any) => a.has_accepted || a.accepted_at).length} Accepted
+                  </div>
+                  <div className="flex items-center gap-1 text-amber-500">
+                    <span className="material-symbols-outlined text-xs">schedule</span>
+                    {assignees.filter((a: any) => !a.has_accepted && !a.accepted_at).length} Pending
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
         </div>
 
-        {/* Finance section - amount and type (only visible to task creator) */}
-        {(displayTask.financial_value != null || displayTask.finance_type) && isCreator && (
-          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-sm mb-6 border border-gray-200 dark:border-gray-700">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-primary dark:text-purple-400 mb-3">
-              Finance
-            </h3>
+        {/* Finance & Auto Escalation - Left column below Activity Log */}
+        {((displayTask.financial_value != null || displayTask.finance_type) && isCreator) && (
+          <section className="lg:col-span-2 bg-card-light dark:bg-card-dark rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <h3 className="text-xs font-bold text-task-primary uppercase tracking-widest mb-3">Finance</h3>
             <div className="flex items-center justify-between gap-4 flex-wrap">
               {displayTask.finance_type && (
-                <span className="text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                <span className="text-sm text-slate-600 dark:text-slate-400 uppercase tracking-wide">
                   {displayTask.finance_type === 'income' ? 'Income' : displayTask.finance_type === 'expense' ? 'Expense' : displayTask.finance_type}
                 </span>
               )}
@@ -964,7 +1001,7 @@ export const TaskDetailsScreen: React.FC = () => {
                       ? 'text-emerald-600 dark:text-emerald-400'
                       : displayTask.finance_type === 'expense'
                       ? 'text-rose-600 dark:text-rose-400'
-                      : 'text-gray-900 dark:text-white'
+                      : 'text-slate-900 dark:text-white'
                   }`}
                 >
                   {displayTask.finance_type === 'expense' ? '-' : '+'}
@@ -972,132 +1009,115 @@ export const TaskDetailsScreen: React.FC = () => {
                 </span>
               )}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* Auto Escalation Rules */}
         {displayTask.auto_escalate && (
-          <div className="bg-white dark:bg-slate-800 rounded-lg overflow-hidden shadow-sm mb-6 border border-gray-200 dark:border-gray-700">
-            <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex items-center gap-2">
+          <section className="lg:col-span-2 bg-card-light dark:bg-card-dark rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center gap-2">
               <span className="material-symbols-outlined text-orange-500">warning</span>
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white">Auto Escalation Rules</h3>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Auto Escalation Rules</h3>
             </div>
             <div className="p-4">
               <ul className="space-y-4 relative pl-2">
-                <div className="absolute left-[15px] top-2 bottom-6 w-0.5 bg-gray-100 dark:bg-gray-700"></div>
+                <div className="absolute left-[15px] top-2 bottom-6 w-0.5 bg-slate-100 dark:bg-slate-700"></div>
                 <li className="relative flex gap-4 items-start">
-                  <div className="relative z-10 mt-1 flex h-3 w-3 shrink-0 items-center justify-center rounded-full bg-gray-300 dark:bg-gray-600 ring-4 ring-white dark:ring-slate-800"></div>
+                  <div className="relative z-10 mt-1 flex h-3 w-3 shrink-0 items-center justify-center rounded-full bg-slate-300 dark:bg-slate-600 ring-4 ring-white dark:ring-card-dark"></div>
                   <div className="flex flex-col">
-                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">LEVEL 1</span>
-                    <span className="text-sm text-gray-700 dark:text-gray-200">Notify Manager if not accepted within 24h</span>
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">LEVEL 1</span>
+                    <span className="text-sm text-slate-700 dark:text-slate-200">Notify Manager if not accepted within 24h</span>
                   </div>
                 </li>
                 <li className="relative flex gap-4 items-start">
-                  <div className="relative z-10 mt-1 flex h-3 w-3 shrink-0 items-center justify-center rounded-full bg-orange-300 dark:bg-orange-500 ring-4 ring-white dark:ring-slate-800"></div>
+                  <div className="relative z-10 mt-1 flex h-3 w-3 shrink-0 items-center justify-center rounded-full bg-orange-300 dark:bg-orange-500 ring-4 ring-white dark:ring-card-dark"></div>
                   <div className="flex flex-col">
-                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">LEVEL 2</span>
-                    <span className="text-sm text-gray-700 dark:text-gray-200">Escalate to Dept Head if overdue &gt; 2 days</span>
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">LEVEL 2</span>
+                    <span className="text-sm text-slate-700 dark:text-slate-200">Escalate to Dept Head if overdue &gt; 2 days</span>
                   </div>
                 </li>
               </ul>
             </div>
-          </div>
-        )}
-
-        {/* Activity Log */}
-        {displayTask.activities && displayTask.activities.length > 0 && (
-          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-sm mb-6 border border-gray-200 dark:border-gray-700">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-primary dark:text-purple-400 mb-3">
-              ACTIVITY LOG
-            </h3>
-            {displayTask.activities.slice(0, 5).map((activity: any) => (
-              <div key={activity.id} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700 last:border-0">
-                <span className="text-sm text-gray-700 dark:text-gray-200">
-                  {activity.message || `${activity.activity_type} - ${activity.new_value || ''}`}
-                </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {formatDate(activity.created_at)}
-                </span>
-              </div>
-            ))}
-          </div>
+          </section>
         )}
       </main>
 
-      {/* Action Bar */}
+      {/* Action Bar - Design style */}
       {(canAccept || canReject || canMarkComplete || isCreator) && (
-        <div className="max-w-4xl mx-auto mt-6">
-          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-gray-200 dark:border-gray-700">
-            {(canAccept || canReject || canMarkComplete) && (
-              <div className="flex gap-3 mb-3">
-                {canReject && (
-                  <button
-                    onClick={() => setShowRejectModal(true)}
-                    disabled={processing}
-                    className="flex-1 rounded-lg border border-red-500/30 bg-white dark:bg-slate-800 px-6 py-3 text-sm font-semibold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    <span className="material-symbols-outlined text-lg">close</span>
-                    Reject
-                  </button>
-                )}
-                {canAccept && (
-                  <button
-                    onClick={handleAccept}
-                    disabled={processing}
-                    className="flex-[2] rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-white hover:bg-primary/90 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {processing ? (
-                      <>
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                        <span>Processing...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="material-symbols-outlined text-[20px]">check</span>
-                        <span>Accept Task</span>
-                      </>
-                    )}
-                  </button>
-                )}
-                {canMarkComplete && (
-                  <button
-                    onClick={handleMarkComplete}
-                    disabled={processing}
-                    className="flex-[2] rounded-lg bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {processing ? (
-                      <>
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                        <span>Processing...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="material-symbols-outlined text-[20px]">
-                          check_circle
-                        </span>
-                        <span>Mark Complete</span>
-                      </>
-                    )}
-                  </button>
-                )}
-              </div>
-            )}
-            {isCreator && (
-              <div className="pt-3 border-t border-gray-100 dark:border-gray-700 flex justify-end">
+        <div className="max-w-5xl mx-auto px-4">
+          <div className="bg-card-light dark:bg-card-dark rounded-2xl border border-slate-200 dark:border-slate-800 p-6 flex flex-col md:flex-row gap-4 items-center justify-between">
+            <div className="flex flex-wrap gap-4 w-full md:w-auto justify-center md:justify-start">
+              {canReject && (
+                <button
+                  onClick={() => setShowRejectModal(true)}
+                  disabled={processing}
+                  className="px-6 py-3.5 rounded-xl border-2 border-rose-100 dark:border-rose-900/30 text-rose-500 font-bold hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-lg">close</span>
+                  Reject
+                </button>
+              )}
+              {canAccept && (
+                <button
+                  onClick={handleAccept}
+                  disabled={processing}
+                  className="px-12 py-3.5 rounded-xl bg-task-primary hover:bg-task-primary/90 text-white font-bold transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {processing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-xl">check</span>
+                      <span>Accept Task</span>
+                    </>
+                  )}
+                </button>
+              )}
+              {canMarkComplete && (
+                <button
+                  onClick={handleMarkComplete}
+                  disabled={processing}
+                  className="px-12 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20 active:scale-95 disabled:opacity-50"
+                >
+                  {processing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-xl">check_circle</span>
+                      <span>Mark Complete</span>
+                    </>
+                  )}
+                </button>
+              )}
+              {isCreator && (
                 <button
                   type="button"
                   onClick={handleDeleteTask}
                   disabled={deleteTaskMutation.isLoading}
-                  className="inline-flex items-center gap-2 rounded-lg border border-red-500/40 px-4 py-2 text-xs sm:text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+                  className="px-6 py-3 border-2 border-rose-100 dark:border-rose-900/30 text-rose-500 font-bold rounded-xl hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  <span className="material-symbols-outlined text-base">delete</span>
+                  <span className="material-symbols-outlined text-lg">delete_outline</span>
                   <span>{deleteTaskMutation.isLoading ? 'Deleting...' : 'Delete Task'}</span>
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
+
+      {/* FAB - Design style (mobile only) */}
+      <button
+        type="button"
+        className="fixed bottom-6 right-6 w-14 h-14 bg-task-primary text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-90 transition-transform md:hidden z-40"
+        aria-label="Add"
+      >
+        <span className="material-symbols-outlined text-2xl">add</span>
+      </button>
 
       {/* Reject Modal */}
       {showRejectModal && (

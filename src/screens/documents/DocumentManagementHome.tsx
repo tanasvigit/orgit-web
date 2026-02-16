@@ -493,6 +493,11 @@ export const DocumentManagementHome: React.FC = () => {
           initialTitle={selectedDocument.title || `Document: ${selectedDocument.id}`}
           initialDescription={`Document: ${selectedDocument.title}\n\nTemplate: ${templatesData?.find((t: any) => t.id === selectedDocument.templateId)?.name || 'Unknown'}\nStatus: ${selectedDocument.status || 'N/A'}`}
           documentId={selectedDocument.id}
+          documentAttachment={selectedDocument.pdfUrl ? {
+            mediaUrl: selectedDocument.pdfUrl,
+            fileName: `${(selectedDocument.title || 'document').replace(/[^a-zA-Z0-9-_.]/g, '_')}.pdf`,
+            mimeType: 'application/pdf',
+          } : undefined}
         />
       )}
     </div>

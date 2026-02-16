@@ -4,6 +4,7 @@ import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { conversationService } from '../../services/conversationService';
 import { taskService } from '../../services/taskService';
+import { documentInstanceService } from '../../services/documentInstanceService';
 import { setTaskFinancial } from '../../utils/taskFinancialStorage';
 import { CustomDatePicker } from '../shared/CustomDatePicker';
 import { waitForSocketConnection } from '../../services/socketService';
@@ -85,6 +86,25 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       }
     }
   }, [visible, initialTitle, initialDescription, initialDueDate]);
+
+  // When creating from Document Management, fetch document instance so title/description can be filled and edited
+  const { data: fetchedDocument } = useQuery(
+    ['documentInstance', documentId],
+    () => documentInstanceService.getById(documentId!),
+    { enabled: visible && !!documentId }
+  );
+  useEffect(() => {
+    if (visible && fetchedDocument) {
+      setTitle((prev) => (fetchedDocument.title?.trim() ? fetchedDocument.title : prev));
+      setDescription((prev) => {
+        const docDesc = [
+          fetchedDocument.title && `Document: ${fetchedDocument.title}`,
+          fetchedDocument.status && `Status: ${fetchedDocument.status}`,
+        ].filter(Boolean).join('\n\n');
+        return docDesc.trim() ? docDesc : prev;
+      });
+    }
+  }, [visible, fetchedDocument]);
 
   // Fetch users for assignee selection
   const { data: usersData } = useQuery(
@@ -209,6 +229,11 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         taskData.compliance_id = complianceId;
       }
 
+      // Link task to document when created from Document Management (backend supports document_instance_id)
+      if (documentId) {
+        taskData.document_instance_id = documentId;
+      }
+
       // Add reporting_member_id if selected
       if (reportingMemberId) {
         taskData.reporting_member_id = reportingMemberId;
@@ -219,17 +244,30 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       const taskId = createdObj?.id || null;
       const conversationId = createdObj?.conversation_id || createdObj?.conversationId || null;
 
-      // If task was created from a chat document, auto-attach that document to the task conversation.
-      if (documentAttachment?.mediaUrl && conversationId) {
+      // If task was created from a document (chat or Document Management), auto-attach that document to the task conversation.
+      let attachmentToSend: { mediaUrl: string; fileName?: string; fileSize?: number; mimeType?: string } | null = documentAttachment?.mediaUrl ? documentAttachment : null;
+      if (!attachmentToSend && documentId && conversationId) {
+        try {
+          const instance = await documentInstanceService.getById(documentId);
+          if (instance?.pdfUrl) {
+            attachmentToSend = {
+              mediaUrl: instance.pdfUrl,
+              fileName: `${(instance.title || 'document').replace(/[^a-zA-Z0-9-_.]/g, '_')}.pdf`,
+              mimeType: 'application/pdf',
+            };
+          }
+        } catch (_) {}
+      }
+      if (attachmentToSend?.mediaUrl && conversationId) {
         try {
           const sock = await waitForSocketConnection();
           sock.emit('send_message', {
             conversationId,
             messageType: 'document',
-            mediaUrl: documentAttachment.mediaUrl,
-            fileName: documentAttachment.fileName,
-            fileSize: documentAttachment.fileSize,
-            mimeType: documentAttachment.mimeType,
+            mediaUrl: attachmentToSend.mediaUrl,
+            fileName: attachmentToSend.fileName,
+            fileSize: attachmentToSend.fileSize,
+            mimeType: attachmentToSend.mimeType,
             content: '',
           });
         } catch (e) {

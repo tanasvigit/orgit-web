@@ -11,6 +11,7 @@ import { AdminLayout } from '../../components/admin/AdminLayout';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { TaskGroupChatConversation } from '../messaging/TaskGroupChatConversation';
 import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
+import { isTaskDeleted } from '../../utils/taskUtils';
 import { format } from 'date-fns';
 
 /**
@@ -177,7 +178,7 @@ export const TaskDashboardScreen: React.FC = () => {
     }))
   );
 
-  // Map convId -> task (from task details)
+  // Map convId -> task (from task details). Use string keys so lookups work whether conv.id is number or string.
   const taskByConvId = useMemo(() => {
     const taskByTaskId: Record<string, any> = {};
     uniqueTaskIds.forEach((taskId, i) => {
@@ -186,14 +187,19 @@ export const TaskDashboardScreen: React.FC = () => {
     });
     const map: Record<string, any> = {};
     Object.entries(taskIdByConvId).forEach(([convId, taskId]) => {
-      if (taskByTaskId[taskId]) map[convId] = taskByTaskId[taskId];
+      if (taskByTaskId[taskId]) map[String(convId)] = taskByTaskId[taskId];
     });
     return map;
   }, [taskIdByConvId, uniqueTaskIds, taskDetailsQueries]);
 
-  // Filter task groups by search and by status (using task details)
+  // Filter task groups by search and by status (using task details). Hide deleted tasks from list (still visible in Messages with deleted indicator).
   const filteredTaskGroups = useMemo(() => {
-    let filtered = taskGroups;
+    let filtered = taskGroups.filter(conv => {
+      const convId = conv.id ?? conv.conversationId;
+      const key = convId != null ? String(convId) : '';
+      const task = key ? taskByConvId[key] : undefined;
+      return !task || !isTaskDeleted(task);
+    });
 
     // Apply search filter
     if (searchQuery.trim()) {
@@ -211,8 +217,9 @@ export const TaskDashboardScreen: React.FC = () => {
     // Apply status filter using task details
     if (statusFilter !== 'all') {
       filtered = filtered.filter(conv => {
-        const convId = conv.id || conv.conversationId;
-        const task = taskByConvId[convId];
+        const convId = conv.id ?? conv.conversationId;
+        const key = convId != null ? String(convId) : '';
+        const task = key ? taskByConvId[key] : undefined;
         const category = getTaskStatusCategory(task);
         return category === statusFilter;
       });
@@ -594,7 +601,7 @@ export const TaskDashboardScreen: React.FC = () => {
             </h3>
             <div className="space-y-1">
               {filteredTaskGroups.map((conv) => {
-                const convId = conv.conversationId || conv.id || '';
+                const convId = conv.id ?? conv.conversationId ?? '';
                 const convName = conv.name || 'Task Group';
                 const convPhoto = conv.photoUrl || conv.group_photo || '';
                 const lastMessage = conv.lastMessage || conv.last_message;
@@ -624,7 +631,7 @@ export const TaskDashboardScreen: React.FC = () => {
                 };
 
                 const timeDisplay = formatTime(lastMessageTime);
-                const task = taskByConvId[convId];
+                const task = convId ? taskByConvId[String(convId)] : undefined;
                 const taskStatusCategory = getTaskStatusCategory(task);
                 const isSelected = selectedConversationId === convId;
 

@@ -143,10 +143,15 @@
 /* ----- Payment Voucher layout ----- */
 .inline-doc-viewport.payment-voucher { --blue: #1f5fa8; --blue-dark: #154a86; --line: #1f2937; --soft-line: #9ca3af; font-size: 12px; line-height: 1.35; }
 .inline-doc-viewport .top-header { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; margin-bottom: 10px; }
+.inline-doc-viewport .top-header.top-header-single { display: block; }
 .inline-doc-viewport .logo-wrap { display: flex; align-items: flex-start; gap: 10px; }
-.inline-doc-viewport .logo-wrap .logo { width: 72px; height: 72px; border: 1px solid var(--soft-line, #9ca3af); }
+.inline-doc-viewport .logo-wrap .logo { width: 72px; height: 72px; border: 1px solid var(--soft-line, #9ca3af); flex-shrink: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.inline-doc-viewport .logo-wrap .logo img { width: 100%; height: 100%; object-fit: contain; }
+.inline-doc-viewport .firm-info { flex: 1; min-width: 0; }
 .inline-doc-viewport .company-name { font-size: 14px; font-weight: 700; margin: 0 0 2px; }
 .inline-doc-viewport .company-meta { margin: 0; color: var(--muted); }
+.inline-doc-viewport .company-meta-line { margin: 0 0 4px; }
+.inline-doc-viewport .company-meta-line .doc-inline-input { display: inline-block; margin-bottom: 0; vertical-align: middle; }
 .inline-doc-viewport .firm-details { text-align: right; }
 .inline-doc-viewport .title-bar { background: var(--blue, #1f5fa8); color: #fff; padding: 8px 12px; font-size: 16px; font-weight: 700; letter-spacing: 0.5px; text-align: center; border: 1px solid var(--blue-dark, #154a86); margin: 6px 0 10px; }
 .inline-doc-viewport .grid-form, .inline-doc-viewport .single-row, .inline-doc-viewport .data-table, .inline-doc-viewport .signatures { width: 100%; border-collapse: collapse; }
