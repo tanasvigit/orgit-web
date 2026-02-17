@@ -181,7 +181,6 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
         <div className="flex items-center justify-between px-6 py-4 bg-primary dark:bg-primary/90 rounded-t-2xl">
           <h2 className="text-white text-lg font-bold flex items-center gap-2">
             <span className="material-icons-outlined">assignment</span>
-            Task Group Details
           </h2>
           <button
             onClick={onClose}

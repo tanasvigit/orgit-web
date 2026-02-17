@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useQuery, useQueries, useQueryClient } from 'react-query';
+import { useQuery, useQueries, useQueryClient, useMutation } from 'react-query';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { conversationService } from '../../services/conversationService';
 import { taskService } from '../../services/taskService';
@@ -11,6 +11,7 @@ import { AdminLayout } from '../../components/admin/AdminLayout';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { TaskGroupChatConversation } from '../messaging/TaskGroupChatConversation';
 import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
+import { taskBulkService } from '../../services/taskBulkService';
 import { isTaskDeleted } from '../../utils/taskUtils';
 import { format } from 'date-fns';
 
@@ -75,7 +76,11 @@ export const TaskDashboardScreen: React.FC = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin';
+  const isAdminOrSuperAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const [searchQuery, setSearchQuery] = useState('');
+  const [isDownloadingTaskTemplate, setIsDownloadingTaskTemplate] = useState(false);
+  const [isBulkUploadingTasks, setIsBulkUploadingTasks] = useState(false);
+  const bulkTaskFileInputRef = useRef<HTMLInputElement>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -490,6 +495,63 @@ export const TaskDashboardScreen: React.FC = () => {
     }
   };
 
+  const handleDownloadTaskTemplate = async () => {
+    setIsDownloadingTaskTemplate(true);
+    try {
+      await taskBulkService.getTemplate();
+      toast.success('Task template downloaded. Fill it and upload to bulk create tasks.');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || error.message || 'Failed to download template');
+    } finally {
+      setIsDownloadingTaskTemplate(false);
+    }
+  };
+
+  const taskBulkUploadMutation = useMutation(
+    (file: File) => taskBulkService.uploadFile(file),
+    {
+      onSuccess: (res) => {
+        const data = res.data?.data;
+        if (data) {
+          const { updated, errors } = data;
+          if (updated?.tasks != null && updated.tasks > 0) {
+            toast.success(`Created ${updated.tasks} task(s).`);
+          }
+          if (errors?.length) {
+            errors.slice(0, 5).forEach((e: any) =>
+              toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`)
+            );
+            if (errors.length > 5) {
+              toast.error(`… and ${errors.length - 5} more errors`);
+            }
+          }
+        }
+        queryClient.invalidateQueries('tasks');
+        queryClient.invalidateQueries('conversations');
+        if (bulkTaskFileInputRef.current) bulkTaskFileInputRef.current.value = '';
+      },
+      onError: (error: any) => {
+        toast.error(error.response?.data?.error || error.message || 'Upload failed');
+      },
+      onSettled: () => {
+        setIsBulkUploadingTasks(false);
+      },
+    }
+  );
+
+  const handleBulkTaskFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const name = (file.name || '').toLowerCase();
+    if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
+      toast.error('Please select an Excel file (.xlsx or .xls)');
+      e.target.value = '';
+      return;
+    }
+    setIsBulkUploadingTasks(true);
+    taskBulkUploadMutation.mutate(file);
+  };
+
   // Task group list content (left sidebar)
   const taskGroupListContent = (
     <div className="flex flex-col h-full bg-background-light dark:bg-background-dark">
@@ -651,6 +713,48 @@ export const TaskDashboardScreen: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Bulk Upload Tasks - Admin/Super Admin only */}
+      {isAdminOrSuperAdmin && (
+        <div className="px-4 pb-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 p-4">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
+              <span className="material-icons-outlined text-primary text-lg">upload_file</span>
+              Bulk create tasks
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              Download template, fill Task Title, Assigned To, Reporting Member, dates, Task Type, Recurrence, Task Owner (mobile), Financial Value, Description, Auto Escalate. Then upload.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadTaskTemplate}
+                disabled={isDownloadingTaskTemplate}
+                className="px-3 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-gray-800 dark:text-gray-200 rounded-lg text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <span className="material-icons-outlined text-base">download</span>
+                {isDownloadingTaskTemplate ? 'Downloading...' : 'Download template'}
+              </button>
+              <input
+                ref={bulkTaskFileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleBulkTaskFileChange}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => bulkTaskFileInputRef.current?.click()}
+                disabled={isBulkUploadingTasks}
+                className="px-3 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <span className="material-icons-outlined text-base">upload</span>
+                {isBulkUploadingTasks ? 'Uploading...' : 'Upload file'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Task Groups List */}
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-6">

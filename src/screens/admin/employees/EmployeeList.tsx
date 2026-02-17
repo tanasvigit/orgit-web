@@ -829,9 +829,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
         )}
       </div>
       <div>
-        <label className="block text-sm font-medium text-text-main mb-1">Department *</label>
+        <label className="block text-sm font-medium text-text-main mb-1">Department</label>
         <select
-          required
           className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
           value={formData.department}
           onChange={(e) => setFormData({ ...formData, department: e.target.value })}
@@ -845,9 +844,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
         </select>
       </div>
       <div>
-        <label className="block text-sm font-medium text-text-main mb-1">Designation *</label>
+        <label className="block text-sm font-medium text-text-main mb-1">Designation</label>
         <select
-          required
           className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
           value={formData.designation}
           onChange={(e) => setFormData({ ...formData, designation: e.target.value })}

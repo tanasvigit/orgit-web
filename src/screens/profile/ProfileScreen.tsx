@@ -284,14 +284,20 @@ export const ProfileScreen: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Contact Number</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Contact Number
+                    </label>
                     <input
                       type="tel"
                       value={contactNumber}
-                      onChange={(e) => setContactNumber(e.target.value)}
+                      disabled
                       placeholder="Contact number"
-                      className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-text-main-light dark:text-text-main-dark"
+                      className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 cursor-not-allowed"
                     />
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                      <span className="material-icons-outlined text-sm">info</span>
+                      Mobile number cannot be changed. Contact your administrator for updates.
+                    </p>
                   </div>
                 </div>
               ) : (

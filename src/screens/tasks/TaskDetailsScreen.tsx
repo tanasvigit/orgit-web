@@ -7,6 +7,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
+import { conversationService } from '../../services/conversationService';
+import { Avatar } from '../../components/shared';
 
 export const TaskDetailsScreen: React.FC = () => {
   const { taskId } = useParams<{ taskId: string }>();
@@ -19,6 +21,9 @@ export const TaskDetailsScreen: React.FC = () => {
   const [rejectionReason, setRejectionReason] = useState('');
   const [processing, setProcessing] = useState(false);
   const [verifyingUserId, setVerifyingUserId] = useState<string | null>(null);
+  const [showAddMembers, setShowAddMembers] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
 
   // Fetch task
@@ -476,6 +481,71 @@ export const TaskDetailsScreen: React.FC = () => {
     });
   };
 
+  // Fetch all users for adding members
+  const { data: allUsers = [], isLoading: isLoadingUsers } = useQuery(
+    ['all-users'],
+    () => conversationService.getAllUsers(),
+    { enabled: showAddMembers }
+  );
+
+  // Filter out users who are already assignees
+  const availableUsers = React.useMemo(() => {
+    if (!allUsers || !assignees) return [];
+    const assigneeIds = assignees.map((a: any) => a.id || a.user_id || a.userId).filter(Boolean);
+    return allUsers.filter((u: any) => !assigneeIds.includes(u.id));
+  }, [allUsers, assignees]);
+
+  // Filter users by search query
+  const filteredUsers = React.useMemo(() => {
+    if (!searchQuery.trim()) return availableUsers;
+    const query = searchQuery.toLowerCase();
+    return availableUsers.filter((u: any) => 
+      (u.name || '').toLowerCase().includes(query) || 
+      (u.mobile || '').toLowerCase().includes(query)
+    );
+  }, [availableUsers, searchQuery]);
+
+  const toggleUserSelection = (userId: string) => {
+    setSelectedUserIds(prev => 
+      prev.includes(userId) 
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
+  // Add members mutation
+  const addMembersMutation = useMutation(
+    (memberIds: string[]) => {
+      const conversationId = normalizedTask?.conversation_id || normalizedTask?.conversationId;
+      if (!conversationId) {
+        throw new Error('Task does not have a conversation group');
+      }
+      return conversationService.addGroupMembers(conversationId, memberIds);
+    },
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['conversation', normalizedTask?.conversation_id || normalizedTask?.conversationId]);
+        queryClient.invalidateQueries('conversations');
+        setShowAddMembers(false);
+        setSearchQuery('');
+        setSelectedUserIds([]);
+        toast.success('Members added successfully!');
+      },
+      onError: (error: any) => {
+        toast.error(`Failed to add members: ${error.response?.data?.error || error.message}`);
+      },
+    }
+  );
+
+  const handleAddMembers = () => {
+    if (selectedUserIds.length === 0) {
+      toast.error('Please select at least one member to add');
+      return;
+    }
+    addMembersMutation.mutate(selectedUserIds);
+  };
+
   // Loading state
   if (isLoading) {
     const loadingContent = (
@@ -754,12 +824,95 @@ export const TaskDetailsScreen: React.FC = () => {
                 <button
                   type="button"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-task-primary/20 text-task-primary text-xs font-semibold hover:bg-task-primary/5 transition-colors"
-                  onClick={() => {}}
+                  onClick={() => setShowAddMembers(!showAddMembers)}
                 >
                   <span className="material-symbols-outlined text-sm">person_add</span>
                   Add
                 </button>
               </div>
+              
+              {/* Add Members UI */}
+              {showAddMembers && (
+                <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-b border-slate-100 dark:border-slate-800">
+                  <div className="mb-3">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search by name or mobile number..."
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-task-primary"
+                    />
+                  </div>
+                  
+                  {isLoadingUsers && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Loading users...</p>
+                  )}
+                  
+                  {filteredUsers.length > 0 && (
+                    <div className="space-y-2 max-h-40 overflow-y-auto mb-3">
+                      {filteredUsers.map((user: any) => (
+                        <button
+                          key={user.id}
+                          onClick={() => toggleUserSelection(user.id)}
+                          className={`w-full flex items-center gap-3 p-2 rounded-lg text-left transition-colors ${
+                            selectedUserIds.includes(user.id)
+                              ? 'bg-task-primary/20 border-2 border-task-primary'
+                              : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedUserIds.includes(user.id)}
+                            onChange={() => toggleUserSelection(user.id)}
+                            className="rounded"
+                          />
+                          <Avatar size="sm" src={user.profilePhotoUrl || user.profile_photo_url} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                              {user.name || user.mobile}
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {user.mobile}
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {searchQuery && !isLoadingUsers && filteredUsers.length === 0 && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
+                      No users found or all users are already members
+                    </p>
+                  )}
+                  
+                  {!searchQuery && !isLoadingUsers && filteredUsers.length === 0 && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
+                      Start typing to search for users
+                    </p>
+                  )}
+                  
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleAddMembers}
+                      disabled={selectedUserIds.length === 0 || addMembersMutation.isLoading}
+                      className="flex-1 px-4 py-2 bg-task-primary text-white rounded-lg hover:bg-task-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                    >
+                      {addMembersMutation.isLoading ? 'Adding...' : `Add ${selectedUserIds.length} Member(s)`}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowAddMembers(false);
+                        setSearchQuery('');
+                        setSelectedUserIds([]);
+                      }}
+                      className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors text-sm font-medium"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="p-6 space-y-6">
                 {/* Progress Bar - Design style */}
                 <div>

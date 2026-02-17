@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -42,7 +42,9 @@ const ServiceList = lazy(() => import('./screens/admin/ServiceList').then(m => (
 const EntityList = lazy(() => import('./screens/admin/EntityList').then(m => ({ default: m.EntityList })));
 const ProfileScreen = lazy(() => import('./screens/profile/ProfileScreen').then(m => ({ default: m.ProfileScreen })));
 const UserProfileScreen = lazy(() => import('./screens/profile/UserProfileScreen').then(m => ({ default: m.UserProfileScreen })));
-const ProfileSettings = lazy(() => import('./screens/settings/ProfileSettings').then(m => ({ default: m.ProfileSettings })));
+// Note: internal ProfileSettings screen has been replaced by an external profile app
+// const ProfileSettings = lazy(() => import('./screens/settings/ProfileSettings').then(m => ({ default: m.ProfileSettings })));
+const _ProfileSettings = lazy(() => import('./screens/settings/ProfileSettings').then(m => ({ default: m.ProfileSettings })));
 const ChangePassword = lazy(() => import('./screens/settings/ChangePassword').then(m => ({ default: m.ChangePassword })));
 const ThemeSettings = lazy(() => import('./screens/settings/ThemeSettings').then(m => ({ default: m.ThemeSettings })));
 const SettingsScreen = lazy(() => import('./screens/settings/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
@@ -166,6 +168,14 @@ const _AdminOrSuperAdminProtectedRoute: React.FC<{ children: React.ReactNode }> 
   }
 
   return <>{children}</>;
+};
+
+// Simple component to redirect the user to the external profile application
+const ExternalProfileRedirect: React.FC = () => {
+  useEffect(() => {
+    window.location.href = 'http://localhost:3001/profile';
+  }, []);
+  return null;
 };
 
 function App() {
@@ -314,7 +324,8 @@ function App() {
               path="/settings/profile"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><ProfileSettings /></Suspense>
+                  {/* Redirect to external profile app */}
+                  <ExternalProfileRedirect />
                 </ProtectedRoute>
               }
             />
