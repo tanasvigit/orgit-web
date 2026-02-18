@@ -301,7 +301,7 @@ export const EntityMasterData: React.FC = () => {
               Bulk update from Excel
             </h2>
             <p className="text-slate-600 text-sm mb-4">
-              Download the template, fill in your data, then upload the file to update organizations, cost centres, branches, client entities, and client entity services in one go.
+              
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <button
@@ -339,7 +339,7 @@ export const EntityMasterData: React.FC = () => {
                 <span className="material-symbols-outlined text-primary text-2xl">business</span>
                 Organisation details
               </h2>
-              <p className="text-sm text-slate-500 mb-6">Bulk template: Name of the Organisation, Short Name, Address, E Mail ID, Web Site, Phone Number, Org Constitution, PAN, GST Number, Depot, Warehouse.</p>
+              <p className="text-sm text-slate-500 mb-6"></p>
               <div className="flex flex-col md:flex-row gap-8">
                 <div className="w-full md:w-1/3 flex flex-col gap-2">
                   <p className="text-xs text-slate-500 mb-1">Additional (not in bulk template)</p>

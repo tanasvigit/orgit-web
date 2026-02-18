@@ -147,8 +147,7 @@ export const ServiceList: React.FC = () => {
               Service List
             </h1>
             <p className="text-gray-500 dark:text-gray-400 text-sm">
-              Master list used for tasks and client service matrix. Columns match Excel: RECURRING TASK TITLE/SERVICE LIST, FREQUENCY, TASK ROLL OUT, ONE TIME TASK LIST.
-            </p>
+                          </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button

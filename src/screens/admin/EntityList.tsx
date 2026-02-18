@@ -172,7 +172,7 @@ export const EntityList: React.FC = () => {
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-1.5">Entity List</h1>
             <p className="text-gray-500 dark:text-gray-400 text-sm">
-              NAME OF THE CLIENT, ENTITY TYPE, COST CENTRE, GSTR & compliance fields (dropdowns). Clients and services (Admin only).
+              
             </p>
           </div>
           <div className="flex gap-2">
@@ -222,7 +222,7 @@ export const EntityList: React.FC = () => {
             >
               {isBulkUploading ? 'Uploading…' : 'Upload file'}
             </button>
-            <span className="text-xs text-slate-500">First 3 columns: text. All compliance columns (GSTR 1, GSTR 1A, …): dropdown (Daily, Weekly, … NA, Custom).</span>
+            <span className="text-xs text-slate-500"></span>
           </div>
         </div>
 

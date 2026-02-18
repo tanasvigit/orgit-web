@@ -249,7 +249,7 @@ export const EmployeeList: React.FC = () => {
             Bulk update from Excel
           </h2>
           <p className="text-text-muted text-sm mb-4">
-            Download the Employee template, fill in NAME OF THE EMPLOYEE, MOBILE NUMBER, DESIGNATON, REPORTING TO, LEVEL, then upload to add or update employees in your organization.
+            
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <button

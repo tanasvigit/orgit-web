@@ -228,7 +228,7 @@ The Compliance Management system supports three user roles: **Super Admin**, **A
 
 ### 2. Filtering & Search
 - Filter by Category (Tax, Labour, Corporate, Environmental)
-- Filter by Status (ACTIVE, INACTIVE)
+-  (ACTIVE, INACTIVE)
 - Filter by Scope (GLOBAL, ORG) - Super Admin only
 - Search by title, description
 

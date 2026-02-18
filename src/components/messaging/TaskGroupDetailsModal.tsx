@@ -1,14 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import { taskService } from '../../services/taskService';
 import { conversationService } from '../../services/conversationService';
-import { chatUserService } from '../../services/chatUserService';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { format } from 'date-fns';
 import { Avatar } from '../shared';
-import { User } from '../../../shared/src/types';
 
 interface TaskGroupDetailsModalProps {
   visible: boolean;
@@ -75,29 +73,43 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
   // taskService.getTask already extracts the task object, so taskData should be the task directly
   const task = taskData;
 
-  // Search users for adding members
-  const { data: searchResults, isFetching: isSearching } = useQuery(
-    ['search-users', searchQuery],
-    () => chatUserService.searchUsers(searchQuery),
-    {
-      enabled: showAddMembers && searchQuery.trim().length > 0,
-    }
+  // Replicate Task Details page: fetch all users when Add Members is open, then filter by name/mobile
+  const { data: allUsers = [], isLoading: isLoadingUsers } = useQuery(
+    ['all-users'],
+    () => conversationService.getAllUsers(),
+    { enabled: showAddMembers && visible }
   );
 
-  const users: User[] = searchResults?.data || [];
+  // Filter out users who are already group members
+  const availableUsers = useMemo(() => {
+    if (!allUsers || !Array.isArray(allUsers)) return [];
+    return allUsers.filter(
+      (u: any) => !groupMembers.some((m: any) => (m.id || m.userId) === u.id)
+    );
+  }, [allUsers, groupMembers]);
 
-  // Filter out users who are already members
-  const availableUsers = users.filter(
-    (u) => !groupMembers.some((m: any) => (m.id || m.userId) === u.id)
-  );
+  // Filter by search query (name or mobile number) - same as Task Details page
+  const filteredUsers = useMemo(() => {
+    if (!searchQuery.trim()) return availableUsers;
+    const query = searchQuery.toLowerCase();
+    return availableUsers.filter(
+      (u: any) =>
+        (u.name || '').toLowerCase().includes(query) ||
+        (u.mobile || '').toLowerCase().includes(query)
+    );
+  }, [availableUsers, searchQuery]);
 
-  // Add members mutation
+  // Add members mutation (also adds new members as task assignees on backend so they get TODO / Accept / Reject)
   const addMembersMutation = useMutation(
     (memberIds: string[]) => conversationService.addGroupMembers(conversationId!, memberIds),
     {
       onSuccess: () => {
         queryClient.invalidateQueries(['conversation', conversationId]);
         queryClient.invalidateQueries('conversations');
+        if (effectiveTaskId) {
+          queryClient.invalidateQueries(['task', effectiveTaskId]);
+          queryClient.invalidateQueries('dashboard');
+        }
         setShowAddMembers(false);
         setSearchQuery('');
         setSelectedUserIds([]);
@@ -440,7 +452,7 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
               </button>
             </div>
             
-            {/* Add Members UI */}
+            {/* Add Members UI - same flow as Task Details page (search by name or mobile, show numbers) */}
             {showAddMembers && (
               <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
                 <div className="mb-3">
@@ -453,13 +465,13 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
                   />
                 </div>
                 
-                {isSearching && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Searching...</p>
+                {isLoadingUsers && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Loading users...</p>
                 )}
                 
-                {availableUsers.length > 0 && (
+                {filteredUsers.length > 0 && (
                   <div className="space-y-2 max-h-40 overflow-y-auto mb-3">
-                    {availableUsers.map((user) => (
+                    {filteredUsers.map((user: any) => (
                       <button
                         key={user.id}
                         onClick={() => toggleUserSelection(user.id)}
@@ -475,7 +487,7 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
                           onChange={() => toggleUserSelection(user.id)}
                           className="rounded"
                         />
-                        <Avatar size="sm" src={user.profilePhotoUrl} />
+                        <Avatar size="sm" src={user.profilePhotoUrl || user.profile_photo_url} />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                             {user.name || user.mobile}
@@ -489,9 +501,15 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
                   </div>
                 )}
                 
-                {searchQuery && !isSearching && availableUsers.length === 0 && (
+                {searchQuery && !isLoadingUsers && filteredUsers.length === 0 && (
                   <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
                     No users found or all users are already members
+                  </p>
+                )}
+                
+                {!searchQuery && !isLoadingUsers && filteredUsers.length === 0 && (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
+                    Start typing to search for users
                   </p>
                 )}
                 

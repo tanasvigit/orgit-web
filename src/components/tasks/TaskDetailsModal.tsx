@@ -210,21 +210,27 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
     return colors[status] || '#6B7280';
   };
 
-  const statusColor = getStatusColor(displayTask.status || 'pending');
   const dueDate = displayTask.due_date ? new Date(displayTask.due_date) : null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const isOverdue = dueDate && dueDate < today && displayTask.status !== 'completed';
   const rawStatus = (displayTask.status || '').toLowerCase();
+  const anyAssigneeAccepted = assignees.some(
+    (a: any) => a.accepted_at || a.has_accepted
+  );
 
   let primaryStatusLabel: string = 'TODO';
   if (rawStatus === 'completed') {
     primaryStatusLabel = 'Completed';
   } else if (isOverdue && rawStatus !== 'completed') {
     primaryStatusLabel = 'Overdue';
-  } else if (rawStatus === 'in_progress') {
+  } else if (rawStatus === 'in_progress' || (rawStatus === 'pending' && anyAssigneeAccepted)) {
     primaryStatusLabel = 'In Progress';
   }
+
+  const statusColor = getStatusColor(
+    primaryStatusLabel === 'In Progress' ? 'in_progress' : (displayTask.status || 'pending')
+  );
 
   const content = (
     <div className="p-6 md:p-8">

@@ -10,8 +10,16 @@ import { AdminLayout } from '../../components/admin/AdminLayout';
 import { conversationService } from '../../services/conversationService';
 import { Avatar } from '../../components/shared';
 
-export const TaskDetailsScreen: React.FC = () => {
-  const { taskId } = useParams<{ taskId: string }>();
+interface TaskDetailsScreenProps {
+  /** When true, render only the task details content (no layout). Used when embedding in task group gate view. */
+  embedded?: boolean;
+  /** When embedded, pass taskId from parent (e.g. effectiveTaskId from conversation). */
+  taskId?: string;
+}
+
+export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded = false, taskId: taskIdProp }) => {
+  const { taskId: taskIdParam } = useParams<{ taskId: string }>();
+  const taskId = embedded ? taskIdProp : taskIdParam;
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
@@ -261,6 +269,10 @@ export const TaskDetailsScreen: React.FC = () => {
       if (verified) return 'completed';
       if (completed) return 'pending_verification';
       if (accepted) return 'in_progress';
+      // Creator doesn't need to accept; show In Progress when any assignee has accepted (matches dashboard)
+      if (isCreator && assigneesArr.some((a: any) => a.accepted_at || a.has_accepted)) {
+        return 'in_progress';
+      }
       return 'pending';
     }
 
@@ -527,6 +539,7 @@ export const TaskDetailsScreen: React.FC = () => {
         queryClient.invalidateQueries(['task', taskId]);
         queryClient.invalidateQueries(['conversation', normalizedTask?.conversation_id || normalizedTask?.conversationId]);
         queryClient.invalidateQueries('conversations');
+        queryClient.invalidateQueries('dashboard');
         setShowAddMembers(false);
         setSearchQuery('');
         setSelectedUserIds([]);
@@ -696,6 +709,19 @@ export const TaskDetailsScreen: React.FC = () => {
                   {displayTask.finance_type === 'income' ? 'Income' : displayTask.finance_type === 'expense' ? 'Expense' : 'Finance'}
                   {displayTask.financial_value != null && ` · ${displayTask.finance_type === 'expense' ? '-' : '+'}${Number(displayTask.financial_value).toFixed(2)}`}
                 </span>
+              </div>
+            )}
+            {/* Open group chat: only after Accept (TODO → Accept → In Progress). Without accepting, user cannot open chat. */}
+            {(isCreator || hasAccepted) && (displayTask.conversation_id || displayTask.conversationId) && (
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => navigate(isAdmin ? `/admin/messages/task-group/${displayTask.conversation_id || displayTask.conversationId}` : `/messages/task-group/${displayTask.conversation_id || displayTask.conversationId}`)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-task-primary/10 text-task-primary font-semibold text-sm hover:bg-task-primary/20 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-lg">forum</span>
+                  Open group chat
+                </button>
               </div>
             )}
           </div>
@@ -1287,6 +1313,11 @@ export const TaskDetailsScreen: React.FC = () => {
       )}
     </div>
   );
+
+  // When embedded (e.g. in task group gate view), render only content — no layout
+  if (embedded) {
+    return <>{content}</>;
+  }
 
   // Wrap in appropriate layout
   if (isAdmin) {

@@ -22,6 +22,7 @@ import { LocationMessage } from '../../components/messaging/LocationMessage';
 import { VoiceMessage } from '../../components/messaging/VoiceMessage';
 import { TaskGroupDetailsModal } from '../../components/messaging/TaskGroupDetailsModal';
 import { TaskDetailsModal } from '../../components/tasks/TaskDetailsModal';
+import { TaskDetailsScreen } from '../../screens/tasks/TaskDetailsScreen';
 import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
 import { NewChatModal } from '../../components/messaging/NewChatModal';
 import { MediaUpload } from '../../components/messaging/MediaUpload';
@@ -29,6 +30,7 @@ import { VoiceRecorder } from '../../components/messaging/VoiceRecorder';
 import { LocationPicker } from '../../components/messaging/LocationPicker';
 import { extractUploadedMedia } from '../../utils/chatMedia';
 import { isTaskDeleted } from '../../utils/taskUtils';
+import { Avatar } from '../../components/shared';
 
 interface TaskGroupChatConversationProps {
   conversationId?: string; // Optional prop to override useParams
@@ -76,6 +78,10 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const [showTaskGroupDetails, setShowTaskGroupDetails] = useState(false);
   const [openGroupDetailsForAddMembers, setOpenGroupDetailsForAddMembers] = useState(false);
   const [showTaskDetails, setShowTaskDetails] = useState(false);
+  const [showTaskDetailsInMain, setShowTaskDetailsInMain] = useState(false);
+  const [showAddMembersInline, setShowAddMembersInline] = useState(false);
+  const [addMembersSearchQuery, setAddMembersSearchQuery] = useState('');
+  const [selectedUserIdsForAdd, setSelectedUserIdsForAdd] = useState<string[]>([]);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [showMediaUpload, setShowMediaUpload] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
@@ -1127,6 +1133,76 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   // Get taskId from route params (when in task module) or from conversation data
   const taskId = routeTaskId || conversationData?.taskId || conversationData?.data?.taskId || conversationData?.task_id;
 
+  // Fetch all users for inline Add Members (same flow as Task Details page)
+  const { data: allUsers = [], isLoading: isLoadingUsersForAdd } = useQuery(
+    ['all-users'],
+    () => conversationService.getAllUsers(),
+    { enabled: showAddMembersInline }
+  );
+
+  // Filter out users who are already group members
+  const availableUsersForAdd = useMemo(() => {
+    if (!allUsers || !Array.isArray(allUsers)) return [];
+    return allUsers.filter(
+      (u: any) => !groupMembers.some((m: any) => (m.id || m.userId) === u.id)
+    );
+  }, [allUsers, groupMembers]);
+
+  // Filter by search query (name or mobile number) - same as Task Details page
+  const filteredUsersForAdd = useMemo(() => {
+    if (!addMembersSearchQuery.trim()) return availableUsersForAdd;
+    const query = addMembersSearchQuery.toLowerCase();
+    return availableUsersForAdd.filter(
+      (u: any) =>
+        (u.name || '').toLowerCase().includes(query) ||
+        (u.mobile || '').toLowerCase().includes(query)
+    );
+  }, [availableUsersForAdd, addMembersSearchQuery]);
+
+  // Add members mutation (same backend flow - adds to conversation + task_assignees)
+  const addMembersInlineMutation = useMutation(
+    (memberIds: string[]) => conversationService.addGroupMembers(conversationId!, memberIds),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['conversation', conversationId]);
+        queryClient.invalidateQueries('conversations');
+        if (effectiveTaskId) {
+          queryClient.invalidateQueries(['task', effectiveTaskId]);
+          queryClient.invalidateQueries('dashboard');
+        }
+        setShowAddMembersInline(false);
+        setAddMembersSearchQuery('');
+        setSelectedUserIdsForAdd([]);
+        toast.success('Members added successfully!');
+      },
+      onError: (error: any) => {
+        toast.error(`Failed to add members: ${error.response?.data?.error || error.message}`);
+      },
+    }
+  );
+
+  const handleAddMembersInline = () => {
+    if (selectedUserIdsForAdd.length === 0) {
+      toast.error('Please select at least one member to add');
+      return;
+    }
+    addMembersInlineMutation.mutate(selectedUserIdsForAdd);
+  };
+
+  const toggleUserSelectionForAdd = (userId: string) => {
+    setSelectedUserIdsForAdd((prev) =>
+      prev.includes(userId)
+        ? prev.filter((id) => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
+  const closeAddMembersPopover = () => {
+    setShowAddMembersInline(false);
+    setAddMembersSearchQuery('');
+    setSelectedUserIdsForAdd([]);
+  };
+
   // Fetch task data for verification logic
   const { data: taskData } = useQuery(
     ['task', taskId],
@@ -1231,6 +1307,10 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   // Accept / Reject (assignee who has not yet accepted)
   const canAccept = !isTaskCreator() && !!currentUserAssignee && !(currentUserAssignee.accepted_at || currentUserAssignee.has_accepted);
   const canReject = canAccept;
+
+  // Task flow: TODO → Accept → In Progress. Without accepting, show Task Details (with Accept/Reject) where chat would open; no redirect.
+  const canAccessChat = isTaskCreator() || (!!currentUserAssignee && !!(currentUserAssignee.accepted_at || currentUserAssignee.has_accepted));
+
   const acceptTaskMutation = useMutation(
     () => taskService.acceptTask(taskId!),
     {
@@ -1684,14 +1764,10 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       >
         <button
           onClick={() => {
-            // Navigate to full Task Details page from the task header
+            // Open Task Details in main chat area (same panel) when clicking header
             const id = effectiveTaskId || taskId;
             if (!id) return;
-            if (isAdmin) {
-              navigate(`/admin/tasks/${id}`);
-            } else {
-              navigate(`/tasks/${id}`);
-            }
+            setShowTaskDetailsInMain(true);
           }}
           className="flex items-center gap-4 flex-1 text-left hover:opacity-80 transition-opacity cursor-pointer"
         >
@@ -1778,6 +1854,17 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                   >
                     <span className="material-icons-outlined text-lg">info</span>
                     Task group details
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMoreMenu(false);
+                      setShowAddMembersInline(true);
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2"
+                  >
+                    <span className="material-icons-outlined text-lg">person_add</span>
+                    Add Member
                   </button>
                   {taskId && (
                     <button
@@ -2139,18 +2226,106 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
               type="button"
               onClick={() => {
                 setShowAttachmentMenu(false);
-                setOpenGroupDetailsForAddMembers(true);
-                setShowTaskGroupDetails(true);
+                setShowAddMembersInline(true);
               }}
               className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
             >
               <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:scale-110 transition-transform">
                 <span className="material-icons-round text-base">person_add</span>
               </div>
-              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Add Member (For Task Group)</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Add Member </span>
             </button>
           </div>
         )}
+
+        {/* Add Members popover – same style as + menu / More options */}
+        {showAddMembersInline && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={closeAddMembersPopover} aria-hidden="true" />
+            <div className="absolute bottom-[calc(100%+12px)] left-6 w-72 max-h-[min(70vh,420px)] flex flex-col bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl shadow-2xl overflow-hidden z-20">
+              <div className="shrink-0 px-3 py-2.5 border-b border-border-light dark:border-border-dark flex items-center gap-2">
+                <span className="material-icons-outlined text-primary text-lg">person_add</span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">Add Members</span>
+              </div>
+              <div className="shrink-0 p-2">
+                <input
+                  type="text"
+                  value={addMembersSearchQuery}
+                  onChange={(e) => setAddMembersSearchQuery(e.target.value)}
+                  placeholder="Search by name or mobile number..."
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto py-1">
+                {isLoadingUsersForAdd && (
+                  <div className="flex items-center justify-center py-8 text-gray-500 dark:text-gray-400">
+                    <span className="animate-spin rounded-full h-5 w-5 border-2 border-primary border-t-transparent mr-2" />
+                    <span className="text-xs">Loading...</span>
+                  </div>
+                )}
+                {!isLoadingUsersForAdd && filteredUsersForAdd.length > 0 && (
+                  <div>
+                    {filteredUsersForAdd.map((user: any) => (
+                      <button
+                        key={user.id}
+                        type="button"
+                        onClick={() => toggleUserSelectionForAdd(user.id)}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${
+                          selectedUserIdsForAdd.includes(user.id)
+                            ? 'bg-primary/10 dark:bg-primary/20'
+                            : 'hover:bg-gray-50 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedUserIdsForAdd.includes(user.id)}
+                          onChange={() => toggleUserSelectionForAdd(user.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary"
+                        />
+                        <Avatar size="sm" src={user.profilePhotoUrl || user.profile_photo_url} alt={user.name || user.mobile} />
+                        <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                          {user.name || user.mobile}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {!isLoadingUsersForAdd && addMembersSearchQuery && filteredUsersForAdd.length === 0 && (
+                  <div className="text-center py-6 text-gray-500 dark:text-gray-400 text-xs">No users found</div>
+                )}
+                {!isLoadingUsersForAdd && !addMembersSearchQuery && filteredUsersForAdd.length === 0 && (
+                  <div className="text-center py-6 text-gray-500 dark:text-gray-400 text-xs">Start typing to search</div>
+                )}
+              </div>
+              <div className="shrink-0 flex gap-2 p-2 border-t border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark">
+                <button
+                  type="button"
+                  onClick={closeAddMembersPopover}
+                  className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddMembersInline}
+                  disabled={addMembersInlineMutation.isLoading || selectedUserIdsForAdd.length === 0}
+                  className="flex-1 px-3 py-2 rounded-lg text-sm font-medium text-white bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1.5"
+                >
+                  {addMembersInlineMutation.isLoading ? (
+                    <>
+                      <span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent" />
+                      Adding...
+                    </>
+                  ) : (
+                    `Add ${selectedUserIdsForAdd.length} Member(s)`
+                  )}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
         <input
           ref={attachmentMenuInputRef}
           type="file"
@@ -2159,6 +2334,41 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         />
 
         <div className="flex flex-col gap-1 max-w-5xl mx-auto">
+          {/* Visibility toggle (Shared to All / Org-Only) - top of input box - ONLY for Task Groups */}
+          {isTaskGroup && (
+            <div className="flex items-center justify-end px-1 pb-0.5">
+              <div className="flex items-center gap-1 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setVisibilityMode('shared_to_group')}
+                  className={`px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors ${
+                    visibilityMode === 'shared_to_group'
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <span className="material-icons-round" style={{ fontSize: 12 }}>
+                    public
+                  </span>
+                  <span>Shared to All</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisibilityMode('org_only')}
+                  className={`px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors ${
+                    visibilityMode === 'org_only'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <span className="material-icons-round" style={{ fontSize: 12 }}>
+                    business
+                  </span>
+                  <span>Org-Only</span>
+                </button>
+              </div>
+            </div>
+          )}
           <div className="flex items-center gap-2 sm:gap-3 bg-gray-100 dark:bg-background-dark/70 p-2 sm:p-3 rounded-2xl border border-border-light dark:border-border-dark relative">
             {/* Plus button */}
             <button
@@ -2234,42 +2444,6 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             {/* Spacer for FAB - reserves space so send button doesn't get hidden */}
             <div className="w-12 sm:w-14 md:w-16 lg:w-20 flex-shrink-0"></div>
           </div>
-
-          {/* Visibility toggle row (Org-Only vs Shared-to-Group) - ONLY for Task Groups */}
-          {isTaskGroup && (
-            <div className="flex items-center justify-end px-1">
-              <div className="flex items-center gap-1 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => setVisibilityMode('shared_to_group')}
-                  className={`px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors ${
-                    visibilityMode === 'shared_to_group'
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  <span className="material-icons-round" style={{ fontSize: 12 }}>
-                    public
-                  </span>
-                  <span>Shared to All</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVisibilityMode('org_only')}
-                  className={`px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors ${
-                    visibilityMode === 'org_only'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  <span className="material-icons-round" style={{ fontSize: 12 }}>
-                    business
-                  </span>
-                  <span>Org-Only</span>
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -2352,12 +2526,53 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     </div>
   );
 
+  // Task flow: when user has not accepted, show full Task Details Page in place of chat (same area where chat opens)
+  const taskDetailsGateView = (
+    <div className="flex-1 flex flex-col bg-background-light dark:bg-background-dark h-full overflow-hidden">
+      {effectiveTaskId ? (
+        <div className="flex-1 overflow-y-auto">
+          <TaskDetailsScreen embedded taskId={effectiveTaskId} />
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400">
+          <span className="material-icons-outlined text-4xl mb-2">assignment</span>
+          <p className="text-sm font-medium">No task linked to this conversation</p>
+        </div>
+      )}
+    </div>
+  );
+
+  const displayContent = (isTaskGroup && !canAccessChat) ? taskDetailsGateView : mainContent;
+
+  // When user clicks task group header: show Task Details in main chat area (with Back to chat)
+  const taskDetailsInMainView = effectiveTaskId ? (
+    <div className="flex-1 flex flex-col bg-background-light dark:bg-background-dark h-full overflow-hidden">
+      <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-border-light dark:border-border-dark bg-white/80 dark:bg-surface-dark/80 backdrop-blur-sm">
+        <button
+          type="button"
+          onClick={() => setShowTaskDetailsInMain(false)}
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-primary hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors"
+        >
+          <span className="material-icons-outlined text-lg">arrow_back</span>
+          Back to chat
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        <TaskDetailsScreen embedded taskId={effectiveTaskId} />
+      </div>
+    </div>
+  ) : null;
+
+  const mainPanelContent = (showTaskDetailsInMain && canAccessChat && taskDetailsInMainView)
+    ? taskDetailsInMainView
+    : displayContent;
+
   // When embedded in Task Dashboard: no layout, only chat content + modals (parent has task list)
   if (embedInTaskDashboard) {
     return (
       <>
         <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden h-full">
-          {mainContent}
+          {mainPanelContent}
         </div>
         <TaskDetailsModal
           visible={showTaskDetails}
@@ -2365,7 +2580,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           taskId={effectiveTaskId || undefined}
         />
         <TaskGroupDetailsModal
-          visible={showTaskGroupDetails}
+          visible={showTaskGroupDetails && !showAddMembersInline}
           onClose={() => {
             setShowTaskGroupDetails(false);
             setOpenGroupDetailsForAddMembers(false);
@@ -2391,7 +2606,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       return (
         <AdminLayout hideSearch>
           <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden h-full">
-            {mainContent}
+            {mainPanelContent}
 
             {/* Task Details Modal */}
             <TaskDetailsModal
@@ -2414,7 +2629,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     return (
       <EmployeeLayout hideSearch>
         <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden h-full">
-          {mainContent}
+          {mainPanelContent}
 
           {/* Task Details Modal */}
           <TaskDetailsModal
@@ -2442,7 +2657,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             {conversationListContent}
           </div>
           <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden">
-            {mainContent}
+            {mainPanelContent}
           </div>
         </div>
 
@@ -2455,7 +2670,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
         {/* Task Group Details Modal */}
         <TaskGroupDetailsModal
-          visible={showTaskGroupDetails}
+          visible={showTaskGroupDetails && !showAddMembersInline}
           onClose={() => {
             setShowTaskGroupDetails(false);
             setOpenGroupDetailsForAddMembers(false);
@@ -2482,7 +2697,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       conversationListContent={conversationListContent}
       hideSearch
     >
-      {mainContent}
+      {mainPanelContent}
 
       {/* Task Details Modal */}
       <TaskDetailsModal
@@ -2493,7 +2708,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
       {/* Task Group Details Modal */}
       <TaskGroupDetailsModal
-        visible={showTaskGroupDetails}
+        visible={showTaskGroupDetails && !showAddMembersInline}
         onClose={() => {
           setShowTaskGroupDetails(false);
           setOpenGroupDetailsForAddMembers(false);

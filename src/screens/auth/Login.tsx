@@ -8,13 +8,20 @@ import { authService } from '../../services/authService';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 
+// Mobile: only digits and optional leading +. No letters or other characters.
+const mobileSchema = z
+  .string()
+  .min(1, 'Mobile number is required')
+  .regex(/^\+?[0-9]+$/, 'Characters are not allowed. Enter numbers only.')
+  .refine((val) => (val.replace(/\D/g, '').length >= 10), 'Mobile number must be at least 10 digits');
+
 const passwordLoginSchema = z.object({
-  mobile: z.string().min(10, 'Mobile number must be at least 10 digits'),
+  mobile: mobileSchema,
   password: z.string().min(1, 'Password is required'),
 });
 
 const otpLoginSchema = z.object({
-  mobile: z.string().min(10, 'Mobile number must be at least 10 digits'),
+  mobile: mobileSchema,
 });
 
 type PasswordLoginFormData = z.infer<typeof passwordLoginSchema>;
@@ -30,6 +37,18 @@ export const Login: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Restrict mobile input to numbers only (and optional leading +)
+  const handleMobileInput = (field: 'mobile', form: 'password' | 'otp') => {
+    const formInstance = form === 'password' ? passwordForm : otpForm;
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      const raw = e.target.value;
+      const hasPlus = raw.trimStart().startsWith('+');
+      const digits = raw.replace(/\D/g, '');
+      const value = hasPlus ? `+${digits}` : digits;
+      formInstance.setValue(field, value, { shouldValidate: true });
+    };
+  };
 
   // Helper function to normalize mobile number - accepts 10 digits, 12 digits starting with 91, or +91XXXXXXXXXX
   const formatPhoneNumber = (phone: string) => {
@@ -133,25 +152,22 @@ export const Login: React.FC = () => {
         stack: err.stack,
       });
       
-      // Extract detailed error message
+      // Use API error message when available (User not found, Incorrect password, etc.)
       let errorMsg = 'Login failed. Please try again.';
       if (err.response?.data?.error) {
         errorMsg = err.response.data.error;
-      } else if (err.response?.data?.message) {
-        errorMsg = err.response.data.message;
-      } else if (err.message) {
-        errorMsg = err.message;
-      }
-      
-      // Show specific error messages
-      if (err.response?.status === 401) {
-        errorMsg = err.response?.data?.error || 'Invalid mobile number or password. Please check your credentials.';
+      } else if (err.response?.status === 401) {
+        errorMsg = 'Invalid credentials. Please check your mobile number and password.';
       } else if (err.response?.status === 403) {
-        errorMsg = err.response?.data?.error || 'Your account is not active. Please contact administrator.';
+        errorMsg = 'Your account is not active. Please contact administrator.';
       } else if (err.response?.status === 400) {
         errorMsg = err.response?.data?.error || 'Invalid request. Please check your input.';
       } else if (!err.response) {
         errorMsg = 'Network error. Please check your internet connection.';
+      } else if (err.response?.data?.message) {
+        errorMsg = err.response.data.message;
+      } else if (err.message) {
+        errorMsg = err.message;
       }
       
       console.error('[Login UI] Setting error:', errorMsg);
@@ -258,6 +274,9 @@ export const Login: React.FC = () => {
               <div className="flex w-full flex-1 items-stretch rounded-lg shadow-sm">
                 <input
                   {...passwordForm.register('mobile')}
+                  onInput={handleMobileInput('mobile', 'password')}
+                  inputMode="numeric"
+                  autoComplete="tel"
                   className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-0 focus:ring-2 focus:ring-primary/20 focus:border-primary h-14 placeholder:text-slate-400 p-[15px] text-lg font-normal leading-normal tracking-wide"
                   placeholder="Enter mobile number"
                   type="tel"
@@ -321,8 +340,11 @@ export const Login: React.FC = () => {
               <div className="flex w-full flex-1 items-stretch rounded-lg shadow-sm">
                 <input
                   {...otpForm.register('mobile')}
+                  onInput={handleMobileInput('mobile', 'otp')}
+                  inputMode="numeric"
+                  autoComplete="tel"
                   className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-0 focus:ring-2 focus:ring-primary/20 focus:border-primary h-14 placeholder:text-slate-400 p-[15px] text-lg font-normal leading-normal tracking-wide"
-                  placeholder="Enter mobile number"
+                  placeholder="Enter mobile number (numbers only)"
                   type="tel"
                 />
               </div>

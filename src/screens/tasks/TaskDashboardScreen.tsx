@@ -86,6 +86,12 @@ export const TaskDashboardScreen: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectTaskId, setRejectTaskId] = useState<string | null>(null);
+  const [rejectTaskTitle, setRejectTaskTitle] = useState('');
+  const [rejectConvId, setRejectConvId] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState(false);
   const socketRef = React.useRef<any>(null);
 
   // Fetch all task services (recurring + one_time) for search suggestions
@@ -673,8 +679,8 @@ export const TaskDashboardScreen: React.FC = () => {
         {/* Status Filters - Enhanced Design */}
         <div className="space-y-2">
           <div className="flex items-center gap-2 mb-2">
-            <span className="material-icons-outlined text-sm text-gray-500 dark:text-gray-400">filter_list</span>
-            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Filter by Status</span>
+            <span className="material-icons-outlined text-sm text-gray-500 dark:text-gray-400"></span>
+            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide"></span>
           </div>
           <div className="flex flex-wrap gap-2">
             {([
@@ -723,7 +729,7 @@ export const TaskDashboardScreen: React.FC = () => {
               Bulk create tasks
             </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-              Download template, fill Task Title, Assigned To, Reporting Member, dates, Task Type, Recurrence, Task Owner (mobile), Financial Value, Description, Auto Escalate. Then upload.
+              
             </p>
             <div className="flex flex-wrap gap-2">
               <button
@@ -800,6 +806,45 @@ export const TaskDashboardScreen: React.FC = () => {
                 const taskStatusCategory = getTaskStatusCategory(task);
                 const isSelected = selectedConversationId === convId;
 
+                // Same flow as Create Task assignees (Pending Tasks): TODO + Accept/Reject for Add Member assignees
+                const currentUserId = user?.id || (user as any)?.userId;
+                const creatorId = task?.created_by ?? task?.creator_id;
+                const isCreator = !!creatorId && creatorId === currentUserId;
+                const currentUserStatus = task?.current_user_status || task?.currentUserStatus || {};
+                const hasAccepted = currentUserStatus.has_accepted || false;
+                const hasRejected = currentUserStatus.has_rejected || false;
+                const canAccept = !isCreator && !hasAccepted && !hasRejected;
+                const canReject = !isCreator && !hasRejected && !hasAccepted;
+
+                const handleTaskGroupAccept = async (e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  const taskId = task?.id || (convId ? taskIdByConvId[convId] : undefined);
+                  if (!taskId) return;
+                  try {
+                    await taskService.acceptTask(taskId);
+                    toast.success('Task accepted');
+                    queryClient.invalidateQueries('tasks');
+                    queryClient.invalidateQueries('conversations');
+                    queryClient.invalidateQueries(['task', taskId]);
+                    queryClient.invalidateQueries(['conversation-details', convId]);
+                    queryClient.invalidateQueries(['dashboard']);
+                    queryClient.invalidateQueries(['dashboard-statistics']);
+                  } catch (error: any) {
+                    toast.error(error.response?.data?.error || 'Failed to accept task');
+                  }
+                };
+
+                const handleTaskGroupReject = (e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  const taskId = task?.id || (convId ? taskIdByConvId[convId] : undefined);
+                  if (!taskId) return;
+                  setRejectTaskId(taskId);
+                  setRejectConvId(convId || null);
+                  setRejectTaskTitle(convName || 'Task');
+                  setRejectReason('');
+                  setShowRejectModal(true);
+                };
+
                 return (
                   <div
                     key={convId}
@@ -870,6 +915,38 @@ export const TaskDashboardScreen: React.FC = () => {
                           <p className="text-xs text-gray-400 dark:text-gray-500 italic">No messages yet</p>
                         )}
                       </div>
+                      {/* Same flow as Create Task → Pending Tasks: TODO with Accept/Reject for Add Member assignees */}
+                      {(canAccept || canReject) && (
+                        <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                          {canAccept && (
+                            <button
+                              onClick={handleTaskGroupAccept}
+                              className="flex-1 px-3 py-1.5 bg-primary hover:bg-primary/90 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1"
+                            >
+                              <span className="material-icons-outlined text-sm">check</span>
+                              Accept
+                            </button>
+                          )}
+                          {canReject && (
+                            <button
+                              onClick={handleTaskGroupReject}
+                              className="flex-1 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1"
+                            >
+                              <span className="material-icons-outlined text-sm">close</span>
+                              Reject
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {(hasAccepted || hasRejected) && (
+                        <div className="mt-2">
+                          <span className={`text-xs font-medium ${
+                            hasAccepted ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                          }`}>
+                            {hasAccepted ? '✓ Accepted' : '✗ Rejected'}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -915,25 +992,14 @@ export const TaskDashboardScreen: React.FC = () => {
                   }
                 };
 
-                // Handle reject
-                const handleReject = async (e: React.MouseEvent) => {
+                // Handle reject — open styled modal instead of prompt
+                const handleReject = (e: React.MouseEvent) => {
                   e.stopPropagation();
-                  const reason = prompt('Please provide a reason for rejecting this task:');
-                  if (!reason || reason.trim() === '') {
-                    toast.error('Please provide a reason');
-                    return;
-                  }
-                  try {
-                    await taskService.rejectTask(taskId, reason.trim());
-                    toast.success('Task rejected');
-                    queryClient.invalidateQueries('tasks');
-                    queryClient.invalidateQueries('conversations');
-                    queryClient.invalidateQueries(['task', taskId]);
-                    queryClient.invalidateQueries(['dashboard']);
-                    queryClient.invalidateQueries(['dashboard-statistics']);
-                  } catch (error: any) {
-                    toast.error(error.response?.data?.error || 'Failed to reject task');
-                  }
+                  setRejectTaskId(taskId);
+                  setRejectConvId(null);
+                  setRejectTaskTitle(taskTitle);
+                  setRejectReason('');
+                  setShowRejectModal(true);
                 };
 
                 return (
@@ -1040,6 +1106,33 @@ export const TaskDashboardScreen: React.FC = () => {
     </div>
   );
 
+  const handleConfirmReject = async () => {
+    if (!rejectTaskId || !rejectReason.trim()) {
+      toast.error('Please provide a reason for rejecting this task');
+      return;
+    }
+    setRejecting(true);
+    try {
+      await taskService.rejectTask(rejectTaskId, rejectReason.trim());
+      toast.success('Task rejected');
+      queryClient.invalidateQueries('tasks');
+      queryClient.invalidateQueries('conversations');
+      queryClient.invalidateQueries(['task', rejectTaskId]);
+      if (rejectConvId) queryClient.invalidateQueries(['conversation-details', rejectConvId]);
+      queryClient.invalidateQueries(['dashboard']);
+      queryClient.invalidateQueries(['dashboard-statistics']);
+      setShowRejectModal(false);
+      setRejectReason('');
+      setRejectTaskId(null);
+      setRejectConvId(null);
+      setRejectTaskTitle('');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to reject task');
+    } finally {
+      setRejecting(false);
+    }
+  };
+
   // Main content (right side): chat when a task group is selected, otherwise empty state
   const mainContent = selectedConversationId ? (
     <TaskGroupChatConversation
@@ -1098,6 +1191,62 @@ export const TaskDashboardScreen: React.FC = () => {
             queryClient.invalidateQueries('conversations');
           }}
         />
+
+        {/* Styled Reject Task Modal (replaces prompt) */}
+        {showRejectModal && (
+          <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => !rejecting && setShowRejectModal(false)}>
+            <div
+              className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-200 dark:border-gray-700"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 pt-6 pb-2">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <span className="material-icons-outlined text-red-500">close</span>
+                  Reject task
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{rejectTaskTitle}</p>
+              </div>
+              <div className="px-6 py-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reason for rejection (required)</label>
+                <textarea
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="Please provide a reason for rejecting this task..."
+                  rows={4}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-primary/50 focus:border-primary resize-none"
+                />
+              </div>
+              <div className="px-6 pb-6 pt-2 flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => !rejecting && (setShowRejectModal(false), setRejectReason(''), setRejectTaskId(null), setRejectConvId(null), setRejectTaskTitle(''))}
+                  disabled={rejecting}
+                  className="px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmReject}
+                  disabled={rejecting || !rejectReason.trim()}
+                  className="px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {rejecting ? (
+                    <>
+                      <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                      Rejecting...
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-icons-outlined text-lg">close</span>
+                      Reject task
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </AdminLayout>
     );
   }
@@ -1132,6 +1281,62 @@ export const TaskDashboardScreen: React.FC = () => {
           queryClient.invalidateQueries('conversations');
         }}
       />
+
+      {/* Styled Reject Task Modal (replaces prompt) */}
+      {showRejectModal && (
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => !rejecting && setShowRejectModal(false)}>
+          <div
+            className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-200 dark:border-gray-700"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 pt-6 pb-2">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <span className="material-icons-outlined text-red-500">close</span>
+                Reject task
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{rejectTaskTitle}</p>
+            </div>
+            <div className="px-6 py-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reason for rejection (required)</label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Please provide a reason for rejecting this task..."
+                rows={4}
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-primary/50 focus:border-primary resize-none"
+              />
+            </div>
+            <div className="px-6 pb-6 pt-2 flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => !rejecting && (setShowRejectModal(false), setRejectReason(''), setRejectTaskId(null), setRejectConvId(null), setRejectTaskTitle(''))}
+                disabled={rejecting}
+                className="px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                disabled={rejecting || !rejectReason.trim()}
+                className="px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {rejecting ? (
+                  <>
+                    <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                    Rejecting...
+                  </>
+                ) : (
+                  <>
+                    <span className="material-icons-outlined text-lg">close</span>
+                    Reject task
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </EmployeeLayout>
   );
 };
