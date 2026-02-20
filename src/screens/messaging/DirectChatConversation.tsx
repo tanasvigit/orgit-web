@@ -1121,7 +1121,7 @@ export const DirectChatConversation: React.FC = () => {
             content: caption,
             message_type: 'text',
             status: 'pending',
-            created_at: new Date().toISOString(),
+            created_at: undefined,
             sender_name: user?.name || 'You',
             reply_to_message_id: replyingTo?.id || null,
             reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, content: replyingTo.content, message_type: replyingTo.message_type, sender_name: replyingTo.sender_name } : null,
@@ -1185,7 +1185,7 @@ export const DirectChatConversation: React.FC = () => {
           content: message.trim(),
           message_type: 'text',
           status: 'pending',
-          created_at: new Date().toISOString(),
+          created_at: undefined,
           sender_name: user?.name || 'You',
           reply_to_message_id: replyingTo?.id || null,
           reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, content: replyingTo.content, message_type: replyingTo.message_type, sender_name: replyingTo.sender_name } : null,
@@ -1761,7 +1761,7 @@ export const DirectChatConversation: React.FC = () => {
                 <p className={`text-sm ${isMyMessage ? 'text-[#1F2937]' : 'text-[#1F2937] dark:text-gray-200'}`}>{msg.content}</p>
                 <div className={`flex items-center gap-1.5 mt-2 ${isMyMessage ? 'justify-end' : ''}`}>
                   <span className={`text-[11px] ${isMyMessage ? 'text-[#6B7280]' : 'text-[#6B7280] dark:text-gray-400'}`}>
-                    {formatTime(msg.created_at)}
+                    {msg.created_at ? formatTime(msg.created_at) : (msg.status === 'pending' || msg.status === 'failed' ? '...' : '')}
                   </span>
                   {isMyMessage && statusIcon && (
                     <span 

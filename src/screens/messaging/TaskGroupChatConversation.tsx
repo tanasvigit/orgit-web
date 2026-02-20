@@ -767,7 +767,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             content: caption,
             message_type: 'text',
             status: 'pending',
-            created_at: new Date().toISOString(),
+            created_at: undefined,
             sender_name: user?.name || 'You',
             reply_to_message_id: replyingTo?.id || null,
             reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, content: replyingTo.content, message_type: replyingTo.message_type, sender_name: replyingTo.sender_name } : null,
@@ -829,7 +829,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           content: message.trim(),
           message_type: 'text',
           status: 'pending',
-          created_at: new Date().toISOString(),
+          created_at: undefined,
           sender_name: user?.name || 'You',
           reply_to_message_id: replyingTo?.id || null,
           reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, content: replyingTo.content, message_type: replyingTo.message_type, sender_name: replyingTo.sender_name } : null,
@@ -1779,7 +1779,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                 <p className={`text-[15px] font-normal leading-relaxed break-words ${isMyMessage ? 'text-[#1F2937]' : 'text-[#1F2937] dark:text-gray-100'}`}>{msg.content}</p>
                 <div className={`flex items-center justify-end gap-1.5 mt-2 ${isMyMessage ? '' : 'absolute bottom-1 right-3'}`}>
                   <span className={`text-[11px] ${isMyMessage ? 'text-[#6B7280]' : 'text-[#6B7280] dark:text-gray-400'}`}>
-                    {formatTime(msg.created_at)}
+                    {msg.created_at ? formatTime(msg.created_at) : (msg.status === 'pending' || msg.status === 'failed' ? '...' : '')}
                   </span>
                   {isMyMessage && statusIcon && (
                     <span 
