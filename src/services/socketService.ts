@@ -78,9 +78,8 @@ export const initSocket = async (token: string): Promise<Socket> => {
 
   // Set up connection event listeners (matching mobile pattern)
   socket.on('connect', () => {
-    console.log('✅ Socket connected successfully');
+    console.log('[socket] connected');
     connectionState = 'connected';
-    // The waitForSocketConnection promise will resolve via the 'connect' event listener
   });
 
   socket.on('connect_error', (error: any) => {
@@ -137,12 +136,8 @@ export const initSocket = async (token: string): Promise<Socket> => {
   });
 
   socket.on('disconnect', (reason) => {
-    console.log('⚠️ Socket disconnected:', reason);
+    console.log('[socket] disconnected', reason);
     connectionState = 'disconnected';
-    // If disconnected due to transport error, socket will automatically reconnect
-    if (reason === 'transport error' || reason === 'transport close') {
-      console.log('🔄 Transport error detected, socket will attempt to reconnect...');
-    }
   });
 
   socket.on('reconnect', (attemptNumber) => {

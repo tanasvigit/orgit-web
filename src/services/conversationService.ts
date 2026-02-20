@@ -82,6 +82,8 @@ export interface User {
   phone?: string;
   profile_photo_url?: string;
   profile_photo?: string;
+  organization_id?: string;
+  organizationId?: string;
 }
 
 export interface UsersListResponse {
@@ -246,7 +248,12 @@ export const conversationService = {
    */
   getAllUsers: async (): Promise<User[]> => {
     const response = await api.get<UsersListResponse>('/conversations/users/list');
-    return response.data.users || [];
+    const raw = response.data.users || [];
+    return raw.map((u: any) => ({
+      ...u,
+      organization_id: u.organization_id ?? u.organizationId,
+      organizationId: u.organizationId ?? u.organization_id,
+    }));
   },
 
   /**
@@ -272,12 +279,13 @@ export const conversationService = {
   },
 
   /**
-   * Add members to a group conversation
+   * Add members to a group conversation.
+   * For task groups, pass taskId so the backend can add members to task_assignees (so they see the task in Task Management).
    */
-  addGroupMembers: async (conversationId: string, memberIds: string[]): Promise<any> => {
-    const response = await api.post(`/conversations/groups/${conversationId}/members`, {
-      memberIds,
-    });
+  addGroupMembers: async (conversationId: string, memberIds: string[], taskId?: string): Promise<any> => {
+    const body: { memberIds: string[]; taskId?: string } = { memberIds };
+    if (taskId) body.taskId = taskId;
+    const response = await api.post(`/conversations/groups/${conversationId}/members`, body);
     return response.data;
   },
 

@@ -114,11 +114,13 @@ export const TaskDashboardScreen: React.FC = () => {
   );
   const allTaskServices: TaskServiceItem[] = Array.isArray(taskServicesData) ? taskServicesData : [];
 
-  // Filter suggestions by search query (e.g. "G" or "GS" -> GSTR 1, GSTR 9)
+  // Google-like suggestions: when search focused with empty query show all services; when typing show filtered
   const suggestions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return [];
-    return allTaskServices.filter((s) => (s.title || '').toLowerCase().includes(q));
+    if (q) {
+      return allTaskServices.filter((s) => (s.title || '').toLowerCase().includes(q));
+    }
+    return allTaskServices.slice(0, 20);
   }, [searchQuery, allTaskServices]);
 
   // Status filter from URL (dashboard card navigation) or local state

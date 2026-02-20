@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery } from 'react-query';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { conversationService } from '../../services/conversationService';
 import { taskService } from '../../services/taskService';
 import { documentInstanceService } from '../../services/documentInstanceService';
+import { masterDataService } from '../../services/masterDataService';
 import { setTaskFinancial } from '../../utils/taskFinancialStorage';
 import { CustomDatePicker } from '../shared/CustomDatePicker';
 import { waitForSocketConnection } from '../../services/socketService';
@@ -60,6 +61,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [showTargetPicker, setShowTargetPicker] = useState(false);
   const [showDuePicker, setShowDuePicker] = useState(false);
   const [showAssigneeModal, setShowAssigneeModal] = useState(false);
+  const [assigneeSearchQuery, setAssigneeSearchQuery] = useState('');
+  const [showTitleSuggestions, setShowTitleSuggestions] = useState(false);
+  const [titleHighlightedIndex, setTitleHighlightedIndex] = useState(-1);
+  const titleSuggestionsRef = useRef<HTMLDivElement>(null);
   const [recurrenceType, setRecurrenceType] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>('weekly');
   const [autoEscalate, setAutoEscalate] = useState(false);
   const [createTaskLoading, setCreateTaskLoading] = useState(false);
@@ -145,6 +150,33 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     }
   }, [visible, fetchedDocument]);
 
+  // Fetch task services for title suggestions (Google-like autocomplete)
+  const { data: taskServicesData } = useQuery(
+    'task-services-all',
+    async () => {
+      const [recurring, oneTime] = await Promise.all([
+        masterDataService.getTaskServices('recurring'),
+        masterDataService.getTaskServices('one_time'),
+      ]);
+      const recurringList = (recurring.data?.data ?? recurring.data ?? []) as { id: string; title: string; frequency?: string }[];
+      const oneTimeList = (oneTime.data?.data ?? oneTime.data ?? []) as { id: string; title: string; frequency?: string }[];
+      const byId = new Map<string, { id: string; title: string; frequency?: string }>();
+      [...recurringList, ...oneTimeList].forEach((s) => {
+        if (s?.id && !byId.has(s.id)) byId.set(s.id, s);
+      });
+      return Array.from(byId.values());
+    },
+    { enabled: visible, staleTime: 5 * 60 * 1000 }
+  );
+  const allTitleServices = Array.isArray(taskServicesData) ? taskServicesData : [];
+  const titleSuggestions = useMemo(() => {
+    const q = title.trim().toLowerCase();
+    if (q) {
+      return allTitleServices.filter((s) => (s.title || '').toLowerCase().includes(q));
+    }
+    return allTitleServices.slice(0, 15);
+  }, [title, allTitleServices]);
+
   // Fetch users for assignee selection
   const { data: usersData } = useQuery(
     'allUsers',
@@ -152,7 +184,26 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     { enabled: visible }
   );
 
-  const users = usersData || [];
+  const allUsers = usersData || [];
+  const currentOrgId = user?.organizationId || (user as any)?.organization_id;
+  const displayUsers = React.useMemo(() => {
+    const hasSearch = (assigneeSearchQuery || '').trim().length > 0;
+    const q = assigneeSearchQuery.trim().toLowerCase();
+    if (hasSearch) {
+      return allUsers.filter(
+        (u: any) =>
+          (u.name || '').toLowerCase().includes(q) ||
+          (u.mobile || u.phone || '').toString().toLowerCase().includes(q)
+      );
+    }
+    if (currentOrgId) {
+      const sameOrg = allUsers.filter(
+        (u: any) => (u.organization_id || u.organizationId) === currentOrgId
+      );
+      return sameOrg.length > 0 ? sameOrg : allUsers;
+    }
+    return allUsers;
+  }, [allUsers, assigneeSearchQuery, currentOrgId]);
 
   // Format date time helper
   const formatDateTime = (date: Date) => {
@@ -351,21 +402,80 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
-          {/* 1. Task Title */}
-          <div>
+          {/* 1. Task Title - with service list suggestions (Google-like) */}
+          <div className="relative" ref={titleSuggestionsRef}>
             <label className="block text-sm sm:text-base font-semibold text-gray-700 dark:text-gray-300 mb-2">
               Task Title
             </label>
             <input
               type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g., Q3 Financial Review"
+              onChange={(e) => {
+                setTitle(e.target.value);
+                setShowTitleSuggestions(true);
+                setTitleHighlightedIndex(-1);
+              }}
+              onFocus={() => !initialTitle && setShowTitleSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowTitleSuggestions(false), 200)}
+              onKeyDown={(e) => {
+                if (!showTitleSuggestions || titleSuggestions.length === 0) {
+                  if (e.key === 'Escape') setShowTitleSuggestions(false);
+                  return;
+                }
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setTitleHighlightedIndex((i) => (i < titleSuggestions.length - 1 ? i + 1 : 0));
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setTitleHighlightedIndex((i) => (i > 0 ? i - 1 : titleSuggestions.length - 1));
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const item = titleSuggestions[titleHighlightedIndex >= 0 ? titleHighlightedIndex : 0];
+                  if (item?.title) {
+                    setTitle(item.title);
+                    setShowTitleSuggestions(false);
+                    setTitleHighlightedIndex(-1);
+                  }
+                } else if (e.key === 'Escape') {
+                  setShowTitleSuggestions(false);
+                  setTitleHighlightedIndex(-1);
+                }
+              }}
+              placeholder="Type or select from service list (e.g. GSTR 1, GSTR 9…)"
               readOnly={!!initialTitle}
-              className={`w-full px-4 py-3 sm:py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm sm:text-base text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-colors min-h-[44px] ${
-                initialTitle ? 'bg-gray-50 dark:bg-gray-700 cursor-not-allowed' : 'bg-white dark:bg-gray-700'
-              }`}
+              className={`w-full px-4 py-3 sm:py-2.5 rounded-lg border text-sm sm:text-base text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-colors min-h-[44px] ${
+                showTitleSuggestions && titleSuggestions.length > 0
+                  ? 'border-primary/40 shadow-md'
+                  : 'border-gray-300 dark:border-gray-600'
+              } ${initialTitle ? 'bg-gray-50 dark:bg-gray-700 cursor-not-allowed' : 'bg-white dark:bg-gray-700'}`}
             />
+            {!initialTitle && showTitleSuggestions && titleSuggestions.length > 0 && (
+              <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg py-1">
+                {titleSuggestions.map((item, index) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setTitle(item.title || '');
+                      setShowTitleSuggestions(false);
+                      setTitleHighlightedIndex(-1);
+                    }}
+                    className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${
+                      index === titleHighlightedIndex
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                    }`}
+                  >
+                    <span className="material-icons-outlined text-lg text-gray-400 dark:text-gray-500 shrink-0">assignment</span>
+                    <span className="font-medium truncate">{item.title}</span>
+                    {item.frequency && (
+                      <span className="ml-auto text-xs text-gray-500 dark:text-gray-400 shrink-0">{item.frequency}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 2. Assigned To */}
@@ -724,15 +834,24 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-4">
-                {users.length === 0 ? (
-                  <p className="text-center text-gray-500 dark:text-gray-400 py-8">No employees available</p>
+                <input
+                  type="text"
+                  value={assigneeSearchQuery}
+                  onChange={(e) => setAssigneeSearchQuery(e.target.value)}
+                  placeholder="Search by name or number..."
+                  className="w-full mb-3 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                />
+                {displayUsers.length === 0 ? (
+                  <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+                    {assigneeSearchQuery.trim() ? 'No users match your search' : 'No employees available'}
+                  </p>
                 ) : (
-                  users.map((user: any) => {
-                    const isSelected = selectedAssignees.find(u => u.id === user.id);
+                  displayUsers.map((usr: any) => {
+                    const isSelected = selectedAssignees.find(u => u.id === usr.id);
                     return (
                       <button
-                        key={user.id}
-                        onClick={() => toggleAssignee(user)}
+                        key={usr.id}
+                        onClick={() => toggleAssignee(usr)}
                         className={`w-full flex items-center gap-3 p-3 rounded-lg mb-2 transition-colors min-h-[44px] ${
                           isSelected
                             ? 'bg-primary/10 border-2 border-primary'
@@ -741,12 +860,12 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                       >
                         <div className="size-10 rounded-full bg-primary/20 flex items-center justify-center">
                           <span className="text-primary font-semibold">
-                            {user.name?.charAt(0).toUpperCase() || '?'}
+                            {usr.name?.charAt(0).toUpperCase() || '?'}
                           </span>
                         </div>
                         <div className="flex-1 text-left">
-                          <p className="font-semibold text-gray-900 dark:text-white">{user.name || user.mobile}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">{user.mobile}</p>
+                          <p className="font-semibold text-gray-900 dark:text-white">{usr.name || usr.mobile}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{usr.mobile}</p>
                         </div>
                         {isSelected && (
                           <span className="material-symbols-outlined text-primary">check_circle</span>

@@ -507,15 +507,26 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     return allUsers.filter((u: any) => !assigneeIds.includes(u.id));
   }, [allUsers, assignees]);
 
-  // Filter users by search query
+  // By default show same-organisation members (company employees); on search show all matching users including outsiders
+  const currentOrgId = user?.organizationId || (user as any)?.organization_id;
   const filteredUsers = React.useMemo(() => {
-    if (!searchQuery.trim()) return availableUsers;
-    const query = searchQuery.toLowerCase();
-    return availableUsers.filter((u: any) => 
-      (u.name || '').toLowerCase().includes(query) || 
-      (u.mobile || '').toLowerCase().includes(query)
-    );
-  }, [availableUsers, searchQuery]);
+    const hasSearch = (searchQuery || '').trim().length > 0;
+    const q = searchQuery.trim().toLowerCase();
+    if (hasSearch) {
+      return availableUsers.filter(
+        (u: any) =>
+          (u.name || '').toLowerCase().includes(q) ||
+          (u.mobile || u.phone || '').toString().toLowerCase().includes(q)
+      );
+    }
+    if (currentOrgId) {
+      const sameOrg = availableUsers.filter(
+        (u: any) => (u.organization_id || u.organizationId) === currentOrgId
+      );
+      return sameOrg.length > 0 ? sameOrg : availableUsers;
+    }
+    return availableUsers;
+  }, [availableUsers, searchQuery, currentOrgId]);
 
   const toggleUserSelection = (userId: string) => {
     setSelectedUserIds(prev => 

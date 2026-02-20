@@ -38,7 +38,9 @@ export const DirectChatConversation: React.FC = () => {
   const [messages, setMessages] = useState<any[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<any>(null);
+  const socketCleanupRef = useRef<(() => void) | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastPendingTempIdRef = useRef<string | null>(null);
   const attachmentMenuInputRef = useRef<HTMLInputElement>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
@@ -50,6 +52,8 @@ export const DirectChatConversation: React.FC = () => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
+  /** Single source of truth for online status: list of userIds from socket (online_users / user_online / user_offline). */
+  const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [typing, setTyping] = useState(false);
   const [otherUserId, setOtherUserId] = useState<string | null>(null);
@@ -344,14 +348,10 @@ export const DirectChatConversation: React.FC = () => {
 
         // ========== MESSAGE LISTENERS (set up first) ==========
         const handleNewMessage = (newMsg: any) => {
-          // CRITICAL FIX: Only process messages for this conversation
-          if (newMsg.conversation_id !== conversationId) {
-            return;
-          }
-          
+          if (newMsg.conversation_id !== conversationId) return;
           const currentUserId = user?.id;
           const isMyMessage = newMsg.sender_id === currentUserId || newMsg.senderId === currentUserId;
-          
+          console.log('[socket] message received', { messageId: newMsg.id, conversationId: newMsg.conversation_id, senderId: newMsg.sender_id });
           console.log('📨 New message received in DirectChatConversation:', {
             id: newMsg.id,
             conversationId: newMsg.conversation_id,
@@ -759,35 +759,23 @@ export const DirectChatConversation: React.FC = () => {
         // ========== ONLINE/OFFLINE STATUS LISTENERS (set up before join) ==========
         // CRITICAL FIX: Use persistent listeners (not 'once') to catch all events
         const handleUserOnline = (data: any) => {
-          console.log('🟢 User online event received:', data);
-          const isGroup = conversationData?.type === 'group' || conversationData?.is_group;
-          const isTaskGroup = conversationData?.isTaskGroup || conversationData?.is_task_group;
-          // Update status if this is the other user in the conversation
-          if (!isGroup && !isTaskGroup && otherUserId && data.userId === otherUserId) {
-            console.log('✅ Setting user online:', otherUserId);
-            setIsOnline(true);
+          if (data.userId) {
+            setOnlineUserIds((prev) => (prev.includes(data.userId) ? prev : [...prev, data.userId]));
           }
         };
 
         const handleUserOffline = (data: any) => {
-          console.log('🔴 User offline event received:', data);
-          const isGroup = conversationData?.type === 'group' || conversationData?.is_group;
-          const isTaskGroup = conversationData?.isTaskGroup || conversationData?.is_task_group;
-          // Update status if this is the other user in the conversation
-          if (!isGroup && !isTaskGroup && otherUserId && data.userId === otherUserId) {
-            console.log('✅ Setting user offline:', otherUserId);
-            setIsOnline(false);
+          if (data.userId) {
+            setOnlineUserIds((prev) => prev.filter((id) => id !== data.userId));
           }
         };
 
         const handleUserOnlineStatus = (data: any) => {
-          console.log('📡 User online status event received:', data);
-          const isGroup = conversationData?.type === 'group' || conversationData?.is_group;
-          const isTaskGroup = conversationData?.isTaskGroup || conversationData?.is_task_group;
-          // Update status if this is the other user in the conversation
-          if (!isGroup && !isTaskGroup && otherUserId && data.userId === otherUserId) {
-            console.log('✅ Setting online status from event:', data.isOnline);
-            setIsOnline(data.isOnline === true);
+          if (!data.userId) return;
+          if (data.isOnline === true) {
+            setOnlineUserIds((prev) => (prev.includes(data.userId) ? prev : [...prev, data.userId]));
+          } else {
+            setOnlineUserIds((prev) => prev.filter((id) => id !== data.userId));
           }
         };
 
@@ -836,10 +824,26 @@ export const DirectChatConversation: React.FC = () => {
         socket.on('user_online_status', handleUserOnlineStatus);
         socket.on('message_reaction_added', handleMessageReactionAdded);
         socket.on('message_reaction_removed', handleMessageReactionRemoved);
+        const handleDisconnect = () => {
+          setMessages((prev) => prev.map((m) => {
+            if (!m.id?.startsWith('temp_')) return m;
+            if ((m.sender_id !== user?.id && m.senderId !== user?.id) || m.status !== 'pending') return m;
+            return { ...m, status: 'failed' };
+          }));
+        };
+        socket.on('disconnect', handleDisconnect);
 
-        // ========== NOW JOIN CONVERSATION ROOM (after all listeners are set up) ==========
+        const handleOnlineUsers = (data: { userIds?: string[] }) => {
+          setOnlineUserIds((prev) => {
+            const ids = data.userIds ?? [];
+            return Array.isArray(ids) ? ids : prev;
+          });
+        };
+        socket.on('online_users', handleOnlineUsers);
+        socket.emit('get_online_users');
+
         socket.emit('join_conversation', conversationId);
-        console.log('✅ Joined conversation room:', conversationId);
+        console.log('[socket] joined conversation room:', conversationId);
 
         socketRef.current = socket;
 
@@ -867,49 +871,46 @@ export const DirectChatConversation: React.FC = () => {
           }, 2000);
         }
 
-        // Cleanup: Remove old temp messages periodically (every 5 seconds)
-        // This ensures temp messages don't persist if socket events fail
+        // Cleanup: Mark pending temp messages as failed after 15s (no server ack); remove old temp after 30s
         const tempMessageCleanupInterval = setInterval(() => {
           setMessages((prev) => {
             const currentUserId = user?.id;
             const now = Date.now();
-            const thirtySecondsAgo = now - 30000; // 30 seconds
-            
-            const oldTempMessages = prev.filter(msg => {
+            const fifteenSecondsAgo = now - 15000;
+            const thirtySecondsAgo = now - 30000;
+            let next = prev;
+            const myPending = prev.filter(msg => {
               if (!msg.id?.startsWith('temp_')) return false;
               if (msg.sender_id !== currentUserId && msg.senderId !== currentUserId) return false;
-              const msgTime = new Date(msg.created_at || 0).getTime();
-              return msgTime < thirtySecondsAgo;
+              return msg.status === 'pending';
             });
-            
-            if (oldTempMessages.length > 0) {
-              console.log('[tempMessageCleanup] Removing old temp messages:', oldTempMessages.map(m => m.id));
-              return prev.filter(msg => !oldTempMessages.find(t => t.id === msg.id));
+            const toMarkFailed = myPending.filter(m => new Date(m.created_at || 0).getTime() < fifteenSecondsAgo);
+            if (toMarkFailed.length > 0) {
+              next = next.map(m => (toMarkFailed.some(t => t.id === m.id) ? { ...m, status: 'failed' } : m));
             }
-            
-            return prev;
+            const oldTemp = next.filter(msg => {
+              if (!msg.id?.startsWith('temp_')) return false;
+              if (msg.sender_id !== currentUserId && msg.senderId !== currentUserId) return false;
+              return new Date(msg.created_at || 0).getTime() < thirtySecondsAgo;
+            });
+            if (oldTemp.length > 0) {
+              next = next.filter(msg => !oldTemp.some(t => t.id === msg.id));
+            }
+            return next;
           });
         }, 5000);
         
-        // Return cleanup function
-        return () => {
+        const cleanup = () => {
           try {
-            // Clear online check interval if it exists
-          if (onlineCheckInterval) {
-            clearInterval(onlineCheckInterval);
+            if (onlineCheckInterval) {
+              clearInterval(onlineCheckInterval);
               onlineCheckInterval = null;
-          }
-            
-            // Clear temp message cleanup interval
-          if (tempMessageCleanupInterval) {
-            clearInterval(tempMessageCleanupInterval);
-          }
-            
-            // Leave conversation room
+            }
+            if (tempMessageCleanupInterval) {
+              clearInterval(tempMessageCleanupInterval);
+            }
             socket.emit('leave_conversation', conversationId);
-            
-            // Remove all listeners
-            socket.off('new_message');
+            socket.off('new_message', handleNewMessage);
             socket.off('typing');
             socket.off('message_status_update');
             socket.off('conversation_messages_read');
@@ -917,15 +918,20 @@ export const DirectChatConversation: React.FC = () => {
             socket.off('message_deleted');
             socket.off('message_reaction_added');
             socket.off('message_reaction_removed');
-            socket.off('user_online');
-            socket.off('user_offline');
-            socket.off('user_online_status');
+            socket.off('user_online', handleUserOnline);
+            socket.off('user_offline', handleUserOffline);
+            socket.off('user_online_status', handleUserOnlineStatus);
+            socket.off('disconnect', handleDisconnect);
+            socket.off('online_users', handleOnlineUsers);
           } catch (error) {
-            console.error('Socket cleanup error:', error);
+            console.error('[socket] cleanup error:', error);
           }
         };
+        if (isMounted) socketCleanupRef.current = cleanup;
+        else cleanup();
+        return cleanup;
       } catch (error) {
-        console.error('Socket setup error:', error);
+        console.error('[socket] setup error:', error);
       }
     };
 
@@ -933,6 +939,8 @@ export const DirectChatConversation: React.FC = () => {
 
     return () => {
       isMounted = false;
+      socketCleanupRef.current?.();
+      socketCleanupRef.current = null;
       if (conversationId) {
         leaveConversationRoom(conversationId);
       }
@@ -940,7 +948,7 @@ export const DirectChatConversation: React.FC = () => {
         clearTimeout(typingTimeoutRef.current);
       }
     };
-  }, [conversationId, user, otherUserId, conversationData]);
+  }, [conversationId, user?.id, otherUserId, conversationData?.type, conversationData?.is_group, conversationData?.isTaskGroup, conversationData?.is_task_group]);
 
   // Mark messages as read when conversation is opened
   useEffect(() => {
@@ -1086,9 +1094,8 @@ export const DirectChatConversation: React.FC = () => {
     if ((!message.trim() && !replyingTo && !editingMessage && pendingAttachments.length === 0) || !conversationId) return;
 
     try {
-      const socket = await waitForSocketConnection();
-
       if (editingMessage) {
+        const socket = await waitForSocketConnection();
         await messageService.editMessage(editingMessage.id, message.trim());
         socket.emit('send_message', {
           conversationId,
@@ -1103,7 +1110,9 @@ export const DirectChatConversation: React.FC = () => {
         // Send caption as text first if present
         const caption = message.trim();
         if (caption) {
+          const socket = await waitForSocketConnection();
           const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          lastPendingTempIdRef.current = tempId;
           const currentUserId = user?.id;
           const tempMessage = normalizeMessage({
             id: tempId,
@@ -1111,7 +1120,7 @@ export const DirectChatConversation: React.FC = () => {
             sender_id: currentUserId,
             content: caption,
             message_type: 'text',
-            status: 'sent',
+            status: 'pending',
             created_at: new Date().toISOString(),
             sender_name: user?.name || 'You',
             reply_to_message_id: replyingTo?.id || null,
@@ -1119,12 +1128,21 @@ export const DirectChatConversation: React.FC = () => {
           });
           if (tempMessage) setMessages((prev) => [...prev, tempMessage]);
           socket.emit('send_message', { conversationId, text: caption, content: caption, messageType: 'text', replyToMessageId: replyingTo?.id || null, deviceTimestamp: getDeviceLocalTimestamp() });
+          lastPendingTempIdRef.current = null;
           setMessage('');
           setReplyingTo(null);
         }
         setUploadingMedia(true);
         const toSend = [...pendingAttachments];
         setPendingAttachments([]);
+        let mediaSocket: any = null;
+        try {
+          mediaSocket = await waitForSocketConnection();
+        } catch (e) {
+          setUploadingMedia(false);
+          toast.error('No connection. Please check your internet.');
+          throw e;
+        }
         for (const item of toSend) {
           try {
             let uploadResponse: any;
@@ -1137,7 +1155,7 @@ export const DirectChatConversation: React.FC = () => {
             }
             const { storedValue } = extractUploadedMedia(uploadResponse);
             if (!storedValue) throw new Error('Upload did not return key');
-            socket.emit('send_message', {
+            mediaSocket.emit('send_message', {
               conversationId,
               messageType,
               mediaUrl: storedValue,
@@ -1156,8 +1174,9 @@ export const DirectChatConversation: React.FC = () => {
         setUploadingMedia(false);
         setTimeout(() => scrollToBottom(), 100);
       } else {
-        // Text only
+        // Text only: add optimistic message as pending, then connect and emit
         const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        lastPendingTempIdRef.current = tempId;
         const currentUserId = user?.id;
         const tempMessage = normalizeMessage({
           id: tempId,
@@ -1165,7 +1184,7 @@ export const DirectChatConversation: React.FC = () => {
           sender_id: currentUserId,
           content: message.trim(),
           message_type: 'text',
-          status: 'sent',
+          status: 'pending',
           created_at: new Date().toISOString(),
           sender_name: user?.name || 'You',
           reply_to_message_id: replyingTo?.id || null,
@@ -1177,7 +1196,9 @@ export const DirectChatConversation: React.FC = () => {
           setReplyingTo(null);
           setTimeout(() => scrollToBottom(), 100);
         }
+        const socket = await waitForSocketConnection();
         socket.emit('send_message', { conversationId, text: message.trim(), content: message.trim(), messageType: 'text', replyToMessageId: replyingTo?.id || null, deviceTimestamp: getDeviceLocalTimestamp() });
+        lastPendingTempIdRef.current = null;
       }
 
       setIsTyping(false);
@@ -1188,6 +1209,12 @@ export const DirectChatConversation: React.FC = () => {
     } catch (error) {
       console.error('Send message error:', error);
       toast.error('Failed to send message. Please try again.');
+      // Mark the last optimistic message as failed (e.g. when offline / connection failed)
+      const failedTempId = lastPendingTempIdRef.current;
+      lastPendingTempIdRef.current = null;
+      if (failedTempId) {
+        setMessages((prev) => prev.map((m) => (m.id === failedTempId ? { ...m, status: 'failed' } : m)));
+      }
     }
   };
 
@@ -1609,7 +1636,13 @@ export const DirectChatConversation: React.FC = () => {
         });
       }
       
-      if (messageStatus === 'read') {
+      if (messageStatus === 'failed') {
+        statusIcon = 'error';
+        statusColor = '#DC2626'; // Red for failed
+      } else if (messageStatus === 'pending') {
+        statusIcon = 'schedule';
+        statusColor = '#9CA3AF'; // Gray for pending/sending
+      } else if (messageStatus === 'read') {
         statusIcon = '✓✓';
         statusColor = '#7C3AED'; // Purple for read
       } else if (messageStatus === 'delivered') {
@@ -1734,8 +1767,9 @@ export const DirectChatConversation: React.FC = () => {
                     <span 
                       className="material-icons-round text-[16px] font-semibold leading-none" 
                       style={{ color: statusColor }}
+                      title={messageStatus === 'pending' ? 'Sending...' : messageStatus === 'failed' ? 'Failed to send' : undefined}
                     >
-                      {statusIcon === '✓✓' ? 'done_all' : 'done'}
+                      {statusIcon === '✓✓' ? 'done_all' : statusIcon === '✓' ? 'done' : statusIcon}
                     </span>
                   )}
                 </div>
@@ -1834,6 +1868,7 @@ export const DirectChatConversation: React.FC = () => {
       onSearchChange={setConversationSearchQuery}
       onCreateNew={() => setShowNewChatModal(true)}
       hideHeader={!isAdmin}
+      onlineUserIds={onlineUserIds}
     />
   );
 
@@ -1877,16 +1912,19 @@ export const DirectChatConversation: React.FC = () => {
                 </span>
               ) : unreadCount > 0 ? (
                 `${unreadCount} unread message${unreadCount > 1 ? 's' : ''}`
-              ) : isOnline && !(conversationData?.type === 'group' || conversationData?.is_group) && !(conversationData?.isTaskGroup || conversationData?.is_task_group) ? (
-                <span className="flex items-center gap-1">
-                  <span className="size-2 bg-green-500 rounded-full"></span>
-                  <span>online</span>
-                </span>
-              ) : !(conversationData?.type === 'group' || conversationData?.is_group) && !(conversationData?.isTaskGroup || conversationData?.is_task_group) ? (
-                <span>offline</span>
-              ) : (
-                ''
-              )}
+              ) : (() => {
+                const isDirect = !(conversationData?.type === 'group' || conversationData?.is_group) && !(conversationData?.isTaskGroup || conversationData?.is_task_group);
+                const isOnlineFromList = Boolean(otherUserId && (onlineUserIds ?? []).includes(otherUserId));
+                if (!isDirect) return null;
+                return isOnlineFromList ? (
+                  <span className="flex items-center gap-1">
+                    <span className="size-2 bg-green-500 rounded-full"></span>
+                    <span>online</span>
+                  </span>
+                ) : (
+                  <span>offline</span>
+                );
+              })()}
               </p>
           </div>
           </button>

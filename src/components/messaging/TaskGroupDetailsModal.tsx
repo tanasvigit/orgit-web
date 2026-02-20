@@ -88,16 +88,26 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
     );
   }, [allUsers, groupMembers]);
 
-  // Filter by search query (name or mobile number) - same as Task Details page
+  // By default show same-organisation members (company employees); on search show all matching users including outsiders
+  const currentOrgId = user?.organizationId || (user as any)?.organization_id;
   const filteredUsers = useMemo(() => {
-    if (!searchQuery.trim()) return availableUsers;
-    const query = searchQuery.toLowerCase();
-    return availableUsers.filter(
-      (u: any) =>
-        (u.name || '').toLowerCase().includes(query) ||
-        (u.mobile || '').toLowerCase().includes(query)
-    );
-  }, [availableUsers, searchQuery]);
+    const hasSearch = (searchQuery || '').trim().length > 0;
+    const q = searchQuery.trim().toLowerCase();
+    if (hasSearch) {
+      return availableUsers.filter(
+        (u: any) =>
+          (u.name || '').toLowerCase().includes(q) ||
+          (u.mobile || u.phone || '').toString().toLowerCase().includes(q)
+      );
+    }
+    if (currentOrgId) {
+      const sameOrg = availableUsers.filter(
+        (u: any) => (u.organization_id || u.organizationId) === currentOrgId
+      );
+      return sameOrg.length > 0 ? sameOrg : availableUsers;
+    }
+    return availableUsers;
+  }, [availableUsers, searchQuery, currentOrgId]);
 
   // Add members mutation (also adds new members as task assignees on backend so they get TODO / Accept / Reject)
   const addMembersMutation = useMutation(

@@ -57,6 +57,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<any>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastPendingTempIdRef = useRef<string | null>(null);
   const hasMarkedAsReadRef = useRef<boolean>(false);
   const attachmentMenuInputRef = useRef<HTMLInputElement>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -517,6 +518,15 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         onSocketEvent('message_reaction_added', handleMessageReactionAdded);
         onSocketEvent('message_reaction_removed', handleMessageReactionRemoved);
         onSocketEvent('conversation_updated', handleConversationUpdated);
+        const handleDisconnect = () => {
+          setMessages((prev) => prev.map((m) => {
+            if (!m.id?.startsWith('temp_')) return m;
+            const uid = user?.id || user?.userId;
+            if ((m.sender_id !== uid && m.senderId !== uid) || m.status !== 'pending') return m;
+            return { ...m, status: 'failed' };
+          }));
+        };
+        onSocketEvent('disconnect', handleDisconnect);
 
         socketRef.current = socket;
 
@@ -534,6 +544,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           offSocketEvent('message_reaction_added', handleMessageReactionAdded);
           offSocketEvent('message_reaction_removed', handleMessageReactionRemoved);
           offSocketEvent('conversation_updated', handleConversationUpdated);
+          offSocketEvent('disconnect', handleDisconnect);
         };
       } catch (error) {
         console.error('Socket setup error:', error);
@@ -549,6 +560,39 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       }
     };
   }, [conversationId, user, queryClient]);
+
+  // Mark pending temp messages as failed after 15s; remove old temp after 30s
+  useEffect(() => {
+    if (!conversationId) return;
+    const interval = setInterval(() => {
+      setMessages((prev) => {
+        const currentUserId = user?.id || user?.userId;
+        const now = Date.now();
+        const fifteenSecondsAgo = now - 15000;
+        const thirtySecondsAgo = now - 30000;
+        let next = prev;
+        const myPending = prev.filter(msg => {
+          if (!msg.id?.startsWith('temp_')) return false;
+          if (msg.sender_id !== currentUserId && msg.senderId !== currentUserId) return false;
+          return msg.status === 'pending';
+        });
+        const toMarkFailed = myPending.filter(m => new Date(m.created_at || 0).getTime() < fifteenSecondsAgo);
+        if (toMarkFailed.length > 0) {
+          next = next.map(m => (toMarkFailed.some(t => t.id === m.id) ? { ...m, status: 'failed' } : m));
+        }
+        const oldTemp = next.filter(msg => {
+          if (!msg.id?.startsWith('temp_')) return false;
+          if (msg.sender_id !== currentUserId && msg.senderId !== currentUserId) return false;
+          return new Date(msg.created_at || 0).getTime() < thirtySecondsAgo;
+        });
+        if (oldTemp.length > 0) {
+          next = next.filter(msg => !oldTemp.some(t => t.id === msg.id));
+        }
+        return next;
+      });
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [conversationId, user?.id, user?.userId]);
 
   // Mark messages as read when conversation is opened (only once per conversation)
   useEffect(() => {
@@ -703,9 +747,8 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     if ((!message.trim() && !replyingTo && !editingMessage && pendingAttachments.length === 0) || !conversationId) return;
 
     try {
-      const socket = await waitForSocketConnection();
-
       if (editingMessage) {
+        const socket = await waitForSocketConnection();
         await messageService.editMessage(editingMessage.id, message.trim());
         socket.emit('send_message', { conversationId, content: message.trim(), messageType: 'text', isEdit: true, messageId: editingMessage.id });
         setEditingMessage(null);
@@ -713,7 +756,9 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       } else if (pendingAttachments.length > 0) {
         const caption = message.trim();
         if (caption) {
+          const socket = await waitForSocketConnection();
           const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          lastPendingTempIdRef.current = tempId;
           const currentUserId = user?.id || user?.userId;
           const tempMessage = normalizeMessage({
             id: tempId,
@@ -721,7 +766,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             sender_id: currentUserId,
             content: caption,
             message_type: 'text',
-            status: 'sent',
+            status: 'pending',
             created_at: new Date().toISOString(),
             sender_name: user?.name || 'You',
             reply_to_message_id: replyingTo?.id || null,
@@ -738,12 +783,21 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             // Only send visibilityMode for task groups
             ...(isTaskGroup && { visibilityMode }),
           });
+          lastPendingTempIdRef.current = null;
           setMessage('');
           setReplyingTo(null);
         }
         setUploadingMedia(true);
         const toSend = [...pendingAttachments];
         setPendingAttachments([]);
+        let mediaSocket: any = null;
+        try {
+          mediaSocket = await waitForSocketConnection();
+        } catch (e) {
+          setUploadingMedia(false);
+          toast.error('No connection. Please check your internet.');
+          throw e;
+        }
         for (const item of toSend) {
           try {
             let uploadResponse: any;
@@ -755,7 +809,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             }
             const { storedValue } = extractUploadedMedia(uploadResponse);
             if (!storedValue) throw new Error('Upload did not return key');
-            socket.emit('send_message', { conversationId, messageType: item.type, mediaUrl: storedValue, fileName: item.name, fileSize: item.size, mimeType: item.file.type, replyToMessageId: replyingTo?.id || null, deviceTimestamp: getDeviceLocalTimestamp() });
+            mediaSocket.emit('send_message', { conversationId, messageType: item.type, mediaUrl: storedValue, fileName: item.name, fileSize: item.size, mimeType: item.file.type, replyToMessageId: replyingTo?.id || null, deviceTimestamp: getDeviceLocalTimestamp() });
           } catch (err) {
             console.error('Upload error:', err);
             toast.error(`Failed to upload ${item.name}. Please try again.`);
@@ -766,6 +820,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         setTimeout(() => scrollToBottom(), 100);
       } else {
         const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        lastPendingTempIdRef.current = tempId;
         const currentUserId = user?.id || user?.userId;
         const tempMessage = normalizeMessage({
           id: tempId,
@@ -773,7 +828,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           sender_id: currentUserId,
           content: message.trim(),
           message_type: 'text',
-          status: 'sent',
+          status: 'pending',
           created_at: new Date().toISOString(),
           sender_name: user?.name || 'You',
           reply_to_message_id: replyingTo?.id || null,
@@ -786,6 +841,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           setReplyingTo(null);
           setTimeout(() => scrollToBottom(), 100);
         }
+        const socket = await waitForSocketConnection();
         socket.emit('send_message', { 
           conversationId, 
           text: message.trim(), 
@@ -796,6 +852,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           // Only send visibilityMode for task groups; backend will use 'private' for personal chats
           ...(isTaskGroup && { visibilityMode }),
         });
+        lastPendingTempIdRef.current = null;
       }
 
       setIsTyping(false);
@@ -805,6 +862,12 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       }
     } catch (error) {
       console.error('Send message error:', error);
+      toast.error('Failed to send message. Please try again.');
+      const failedTempId = lastPendingTempIdRef.current;
+      lastPendingTempIdRef.current = null;
+      if (failedTempId) {
+        setMessages((prev) => prev.map((m) => (m.id === failedTempId ? { ...m, status: 'failed' } : m)));
+      }
     }
   };
 
@@ -1148,20 +1211,31 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     );
   }, [allUsers, groupMembers]);
 
-  // Filter by search query (name or mobile number) - same as Task Details page
+  // By default show same-organisation members (company employees); on search show all matching users including outsiders
+  const currentOrgId = user?.organizationId || (user as any)?.organization_id;
   const filteredUsersForAdd = useMemo(() => {
-    if (!addMembersSearchQuery.trim()) return availableUsersForAdd;
-    const query = addMembersSearchQuery.toLowerCase();
-    return availableUsersForAdd.filter(
-      (u: any) =>
-        (u.name || '').toLowerCase().includes(query) ||
-        (u.mobile || '').toLowerCase().includes(query)
-    );
-  }, [availableUsersForAdd, addMembersSearchQuery]);
+    const hasSearch = (addMembersSearchQuery || '').trim().length > 0;
+    const q = addMembersSearchQuery.trim().toLowerCase();
+    if (hasSearch) {
+      return availableUsersForAdd.filter(
+        (u: any) =>
+          (u.name || '').toLowerCase().includes(q) ||
+          (u.mobile || u.phone || '').toString().toLowerCase().includes(q)
+      );
+    }
+    if (currentOrgId) {
+      const sameOrg = availableUsersForAdd.filter(
+        (u: any) => (u.organization_id || u.organizationId) === currentOrgId
+      );
+      return sameOrg.length > 0 ? sameOrg : availableUsersForAdd;
+    }
+    return availableUsersForAdd;
+  }, [availableUsersForAdd, addMembersSearchQuery, currentOrgId]);
 
-  // Add members mutation (same backend flow - adds to conversation + task_assignees)
+  // Add members mutation (adds to conversation_members + task_assignees so new members see task in Task Management)
   const addMembersInlineMutation = useMutation(
-    (memberIds: string[]) => conversationService.addGroupMembers(conversationId!, memberIds),
+    (memberIds: string[]) =>
+      conversationService.addGroupMembers(conversationId!, memberIds, effectiveTaskId || undefined),
     {
       onSuccess: () => {
         queryClient.invalidateQueries(['conversation', conversationId]);
@@ -1536,7 +1610,13 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     let statusIcon = null;
     let statusColor = '#6B7280';
     if (isMyMessage) {
-      if (messageStatus === 'read') {
+      if (messageStatus === 'failed') {
+        statusIcon = 'error';
+        statusColor = '#DC2626';
+      } else if (messageStatus === 'pending') {
+        statusIcon = 'schedule';
+        statusColor = '#9CA3AF';
+      } else if (messageStatus === 'read') {
         statusIcon = '✓✓';
         statusColor = '#7C3AED';
       } else if (messageStatus === 'delivered') {
@@ -1705,8 +1785,9 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                     <span 
                       className="material-icons-round text-[16px] font-semibold leading-none" 
                       style={{ color: statusColor }}
+                      title={messageStatus === 'pending' ? 'Sending...' : messageStatus === 'failed' ? 'Failed to send' : undefined}
                     >
-                      {statusIcon === '✓✓' ? 'done_all' : 'done'}
+                      {statusIcon === '✓✓' ? 'done_all' : statusIcon === '✓' ? 'done' : statusIcon}
                     </span>
                   )}
                 </div>
