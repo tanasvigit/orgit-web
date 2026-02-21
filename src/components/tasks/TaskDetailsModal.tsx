@@ -61,7 +61,21 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
         queryClient.invalidateQueries(['task', taskId]);
         queryClient.invalidateQueries(['tasks']);
         queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['admin-dashboard']);
+        queryClient.invalidateQueries(['admin-dashboard-statistics']);
         toast.success('Task accepted successfully!');
+        onClose();
+        // Redirect to appropriate dashboard with animation state
+        const dashboardPath = isAdmin ? '/admin' : '/dashboard';
+        navigate(dashboardPath, {
+          state: {
+            animateTaskTransition: true,
+            taskId: taskId,
+            fromStatus: 'todo',
+            toStatus: 'inprogress',
+            taskSection: isCreator ? 'self' : 'assigned',
+          },
+        });
       },
       onError: (error: any) => {
         toast.error(error.response?.data?.error || 'Failed to accept task');

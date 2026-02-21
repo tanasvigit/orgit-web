@@ -831,6 +831,18 @@ export const TaskDashboardScreen: React.FC = () => {
                     queryClient.invalidateQueries(['conversation-details', convId]);
                     queryClient.invalidateQueries(['dashboard']);
                     queryClient.invalidateQueries(['dashboard-statistics']);
+                    queryClient.invalidateQueries(['admin-dashboard']);
+                    queryClient.invalidateQueries(['admin-dashboard-statistics']);
+                    const dashboardPath = isAdmin ? '/admin' : '/dashboard';
+                    navigate(dashboardPath, {
+                      state: {
+                        animateTaskTransition: true,
+                        taskId,
+                        fromStatus: 'todo',
+                        toStatus: 'inprogress',
+                        taskSection: isCreator ? 'self' : 'assigned',
+                      },
+                    });
                   } catch (error: any) {
                     toast.error(error.response?.data?.error || 'Failed to accept task');
                   }
@@ -989,6 +1001,18 @@ export const TaskDashboardScreen: React.FC = () => {
                     queryClient.invalidateQueries(['task', taskId]);
                     queryClient.invalidateQueries(['dashboard']);
                     queryClient.invalidateQueries(['dashboard-statistics']);
+                    queryClient.invalidateQueries(['admin-dashboard']);
+                    queryClient.invalidateQueries(['admin-dashboard-statistics']);
+                    const dashboardPath = isAdmin ? '/admin' : '/dashboard';
+                    navigate(dashboardPath, {
+                      state: {
+                        animateTaskTransition: true,
+                        taskId,
+                        fromStatus: 'todo',
+                        toStatus: 'inprogress',
+                        taskSection: isCreator ? 'self' : 'assigned',
+                      },
+                    });
                   } catch (error: any) {
                     toast.error(error.response?.data?.error || 'Failed to accept task');
                   }

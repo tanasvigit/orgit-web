@@ -8,6 +8,8 @@ import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { taskService } from '../../services/taskService';
 import { mergeTaskWithFinancial } from '../../utils/taskFinancialStorage';
 import { isTaskDeleted } from '../../utils/taskUtils';
+import { useTaskTransitionAnimation } from '../../hooks/useTaskTransitionAnimation';
+import { TaskTransitionAnimation } from '../../components/dashboard/TaskTransitionAnimation';
 
 export const EmployeeDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -19,6 +21,13 @@ export const EmployeeDashboard: React.FC = () => {
   const [expandedDM, setExpandedDM] = useState(false);
   // const [expandedCM, setExpandedCM] = useState(false);
   const [taskDetails, setTaskDetails] = useState<Record<string, any>>({});
+
+  // Refs for task transition animation (Self Tasks section)
+  const selfTasksToDoIconRef = useRef<HTMLDivElement>(null);
+  const selfTasksInProgressIconRef = useRef<HTMLDivElement>(null);
+  // Refs for task transition animation (Assigned Tasks section)
+  const assignedTasksToDoIconRef = useRef<HTMLDivElement>(null);
+  const assignedTasksInProgressIconRef = useRef<HTMLDivElement>(null);
 
   const { data: dashboardData, isLoading, refetch: refetchDashboard } = useQuery(
     ['dashboard'],
@@ -53,6 +62,38 @@ export const EmployeeDashboard: React.FC = () => {
 
   const selfTasks = dashboardData?.data?.selfTasks;
   const assignedTasks = dashboardData?.data?.assignedTasks;
+
+  // Animation hook and section detection (after queries so we can use isLoading)
+  const { shouldAnimate, taskId, clearAnimationState } = useTaskTransitionAnimation();
+  const [animationSection, setAnimationSection] = useState<'self' | 'assigned' | null>(null);
+
+  useEffect(() => {
+    if (!shouldAnimate) {
+      setAnimationSection(null);
+      return;
+    }
+    // Always animate in Self Tasks section (To Do → In Progress)
+    const checkRefs = () => {
+      if (selfTasksToDoIconRef.current && selfTasksInProgressIconRef.current) {
+        setAnimationSection('self');
+        return true;
+      }
+      return false;
+    };
+    if (checkRefs()) return;
+    const delays = [50, 150, 350, 600];
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    delays.forEach((ms) => {
+      timers.push(
+        setTimeout(() => {
+          if (checkRefs()) {
+            timers.forEach(clearTimeout);
+          }
+        }, ms)
+      );
+    });
+    return () => timers.forEach(clearTimeout);
+  }, [shouldAnimate, isLoading]);
 
   const currentUserId = user?.id || (user as any)?.userId;
 
@@ -404,7 +445,13 @@ export const EmployeeDashboard: React.FC = () => {
     );
   };
 
-  const renderTaskRow = (tasks: any, viewType: 'self' | 'assigned', title: string) => {
+  const renderTaskRow = (
+    tasks: any,
+    viewType: 'self' | 'assigned',
+    title: string,
+    toDoIconRef?: React.RefObject<HTMLDivElement>,
+    inProgressIconRef?: React.RefObject<HTMLDivElement>
+  ) => {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3 mb-5">
@@ -424,7 +471,7 @@ export const EmployeeDashboard: React.FC = () => {
               shadow-sm hover:shadow-md
               transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
           >
-            <div className="mb-2.5 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
+            <div ref={toDoIconRef} className="mb-2.5 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
               <span className="material-symbols-outlined text-xl">today</span>
             </div>
             <span className="text-2xl font-semibold text-gray-900 dark:text-white mb-1">
@@ -444,7 +491,7 @@ export const EmployeeDashboard: React.FC = () => {
               shadow-sm hover:shadow-md
               transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
           >
-            <div className="mb-2.5 p-2.5 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400">
+            <div ref={inProgressIconRef} className="mb-2.5 p-2.5 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400">
               <span className="material-symbols-outlined text-xl">pending_actions</span>
             </div>
             <span className="text-2xl font-semibold text-gray-900 dark:text-white mb-1">
@@ -539,10 +586,10 @@ export const EmployeeDashboard: React.FC = () => {
         {/* Tasks List */}
         <div className="space-y-10 md:space-y-12">
           {/* Self Tasks Row */}
-          {renderTaskRow(selfTasks, 'self', 'Self Tasks')}
+          {renderTaskRow(selfTasks, 'self', 'Self Tasks', selfTasksToDoIconRef, selfTasksInProgressIconRef)}
           
           {/* Assigned Tasks Row */}
-          {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks')}
+          {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks', assignedTasksToDoIconRef, assignedTasksInProgressIconRef)}
 
           {/* Document Management Section - Combined for both self and assigned */}
           {isLoading ? (
@@ -843,6 +890,20 @@ export const EmployeeDashboard: React.FC = () => {
           )} */}
         </div>
       </div>
+
+      {/* Task Transition Animation */}
+      {shouldAnimate && animationSection === 'self' && (
+        <TaskTransitionAnimation
+          sourceRef={selfTasksToDoIconRef}
+          targetRef={selfTasksInProgressIconRef}
+          taskId={taskId}
+          section="self"
+          onComplete={() => {
+            clearAnimationState();
+            refetchDashboardData();
+          }}
+        />
+      )}
     </EmployeeLayout>
   );
 };

@@ -117,16 +117,23 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
       onSuccess: () => {
         queryClient.invalidateQueries(['task', taskId]);
         queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['admin-dashboard']);
+        queryClient.invalidateQueries(['admin-dashboard-statistics']);
         if (taskId) {
           removeRejectedTaskId(taskId);
         }
-        // Navigate to task chat if conversation_id exists
-        const currentTask = normalizedTask || task;
-        if (currentTask?.conversation_id) {
-          navigate(`/messages/task-group/${currentTask.conversation_id}`);
-        } else {
-          navigate('/tasks');
-        }
+        // Always redirect to dashboard with animation state
+        const dashboardPath = isAdmin ? '/admin' : '/dashboard';
+        navigate(dashboardPath, {
+          state: {
+            animateTaskTransition: true,
+            taskId: taskId,
+            fromStatus: 'todo',
+            toStatus: 'inprogress',
+            taskSection: isCreator ? 'self' : 'assigned',
+          },
+        });
       }
     }
   );

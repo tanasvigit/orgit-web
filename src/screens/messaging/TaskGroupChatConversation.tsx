@@ -1398,6 +1398,16 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           queryClient.invalidateQueries(['admin-dashboard']);
           queryClient.invalidateQueries(['admin-dashboard-statistics']);
         }
+        const dashboardPath = isAdmin ? '/admin' : '/dashboard';
+        navigate(dashboardPath, {
+          state: {
+            animateTaskTransition: true,
+            taskId: taskId,
+            fromStatus: 'todo',
+            toStatus: 'inprogress',
+            taskSection: isTaskCreator() ? 'self' : 'assigned',
+          },
+        });
       },
       onError: (error: any) => {
         toast.error(error?.response?.data?.error || error?.message || 'Failed to accept task');
