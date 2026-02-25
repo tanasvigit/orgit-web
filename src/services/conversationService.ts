@@ -161,8 +161,11 @@ export const conversationService = {
   getConversationDetails: async (conversationId: string): Promise<Conversation> => {
     try {
       const response = await api.get<ConversationDetailsResponse>(`/conversations/${conversationId}`);
-      const conv = response.data.conversation || response.data as any;
-      const members = response.data.members || conv.members || [];
+      const data = response.data as any;
+      const conv = data.conversation || data;
+      const members = data.members || conv.members || [];
+      // is_pinned is on the current user's membership, returned at top level by API (not on conversation)
+      const isPinned = data.is_pinned ?? data.isPinned ?? conv.is_pinned ?? conv.isPinned ?? false;
     
     // Extract other members (excluding current user) for direct conversations
     let otherMembers: any[] = [];
@@ -197,8 +200,8 @@ export const conversationService = {
       name: conversationName,
       photoUrl: conv.group_photo || conv.photoUrl || (otherMembers.length > 0 ? (otherMembers[0]?.profile_photo_url || otherMembers[0]?.profile_photo || otherMembers[0]?.profilePhotoUrl) : ''),
       group_photo: conv.group_photo || conv.photoUrl,
-      isPinned: conv.is_pinned ?? conv.isPinned ?? false,
-      is_pinned: conv.is_pinned ?? conv.isPinned ?? false,
+      isPinned,
+      is_pinned: isPinned,
       unreadCount: conv.unread_count ?? conv.unreadCount ?? 0,
       unread_count: conv.unread_count ?? conv.unreadCount ?? 0,
       lastMessage: conv.last_message,

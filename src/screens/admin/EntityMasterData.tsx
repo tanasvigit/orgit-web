@@ -151,24 +151,25 @@ export const EntityMasterData: React.FC = () => {
   const bulkUploadMutation = useMutation(
     (file: File) => entityMasterBulkService.uploadFile(file),
     {
-      onSuccess: (res) => {
+      onSuccess: async (res) => {
         const data = res.data?.data;
-        console.log('[EntityMaster] upload success', { data: res.data?.data });
-        if (data) {
-          const { updated, errors } = data;
-          const parts = [];
-          if (updated.organizations) parts.push(`${updated.organizations} organizations`);
-          if (updated.cost_centres) parts.push(`${updated.cost_centres} cost centres`);
-          if (updated.branches) parts.push(`${updated.branches} branches`);
-          if (updated.task_services) parts.push(`${updated.task_services} task services`);
-          if (updated.client_entities) parts.push(`${updated.client_entities} client entities`);
-          if (updated.client_entity_services) parts.push(`${updated.client_entity_services} client services`);
-          if (updated.employees) parts.push(`${updated.employees} employees`);
-          if (parts.length) toast.success(`Updated: ${parts.join(', ')}`);
-          if (errors.length) {
-            errors.slice(0, 5).forEach((e) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
-            if (errors.length > 5) toast.error(`… and ${errors.length - 5} more errors`);
+        if (!data?.uploadId) {
+          if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
+          return;
+        }
+        try {
+          const status = await entityMasterBulkService.pollUntilDone(data.uploadId);
+          if (status.status === 'completed') {
+            toast.success('Entity Master bulk upload completed.');
+          } else {
+            toast.warning('Bulk upload finished with errors.');
           }
+          if (status.errors?.length) {
+            status.errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
+            if (status.errors.length > 5) toast.error(`… and ${status.errors.length - 5} more errors`);
+          }
+        } catch (err: any) {
+          toast.error(err?.message || 'Failed to get upload status');
         }
         queryClient.invalidateQueries('admin-organization');
         queryClient.invalidateQueries(['client-entities']);

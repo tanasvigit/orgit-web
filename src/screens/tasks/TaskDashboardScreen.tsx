@@ -518,31 +518,42 @@ export const TaskDashboardScreen: React.FC = () => {
   const taskBulkUploadMutation = useMutation(
     (file: File) => taskBulkService.uploadFile(file),
     {
-      onSuccess: (res) => {
+      onSuccess: async (res) => {
         const data = res.data?.data;
-        if (data) {
-          const { updated, errors } = data;
-          if (updated?.tasks != null && updated.tasks > 0) {
-            toast.success(`Created ${updated.tasks} task(s).`);
+        if (!data?.uploadId) {
+          if (bulkTaskFileInputRef.current) bulkTaskFileInputRef.current.value = '';
+          return;
+        }
+        try {
+          const status = await taskBulkService.pollUntilDone(data.uploadId);
+          if (status.status === 'completed') {
+            toast.success(`Processed ${status.processedCount} of ${status.totalRows} task(s).`);
           }
-          if (errors?.length) {
-            errors.slice(0, 5).forEach((e: any) =>
-              toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`)
+          if (status.failedCount > 0) {
+            toast.warning(`${status.failedCount} row(s) failed.`);
+          }
+          if (status.errors?.length) {
+            status.errors.slice(0, 5).forEach((e: { rowIndex: number; message: string }) =>
+              toast.error(e.message || `Row ${e.rowIndex}`)
             );
-            if (errors.length > 5) {
-              toast.error(`… and ${errors.length - 5} more errors`);
+            if (status.errors.length > 5) {
+              toast.error(`… and ${status.errors.length - 5} more errors`);
             }
           }
+        } catch (err: any) {
+          toast.error(err?.message || 'Failed to get upload status');
         }
         queryClient.invalidateQueries('tasks');
         queryClient.invalidateQueries('conversations');
         if (bulkTaskFileInputRef.current) bulkTaskFileInputRef.current.value = '';
+        setIsBulkUploadingTasks(false);
       },
       onError: (error: any) => {
         toast.error(error.response?.data?.error || error.message || 'Upload failed');
-      },
-      onSettled: () => {
         setIsBulkUploadingTasks(false);
+      },
+      onSettled: (data, error) => {
+        if (error || !data?.data?.uploadId) setIsBulkUploadingTasks(false);
       },
     }
   );

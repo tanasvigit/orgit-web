@@ -68,17 +68,25 @@ export const ServiceList: React.FC = () => {
   const bulkUploadMutation = useMutation(
     (file: File) => entityMasterBulkService.uploadFile(file),
     {
-      onSuccess: (res) => {
+      onSuccess: async (res) => {
         const data = res.data?.data;
-        if (data) {
-          const { updated, errors } = data;
-          if (updated?.task_services != null && updated.task_services > 0) {
-            toast.success(`Updated ${updated.task_services} service(s).`);
+        if (!data?.uploadId) {
+          if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
+          return;
+        }
+        try {
+          const status = await entityMasterBulkService.pollUntilDone(data.uploadId);
+          if (status.status === 'completed') {
+            toast.success('Service List bulk upload completed.');
+          } else {
+            toast.warning('Bulk upload finished with errors.');
           }
-          if (errors?.length) {
-            errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
-            if (errors.length > 5) toast.error(`… and ${errors.length - 5} more errors`);
+          if (status.errors?.length) {
+            status.errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
+            if (status.errors.length > 5) toast.error(`… and ${status.errors.length - 5} more errors`);
           }
+        } catch (err: any) {
+          toast.error(err?.message || 'Failed to get upload status');
         }
         queryClient.invalidateQueries('task-services');
         if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
