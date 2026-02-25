@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery } from 'react-query';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { conversationService } from '../../services/conversationService';
 import { taskService } from '../../services/taskService';
+import { documentInstanceService } from '../../services/documentInstanceService';
+import { masterDataService } from '../../services/masterDataService';
 import { setTaskFinancial } from '../../utils/taskFinancialStorage';
 import { CustomDatePicker } from '../shared/CustomDatePicker';
 import { waitForSocketConnection } from '../../services/socketService';
@@ -36,7 +38,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   documentId,
   documentAttachment,
 }) => {
-  const [taskType, setTaskType] = useState<'one_time' | 'recurring'>('one_time');
+  const [isRecurring, setIsRecurring] = useState(false); // Toggle for recurrence (default: disabled = one_time)
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [taskOwner, setTaskOwner] = useState<'self' | 'contacts'>('self');
@@ -44,13 +46,25 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [financialValue, setFinancialValue] = useState<string>('');
   const [financeType, setFinanceType] = useState<'income' | 'expense'>('income');
   const [selectedAssignees, setSelectedAssignees] = useState<any[]>([]);
-  const [startDate, setStartDate] = useState(new Date());
-  const [targetDate, setTargetDate] = useState(new Date());
-  const [dueDate, setDueDate] = useState(new Date());
+  const setDateTo9AM = (d: Date) => {
+    d.setHours(9, 0, 0, 0);
+    return d;
+  };
+  const [startDate, setStartDate] = useState(() => setDateTo9AM(new Date()));
+  const [targetDate, setTargetDate] = useState(() => setDateTo9AM(new Date()));
+  const [dueDate, setDueDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return setDateTo9AM(d);
+  });
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showTargetPicker, setShowTargetPicker] = useState(false);
   const [showDuePicker, setShowDuePicker] = useState(false);
   const [showAssigneeModal, setShowAssigneeModal] = useState(false);
+  const [assigneeSearchQuery, setAssigneeSearchQuery] = useState('');
+  const [showTitleSuggestions, setShowTitleSuggestions] = useState(false);
+  const [titleHighlightedIndex, setTitleHighlightedIndex] = useState(-1);
+  const titleSuggestionsRef = useRef<HTMLDivElement>(null);
   const [recurrenceType, setRecurrenceType] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>('weekly');
   const [autoEscalate, setAutoEscalate] = useState(false);
   const [createTaskLoading, setCreateTaskLoading] = useState(false);
@@ -58,22 +72,110 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const { toast } = useToast();
   const { user } = useAuth();
 
-  // Initialize form with initial values when modal opens
+  // Check if form has any data entered by user
+  const hasFormData = () => {
+    // Check if title has been modified (not just initial value)
+    const titleModified = title.trim() && title.trim() !== initialTitle;
+    // Check if description has been modified (not just initial value)
+    const descriptionModified = description.trim() && description.trim() !== initialDescription;
+    // Check other fields
+    const hasOtherData = 
+      selectedAssignees.length > 0 ||
+      financialValue.trim().length > 0 ||
+      isRecurring ||
+      taskOwner !== 'self' ||
+      taskOwnerUserId !== null ||
+      reportingMemberId !== null ||
+      autoEscalate;
+    
+    return titleModified || descriptionModified || hasOtherData;
+  };
+
+  // Handle close with confirmation if data exists
+  const handleClose = () => {
+    if (hasFormData()) {
+      toast.confirm('You have unsaved changes. Are you sure you want to close?', {
+        confirmLabel: 'Discard',
+        cancelLabel: 'Cancel',
+        onConfirm: () => {
+          resetForm();
+          onClose();
+        },
+        onCancel: () => {
+          // Do nothing, stay in modal
+        },
+      });
+    } else {
+      resetForm();
+      onClose();
+    }
+  };
+
+  // Initialize form with initial values when modal opens (all dates default to 9:00 AM)
   useEffect(() => {
     if (visible) {
       setTitle(initialTitle);
       setDescription(initialDescription);
       if (initialDueDate) {
-        setDueDate(initialDueDate);
-        setTargetDate(initialDueDate);
+        const d = new Date(initialDueDate);
+        d.setHours(9, 0, 0, 0);
+        setDueDate(d);
+        setTargetDate(new Date(d));
       } else {
         const defaultDueDate = new Date();
         defaultDueDate.setDate(defaultDueDate.getDate() + 30);
+        defaultDueDate.setHours(9, 0, 0, 0);
         setDueDate(defaultDueDate);
-        setTargetDate(defaultDueDate);
+        setTargetDate(new Date(defaultDueDate));
       }
     }
   }, [visible, initialTitle, initialDescription, initialDueDate]);
+
+  // When creating from Document Management, fetch document instance so title/description can be filled and edited
+  const { data: fetchedDocument } = useQuery(
+    ['documentInstance', documentId],
+    () => documentInstanceService.getById(documentId!),
+    { enabled: visible && !!documentId }
+  );
+  useEffect(() => {
+    if (visible && fetchedDocument) {
+      setTitle((prev) => (fetchedDocument.title?.trim() ? fetchedDocument.title : prev));
+      setDescription((prev) => {
+        const docDesc = [
+          fetchedDocument.title && `Document: ${fetchedDocument.title}`,
+          fetchedDocument.status && `Status: ${fetchedDocument.status}`,
+        ].filter(Boolean).join('\n\n');
+        return docDesc.trim() ? docDesc : prev;
+      });
+    }
+  }, [visible, fetchedDocument]);
+
+  // Fetch task services for title suggestions (Google-like autocomplete)
+  const { data: taskServicesData } = useQuery(
+    'task-services-all',
+    async () => {
+      const [recurring, oneTime] = await Promise.all([
+        masterDataService.getTaskServices('recurring'),
+        masterDataService.getTaskServices('one_time'),
+      ]);
+      const recurringList = (recurring.data?.data ?? recurring.data ?? []) as { id: string; title: string; frequency?: string }[];
+      const oneTimeList = (oneTime.data?.data ?? oneTime.data ?? []) as { id: string; title: string; frequency?: string }[];
+      const byId = new Map<string, { id: string; title: string; frequency?: string }>();
+      [...recurringList, ...oneTimeList].forEach((s) => {
+        if (s?.id && !byId.has(s.id)) byId.set(s.id, s);
+      });
+      return Array.from(byId.values());
+    },
+    { enabled: visible, staleTime: 5 * 60 * 1000 }
+  );
+  const allTitleServices = Array.isArray(taskServicesData) ? taskServicesData : [];
+  const titleSuggestions = useMemo(() => {
+    const q = title.trim().toLowerCase();
+    if (q) {
+      return allTitleServices.filter((s) => (s.title || '').toLowerCase().includes(q));
+    }
+    return allTitleServices.slice(0, 15);
+  }, [title, allTitleServices]);
 
   // Fetch users for assignee selection
   const { data: usersData } = useQuery(
@@ -82,7 +184,26 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     { enabled: visible }
   );
 
-  const users = usersData || [];
+  const allUsers = usersData || [];
+  const currentOrgId = user?.organizationId || (user as any)?.organization_id;
+  const displayUsers = React.useMemo(() => {
+    const hasSearch = (assigneeSearchQuery || '').trim().length > 0;
+    const q = assigneeSearchQuery.trim().toLowerCase();
+    if (hasSearch) {
+      return allUsers.filter(
+        (u: any) =>
+          (u.name || '').toLowerCase().includes(q) ||
+          (u.mobile || u.phone || '').toString().toLowerCase().includes(q)
+      );
+    }
+    if (currentOrgId) {
+      const sameOrg = allUsers.filter(
+        (u: any) => (u.organization_id || u.organizationId) === currentOrgId
+      );
+      return sameOrg.length > 0 ? sameOrg : allUsers;
+    }
+    return allUsers;
+  }, [allUsers, assigneeSearchQuery, currentOrgId]);
 
   // Format date time helper
   const formatDateTime = (date: Date) => {
@@ -107,9 +228,9 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     });
   };
 
-  // Reset form
+  // Reset form (all dates default to 9:00 AM)
   const resetForm = () => {
-    setTaskType('one_time');
+    setIsRecurring(false);
     setTitle('');
     setDescription('');
     setTaskOwner('self');
@@ -117,9 +238,14 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     setFinancialValue('');
     setFinanceType('income');
     setSelectedAssignees([]);
-    setStartDate(new Date());
-    setTargetDate(new Date());
-    setDueDate(new Date());
+    const today9am = new Date();
+    today9am.setHours(9, 0, 0, 0);
+    setStartDate(today9am);
+    setTargetDate(new Date(today9am));
+    const due30 = new Date();
+    due30.setDate(due30.getDate() + 30);
+    due30.setHours(9, 0, 0, 0);
+    setDueDate(due30);
     setRecurrenceType('weekly');
     setAutoEscalate(false);
     setReportingMemberId(null);
@@ -164,7 +290,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       const taskData: any = {
         title: title.trim(),
         description: taskDescription,
-        task_type: taskType,
+        task_type: isRecurring ? 'recurring' : 'one_time',
         task_owner: taskOwner,
         financial_value: Number.isFinite(parsedFinancialValue as number) ? parsedFinancialValue : null,
         finance_type: financialValue.trim().length > 0 ? financeType : null,
@@ -172,7 +298,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         start_date: startDate.toISOString(),
         target_date: targetDate.toISOString(),
         due_date: dueDate.toISOString(),
-        recurrence_type: taskType === 'recurring' ? recurrenceType : null,
+        recurrence_type: isRecurring ? recurrenceType : null,
         recurrence_interval: 1,
         auto_escalate: autoEscalate,
         // Mobile stores documentId/complianceId in metadata (backend may ignore; kept for parity)
@@ -193,6 +319,11 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         taskData.compliance_id = complianceId;
       }
 
+      // Link task to document when created from Document Management (backend supports document_instance_id)
+      if (documentId) {
+        taskData.document_instance_id = documentId;
+      }
+
       // Add reporting_member_id if selected
       if (reportingMemberId) {
         taskData.reporting_member_id = reportingMemberId;
@@ -203,17 +334,30 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       const taskId = createdObj?.id || null;
       const conversationId = createdObj?.conversation_id || createdObj?.conversationId || null;
 
-      // If task was created from a chat document, auto-attach that document to the task conversation.
-      if (documentAttachment?.mediaUrl && conversationId) {
+      // If task was created from a document (chat or Document Management), auto-attach that document to the task conversation.
+      let attachmentToSend: { mediaUrl: string; fileName?: string; fileSize?: number; mimeType?: string } | null = documentAttachment?.mediaUrl ? documentAttachment : null;
+      if (!attachmentToSend && documentId && conversationId) {
+        try {
+          const instance = await documentInstanceService.getById(documentId);
+          if (instance?.pdfUrl) {
+            attachmentToSend = {
+              mediaUrl: instance.pdfUrl,
+              fileName: `${(instance.title || 'document').replace(/[^a-zA-Z0-9-_.]/g, '_')}.pdf`,
+              mimeType: 'application/pdf',
+            };
+          }
+        } catch (_) {}
+      }
+      if (attachmentToSend?.mediaUrl && conversationId) {
         try {
           const sock = await waitForSocketConnection();
           sock.emit('send_message', {
             conversationId,
             messageType: 'document',
-            mediaUrl: documentAttachment.mediaUrl,
-            fileName: documentAttachment.fileName,
-            fileSize: documentAttachment.fileSize,
-            mimeType: documentAttachment.mimeType,
+            mediaUrl: attachmentToSend.mediaUrl,
+            fileName: attachmentToSend.fileName,
+            fileSize: attachmentToSend.fileSize,
+            mimeType: attachmentToSend.mimeType,
             content: '',
           });
         } catch (e) {
@@ -239,83 +383,102 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={handleClose}>
       <div 
-        className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl"
+        className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl mx-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-primary dark:bg-primary/90 rounded-t-2xl">
-          <h2 className="text-white text-lg font-bold">Create Task</h2>
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 bg-primary dark:bg-primary/90 rounded-t-2xl shrink-0">
+          <h2 className="text-white text-base sm:text-lg font-bold">Create Task</h2>
           <button
-            onClick={onClose}
-            className="text-white hover:bg-white/20 rounded-full p-1 transition-colors"
+            onClick={handleClose}
+            className="text-white hover:bg-white/20 rounded-full p-2 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="Close modal"
           >
             <span className="material-symbols-outlined text-xl">close</span>
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Task Type Tabs */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setTaskType('one_time')}
-              className={`flex-1 py-2 px-4 rounded-lg font-semibold transition-colors ${
-                taskType === 'one_time'
-                  ? 'bg-primary text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-              }`}
-            >
-              One-Time Task
-            </button>
-            <button
-              onClick={() => setTaskType('recurring')}
-              className={`flex-1 py-2 px-4 rounded-lg font-semibold transition-colors ${
-                taskType === 'recurring'
-                  ? 'bg-primary text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-              }`}
-            >
-              Recurring Task
-            </button>
-          </div>
-
-          {/* Task Title */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
+          {/* 1. Task Title - with service list suggestions (Google-like) */}
+          <div className="relative" ref={titleSuggestionsRef}>
+            <label className="block text-sm sm:text-base font-semibold text-gray-700 dark:text-gray-300 mb-2">
               Task Title
             </label>
             <input
               type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g., Q3 Financial Review"
+              onChange={(e) => {
+                setTitle(e.target.value);
+                setShowTitleSuggestions(true);
+                setTitleHighlightedIndex(-1);
+              }}
+              onFocus={() => !initialTitle && setShowTitleSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowTitleSuggestions(false), 200)}
+              onKeyDown={(e) => {
+                if (!showTitleSuggestions || titleSuggestions.length === 0) {
+                  if (e.key === 'Escape') setShowTitleSuggestions(false);
+                  return;
+                }
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setTitleHighlightedIndex((i) => (i < titleSuggestions.length - 1 ? i + 1 : 0));
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setTitleHighlightedIndex((i) => (i > 0 ? i - 1 : titleSuggestions.length - 1));
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const item = titleSuggestions[titleHighlightedIndex >= 0 ? titleHighlightedIndex : 0];
+                  if (item?.title) {
+                    setTitle(item.title);
+                    setShowTitleSuggestions(false);
+                    setTitleHighlightedIndex(-1);
+                  }
+                } else if (e.key === 'Escape') {
+                  setShowTitleSuggestions(false);
+                  setTitleHighlightedIndex(-1);
+                }
+              }}
+              placeholder="Type or select from service list (e.g. GSTR 1, GSTR 9…)"
               readOnly={!!initialTitle}
-              className={`w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 ${
-                initialTitle ? 'bg-gray-50 dark:bg-gray-700 cursor-not-allowed' : 'bg-white dark:bg-gray-700'
-              }`}
+              className={`w-full px-4 py-3 sm:py-2.5 rounded-lg border text-sm sm:text-base text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-colors min-h-[44px] ${
+                showTitleSuggestions && titleSuggestions.length > 0
+                  ? 'border-primary/40 shadow-md'
+                  : 'border-gray-300 dark:border-gray-600'
+              } ${initialTitle ? 'bg-gray-50 dark:bg-gray-700 cursor-not-allowed' : 'bg-white dark:bg-gray-700'}`}
             />
+            {!initialTitle && showTitleSuggestions && titleSuggestions.length > 0 && (
+              <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg py-1">
+                {titleSuggestions.map((item, index) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setTitle(item.title || '');
+                      setShowTitleSuggestions(false);
+                      setTitleHighlightedIndex(-1);
+                    }}
+                    className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${
+                      index === titleHighlightedIndex
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                    }`}
+                  >
+                    <span className="material-icons-outlined text-lg text-gray-400 dark:text-gray-500 shrink-0">assignment</span>
+                    <span className="font-medium truncate">{item.title}</span>
+                    {item.frequency && (
+                      <span className="ml-auto text-xs text-gray-500 dark:text-gray-400 shrink-0">{item.frequency}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Description
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Add detailed instructions..."
-              rows={4}
-              readOnly={!!initialDescription}
-              className={`w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none ${
-                initialDescription ? 'bg-gray-50 dark:bg-gray-700 cursor-not-allowed' : 'bg-white dark:bg-gray-700'
-              }`}
-            />
-          </div>
-
-          {/* Assigned To */}
+          {/* 2. Assigned To */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
               Assigned To
@@ -325,7 +488,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
               className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-left flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
             >
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary">people</span>
+                <span className="material-symbols-outlined text-primary text-lg">people</span>
                 <span className="text-gray-700 dark:text-gray-300">
                   {selectedAssignees.length > 0
                     ? `${selectedAssignees.length} selected`
@@ -380,7 +543,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             </div>
           )}
 
-          {/* Schedule Section */}
+          {/* 3. SCHEDULE */}
           <div>
             <h3 className="text-sm font-bold uppercase text-gray-500 dark:text-gray-400 mb-4 tracking-wider">
               SCHEDULE
@@ -430,21 +593,48 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             </div>
           </div>
 
-          {/* Recurrence Type (if recurring) */}
-          {taskType === 'recurring' && (
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+          {/* 4. Recurrence Toggle */}
+          <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+            <div className="flex-1">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
                 Recurrence
+              </label>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {isRecurring ? 'This is a recurring task' : 'This is a one-time task'}
+              </p>
+            </div>
+            <button
+              onClick={() => setIsRecurring(!isRecurring)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 ${
+                isRecurring ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
+              }`}
+              role="switch"
+              aria-checked={isRecurring}
+              aria-label={isRecurring ? 'Recurring task enabled' : 'One-time task (recurrence disabled)'}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  isRecurring ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Recurrence Options (only visible when toggle is enabled) */}
+          {isRecurring && (
+            <div className="animate-in fade-in slide-in-from-top-2 duration-200">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                Recurrence Frequency
               </label>
               <div className="flex gap-2">
                 {(['weekly', 'monthly', 'quarterly', 'yearly'] as const).map((type) => (
                   <button
                     key={type}
                     onClick={() => setRecurrenceType(type)}
-                    className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                    className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${
                       recurrenceType === type
-                        ? 'bg-primary text-white'
-                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
                     }`}
                   >
                     {type.charAt(0).toUpperCase() + type.slice(1)}
@@ -454,7 +644,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             </div>
           )}
 
-          {/* Task Owner */}
+          {/* 5. Task Owner */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
               Task Owner
@@ -467,10 +657,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                     setTaskOwner(owner);
                     if (owner !== 'contacts') setTaskOwnerUserId(null);
                   }}
-                  className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                  className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${
                     taskOwner === owner
-                      ? 'bg-primary text-white'
-                      : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                      ? 'bg-primary text-white shadow-sm'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
                   }`}
                 >
                   {owner === 'self' ? 'Self' : 'Contacts'}
@@ -523,10 +713,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             </div>
           )}
 
-          {/* Financial Value (Optional) */}
+          {/* 6. Financial Value (Optional) */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Financial Value (Optional)
+              Financial Value <span className="text-gray-400 font-normal">(Optional)</span>
             </label>
             <input
               type="text"
@@ -534,13 +724,13 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
               value={financialValue}
               onChange={(e) => setFinancialValue(e.target.value)}
               placeholder="Enter amount"
-              className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white dark:bg-gray-700"
+              className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white dark:bg-gray-700 transition-colors"
             />
           </div>
 
           {/* Finance Type (only show if financial value entered) */}
           {financialValue.trim().length > 0 && (
-            <div>
+            <div className="animate-in fade-in slide-in-from-top-2 duration-200">
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 Type of Finance
               </label>
@@ -549,10 +739,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                   <button
                     key={type}
                     onClick={() => setFinanceType(type)}
-                    className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                    className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${
                       financeType === type
-                        ? 'bg-primary text-white'
-                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
                     }`}
                   >
                     {type.charAt(0).toUpperCase() + type.slice(1)}
@@ -562,16 +752,41 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             </div>
           )}
 
-          {/* Auto Escalate Toggle */}
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-              Auto Escalate
+          {/* 7. Description */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+              Description
             </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Add detailed instructions..."
+              rows={4}
+              readOnly={!!initialDescription}
+              className={`w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none transition-colors ${
+                initialDescription ? 'bg-gray-50 dark:bg-gray-700 cursor-not-allowed' : 'bg-white dark:bg-gray-700'
+              }`}
+            />
+          </div>
+
+          {/* 8. Auto Escalate */}
+          <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+            <div className="flex-1">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                Auto Escalate
+              </label>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Automatically escalate task if not completed on time
+              </p>
+            </div>
             <button
               onClick={() => setAutoEscalate(!autoEscalate)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 ${
                 autoEscalate ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
               }`}
+              role="switch"
+              aria-checked={autoEscalate}
+              aria-label={autoEscalate ? 'Auto escalate enabled' : 'Auto escalate disabled'}
             >
               <span
                 className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -585,7 +800,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
           <button
             onClick={handleCreateTask}
             disabled={createTaskLoading}
-            className="w-full py-3 px-4 rounded-lg bg-primary text-white font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-3 px-4 rounded-lg bg-primary text-white text-sm sm:text-base font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
           >
             {createTaskLoading ? (
               <>
@@ -603,31 +818,41 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
 
         {/* Assignee Selection Modal - Centered in middle of screen */}
         {showAssigneeModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowAssigneeModal(false)}>
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowAssigneeModal(false)}>
             <div 
-              className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl max-h-[80vh] flex flex-col mx-4"
+              className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl max-h-[80vh] flex flex-col mx-auto"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Select Assignees</h3>
+              <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">Select Assignees</h3>
                 <button
                   onClick={() => setShowAssigneeModal(false)}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                  aria-label="Close modal"
                 >
                   <span className="material-symbols-outlined text-xl">close</span>
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-4">
-                {users.length === 0 ? (
-                  <p className="text-center text-gray-500 dark:text-gray-400 py-8">No employees available</p>
+                <input
+                  type="text"
+                  value={assigneeSearchQuery}
+                  onChange={(e) => setAssigneeSearchQuery(e.target.value)}
+                  placeholder="Search by name or number..."
+                  className="w-full mb-3 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                />
+                {displayUsers.length === 0 ? (
+                  <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+                    {assigneeSearchQuery.trim() ? 'No users match your search' : 'No employees available'}
+                  </p>
                 ) : (
-                  users.map((user: any) => {
-                    const isSelected = selectedAssignees.find(u => u.id === user.id);
+                  displayUsers.map((usr: any) => {
+                    const isSelected = selectedAssignees.find(u => u.id === usr.id);
                     return (
                       <button
-                        key={user.id}
-                        onClick={() => toggleAssignee(user)}
-                        className={`w-full flex items-center gap-3 p-3 rounded-lg mb-2 transition-colors ${
+                        key={usr.id}
+                        onClick={() => toggleAssignee(usr)}
+                        className={`w-full flex items-center gap-3 p-3 rounded-lg mb-2 transition-colors min-h-[44px] ${
                           isSelected
                             ? 'bg-primary/10 border-2 border-primary'
                             : 'bg-gray-100 dark:bg-gray-700 border-2 border-transparent hover:bg-gray-200 dark:hover:bg-gray-600'
@@ -635,12 +860,12 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                       >
                         <div className="size-10 rounded-full bg-primary/20 flex items-center justify-center">
                           <span className="text-primary font-semibold">
-                            {user.name?.charAt(0).toUpperCase() || '?'}
+                            {usr.name?.charAt(0).toUpperCase() || '?'}
                           </span>
                         </div>
                         <div className="flex-1 text-left">
-                          <p className="font-semibold text-gray-900 dark:text-white">{user.name || user.mobile}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">{user.mobile}</p>
+                          <p className="font-semibold text-gray-900 dark:text-white">{usr.name || usr.mobile}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{usr.mobile}</p>
                         </div>
                         {isSelected && (
                           <span className="material-symbols-outlined text-primary">check_circle</span>
@@ -651,16 +876,16 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                 )}
               </div>
               {/* Done Button */}
-              <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3">
+              <div className="px-4 sm:px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3 shrink-0">
                 <button
                   onClick={() => setShowAssigneeModal(false)}
-                  className="flex-1 px-4 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors font-medium"
+                  className="flex-1 px-4 py-3 bg-gray-200 dark:bg-gray-700 text-sm sm:text-base text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors font-medium min-h-[44px]"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => setShowAssigneeModal(false)}
-                  className="flex-1 px-4 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-semibold flex items-center justify-center gap-2"
+                  className="flex-1 px-4 py-3 bg-primary text-white text-sm sm:text-base rounded-lg hover:bg-primary/90 transition-colors font-semibold flex items-center justify-center gap-2 min-h-[44px]"
                 >
                   <span className="material-symbols-outlined text-sm">check</span>
                   Done
@@ -677,6 +902,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             onChange={setStartDate}
             onClose={() => setShowStartPicker(false)}
             title="Start Date"
+            hideTimePicker
           />
         )}
 
@@ -686,6 +912,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             onChange={setTargetDate}
             onClose={() => setShowTargetPicker(false)}
             title="Target Date"
+            hideTimePicker
           />
         )}
 
@@ -695,6 +922,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             onChange={setDueDate}
             onClose={() => setShowDuePicker(false)}
             title="Due Date"
+            hideTimePicker
           />
         )}
       </div>

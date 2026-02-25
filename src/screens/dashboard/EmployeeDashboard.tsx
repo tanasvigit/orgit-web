@@ -7,6 +7,9 @@ import { useAuth } from '../../context/AuthContext';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { taskService } from '../../services/taskService';
 import { mergeTaskWithFinancial } from '../../utils/taskFinancialStorage';
+import { isTaskDeleted } from '../../utils/taskUtils';
+import { useTaskTransitionAnimation } from '../../hooks/useTaskTransitionAnimation';
+import { TaskTransitionAnimation } from '../../components/dashboard/TaskTransitionAnimation';
 
 export const EmployeeDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -18,6 +21,13 @@ export const EmployeeDashboard: React.FC = () => {
   const [expandedDM, setExpandedDM] = useState(false);
   // const [expandedCM, setExpandedCM] = useState(false);
   const [taskDetails, setTaskDetails] = useState<Record<string, any>>({});
+
+  // Refs for task transition animation (Self Tasks section)
+  const selfTasksToDoIconRef = useRef<HTMLDivElement>(null);
+  const selfTasksInProgressIconRef = useRef<HTMLDivElement>(null);
+  // Refs for task transition animation (Assigned Tasks section)
+  const assignedTasksToDoIconRef = useRef<HTMLDivElement>(null);
+  const assignedTasksInProgressIconRef = useRef<HTMLDivElement>(null);
 
   const { data: dashboardData, isLoading, refetch: refetchDashboard } = useQuery(
     ['dashboard'],
@@ -52,6 +62,38 @@ export const EmployeeDashboard: React.FC = () => {
 
   const selfTasks = dashboardData?.data?.selfTasks;
   const assignedTasks = dashboardData?.data?.assignedTasks;
+
+  // Animation hook and section detection (after queries so we can use isLoading)
+  const { shouldAnimate, taskId, clearAnimationState } = useTaskTransitionAnimation();
+  const [animationSection, setAnimationSection] = useState<'self' | 'assigned' | null>(null);
+
+  useEffect(() => {
+    if (!shouldAnimate) {
+      setAnimationSection(null);
+      return;
+    }
+    // Always animate in Self Tasks section (To Do → In Progress)
+    const checkRefs = () => {
+      if (selfTasksToDoIconRef.current && selfTasksInProgressIconRef.current) {
+        setAnimationSection('self');
+        return true;
+      }
+      return false;
+    };
+    if (checkRefs()) return;
+    const delays = [50, 150, 350, 600];
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    delays.forEach((ms) => {
+      timers.push(
+        setTimeout(() => {
+          if (checkRefs()) {
+            timers.forEach(clearTimeout);
+          }
+        }, ms)
+      );
+    });
+    return () => timers.forEach(clearTimeout);
+  }, [shouldAnimate, isLoading]);
 
   const currentUserId = user?.id || (user as any)?.userId;
 
@@ -97,7 +139,7 @@ export const EmployeeDashboard: React.FC = () => {
   const flattenTasksStructure = (tasks: any): any[] => {
     const result: any[] = [];
     if (!tasks) return result;
-    if (Array.isArray(tasks)) return tasks;
+    if (Array.isArray(tasks)) return tasks.filter((t) => t && t.id && !isTaskDeleted(t));
     if (typeof tasks === 'object') {
       Object.values(tasks).forEach((category: any) => {
         if (Array.isArray(category)) {
@@ -115,7 +157,7 @@ export const EmployeeDashboard: React.FC = () => {
         }
       });
     }
-    return result;
+    return result.filter((t) => t && t.id && !isTaskDeleted(t));
   };
 
   // Mobile behavior: fetch full task details for a small set so assignees/progress stays accurate.
@@ -403,73 +445,40 @@ export const EmployeeDashboard: React.FC = () => {
     );
   };
 
-  const renderTaskRow = (tasks: any, viewType: 'self' | 'assigned', title: string) => {
+  const renderTaskRow = (
+    tasks: any,
+    viewType: 'self' | 'assigned',
+    title: string,
+    toDoIconRef?: React.RefObject<HTMLDivElement>,
+    inProgressIconRef?: React.RefObject<HTMLDivElement>
+  ) => {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-3 mb-4">
-          <h2 className="text-2xl font-bold text-text-main dark:text-white">{title}</h2>
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-1 h-8 bg-primary rounded-full"></div>
+          <h2 className="text-xl md:text-2xl font-semibold text-gray-900 dark:text-white">{title}</h2>
           <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
         </div>
 
         {/* Statistics Cards for this section */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-8">
           {/* To-Do Card (Today’s recurring, not completed) */}
           <button
             type="button"
             onClick={() => navigate('/tasks?status=todo')}
-            className="relative bg-white dark:bg-slate-800/90 p-5 rounded-2xl flex flex-col items-center text-center group cursor-pointer text-left w-full
-              border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-primary
-              shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40
-              transition-all duration-300 ease-out hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-0.5 hover:border-primary/30 dark:hover:border-primary/40"
+            className="relative bg-white dark:bg-slate-800/95 p-5 rounded-xl flex flex-col items-center text-center group cursor-pointer text-left w-full
+              border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-blue-500
+              shadow-sm hover:shadow-md
+              transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
           >
-            <div className="mb-2 p-2.5 rounded-xl bg-primary/15 text-primary ring-2 ring-primary/10">
-              <span className="material-symbols-outlined text-2xl">today</span>
+            <div ref={toDoIconRef} className="mb-2.5 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
+              <span className="material-symbols-outlined text-xl">today</span>
             </div>
-            <span className="text-2xl font-bold text-primary mb-1">
+            <span className="text-2xl font-semibold text-gray-900 dark:text-white mb-1">
               {getStatusCount('todo', viewType) + getToDoTasks(viewType).length}
             </span>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
               TO DO
-            </span>
-          </button>
-          
-          {/* Overdue Card */}
-          <button
-            type="button"
-            onClick={() => navigate('/tasks?status=overdue')}
-            className="relative bg-white dark:bg-slate-800/90 p-5 rounded-2xl flex flex-col items-center text-center group cursor-pointer text-left
-              border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-status-overdue
-              shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40
-              transition-all duration-300 ease-out hover:shadow-xl hover:shadow-status-overdue/10 hover:-translate-y-0.5 hover:border-status-overdue/30 dark:hover:border-status-overdue/40"
-          >
-            <div className="mb-2 p-2.5 rounded-xl bg-status-overdue/15 text-status-overdue ring-2 ring-status-overdue/20">
-              <span className="material-symbols-outlined text-2xl">priority_high</span>
-            </div>
-            <span className="text-2xl font-bold text-status-overdue mb-1">
-              {getStatusCount('overdue', viewType)}
-            </span>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-              Overdue
-            </span>
-          </button>
-          
-          {/* Due Soon Card */}
-          <button
-            type="button"
-            onClick={() => navigate('/tasks?status=duesoon')}
-            className="relative bg-white dark:bg-slate-800/90 p-5 rounded-2xl flex flex-col items-center text-center group cursor-pointer text-left
-              border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-status-duesoon
-              shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40
-              transition-all duration-300 ease-out hover:shadow-xl hover:shadow-status-duesoon/10 hover:-translate-y-0.5 hover:border-status-duesoon/30 dark:hover:border-status-duesoon/40"
-          >
-            <div className="mb-2 p-2.5 rounded-xl bg-status-duesoon/15 text-status-duesoon ring-2 ring-status-duesoon/20">
-              <span className="material-symbols-outlined text-2xl">hourglass_top</span>
-            </div>
-            <span className="text-2xl font-bold text-status-duesoon mb-1">
-              {getStatusCount('duesoon', viewType)}
-            </span>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-              Due Soon
             </span>
           </button>
           
@@ -477,19 +486,59 @@ export const EmployeeDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate('/tasks?status=inprogress')}
-            className="relative bg-white dark:bg-slate-800/90 p-5 rounded-2xl flex flex-col items-center text-center group cursor-pointer text-left
-              border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-status-inprogress
-              shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40
-              transition-all duration-300 ease-out hover:shadow-xl hover:shadow-status-inprogress/10 hover:-translate-y-0.5 hover:border-status-inprogress/30 dark:hover:border-status-inprogress/40"
+            className="relative bg-white dark:bg-slate-800/95 p-5 rounded-xl flex flex-col items-center text-center group cursor-pointer text-left
+              border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-purple-500
+              shadow-sm hover:shadow-md
+              transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
           >
-            <div className="mb-2 p-2.5 rounded-xl bg-status-inprogress/15 text-status-inprogress ring-2 ring-status-inprogress/20">
-              <span className="material-symbols-outlined text-2xl">pending_actions</span>
+            <div ref={inProgressIconRef} className="mb-2.5 p-2.5 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400">
+              <span className="material-symbols-outlined text-xl">pending_actions</span>
             </div>
-            <span className="text-2xl font-bold text-status-inprogress mb-1">
+            <span className="text-2xl font-semibold text-gray-900 dark:text-white mb-1">
               {getStatusCount('inprogress', viewType)}
             </span>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
               In Progress
+            </span>
+          </button>
+          
+          {/* Due Soon Card */}
+          <button
+            type="button"
+            onClick={() => navigate('/tasks?status=duesoon')}
+            className="relative bg-white dark:bg-slate-800/95 p-5 rounded-xl flex flex-col items-center text-center group cursor-pointer text-left
+              border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-amber-500
+              shadow-sm hover:shadow-md
+              transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
+          >
+            <div className="mb-2.5 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400">
+              <span className="material-symbols-outlined text-xl">hourglass_top</span>
+            </div>
+            <span className="text-2xl font-semibold text-gray-900 dark:text-white mb-1">
+              {getStatusCount('duesoon', viewType)}
+            </span>
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+              Due Soon
+            </span>
+          </button>
+          
+          {/* Overdue Card */}
+          <button
+            type="button"
+            onClick={() => navigate('/tasks?status=overdue')}
+            className="relative bg-white dark:bg-slate-800/95 p-5 rounded-xl flex flex-col items-center text-center group cursor-pointer text-left
+              border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-red-500
+              shadow-sm hover:shadow-md
+              transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
+          >
+            <div className="mb-2.5 p-2.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400">
+              <span className="material-symbols-outlined text-xl">priority_high</span>
+            </div>
+            <span className="text-2xl font-semibold text-gray-900 dark:text-white mb-1">
+              {getStatusCount('overdue', viewType)}
+            </span>
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+              Overdue
             </span>
           </button>
           
@@ -497,18 +546,18 @@ export const EmployeeDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate('/tasks?status=completed')}
-            className="relative bg-white dark:bg-slate-800/90 p-5 rounded-2xl flex flex-col items-center text-center group cursor-pointer text-left
-              border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-status-completed
-              shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40
-              transition-all duration-300 ease-out hover:shadow-xl hover:shadow-status-completed/10 hover:-translate-y-0.5 hover:border-status-completed/30 dark:hover:border-status-completed/40"
+            className="relative bg-white dark:bg-slate-800/95 p-5 rounded-xl flex flex-col items-center text-center group cursor-pointer text-left
+              border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-emerald-500
+              shadow-sm hover:shadow-md
+              transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
           >
-            <div className="mb-2 p-2.5 rounded-xl bg-status-completed/15 text-status-completed ring-2 ring-status-completed/20">
-              <span className="material-symbols-outlined text-2xl">task_alt</span>
+            <div className="mb-2.5 p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400">
+              <span className="material-symbols-outlined text-xl">task_alt</span>
             </div>
-            <span className="text-2xl font-bold text-status-completed mb-1">
+            <span className="text-2xl font-semibold text-gray-900 dark:text-white mb-1">
               {getStatusCount('completed', viewType)}
             </span>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
               Completed
             </span>
           </button>
@@ -519,14 +568,28 @@ export const EmployeeDashboard: React.FC = () => {
 
   return (
     <EmployeeLayout>
-      <div className="flex-1 w-full max-w-7xl mx-auto px-6 py-8 space-y-8">
+      <div className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 md:px-8 py-6 md:py-8 space-y-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
+        {/* Welcome Header */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-semibold text-gray-900 dark:text-white">
+                Welcome back, {user?.name || 'User'}
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-1 text-sm">
+                Here's an overview of your tasks and progress
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Tasks List */}
-        <div className="space-y-12">
+        <div className="space-y-10 md:space-y-12">
           {/* Self Tasks Row */}
-          {renderTaskRow(selfTasks, 'self', 'Self Tasks')}
+          {renderTaskRow(selfTasks, 'self', 'Self Tasks', selfTasksToDoIconRef, selfTasksInProgressIconRef)}
           
           {/* Assigned Tasks Row */}
-          {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks')}
+          {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks', assignedTasksToDoIconRef, assignedTasksInProgressIconRef)}
 
           {/* Document Management Section - Combined for both self and assigned */}
           {isLoading ? (
@@ -538,15 +601,15 @@ export const EmployeeDashboard: React.FC = () => {
             <div>
               <button
                 onClick={() => setExpandedDM(!expandedDM)}
-                className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800/90 rounded-2xl group transition-all duration-300 ease-out border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-primary shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40 hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-0.5 hover:border-primary/30 dark:hover:border-primary/40"
+                className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800/95 rounded-xl group transition-all duration-200 ease-out border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-primary shadow-sm hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99]"
               >
                 <div className="flex items-center gap-4">
-                  <div className="p-3 bg-primary/10 rounded-lg text-primary">
-                    <span className="material-symbols-outlined text-2xl">folder_shared</span>
+                  <div className="p-3 rounded-lg bg-primary/10 dark:bg-primary/20 text-primary">
+                    <span className="material-symbols-outlined text-xl">folder_shared</span>
                   </div>
                   <div className="text-left">
-                    <span className="font-bold text-text-main dark:text-white text-lg block">Document Management</span>
-                    <span className="text-sm text-text-muted dark:text-gray-400">
+                    <span className="font-semibold text-gray-900 dark:text-white text-base block mb-0.5">Document Management</span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">
                       {(() => {
                         const selfDM = selfTasks?.documentManagement || {};
                         const assignedDM = assignedTasks?.documentManagement || {};
@@ -625,10 +688,13 @@ export const EmployeeDashboard: React.FC = () => {
 
             return (
               <div className="space-y-4">
-                <h2 className="text-2xl font-bold text-text-main dark:text-white">
-                  Financial Report (Created by Me)
-                </h2>
-                <div className="bg-white dark:bg-slate-800/90 rounded-2xl border-2 border-slate-200/90 dark:border-slate-600/80 border-l-[6px] border-l-primary shadow-lg shadow-slate-200/25 dark:shadow-slate-900/40 hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-0.5 hover:border-primary/30 dark:hover:border-primary/40 transition-all duration-300 ease-out divide-y divide-slate-100 dark:divide-slate-600/50">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-1 h-8 bg-emerald-500 rounded-full"></div>
+                  <h2 className="text-xl md:text-2xl font-semibold text-gray-900 dark:text-white">
+                    Financial Report (Created by Me)
+                  </h2>
+                </div>
+                <div className="bg-white dark:bg-slate-800/95 rounded-xl border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-emerald-500 shadow-sm divide-y divide-gray-100 dark:divide-gray-700">
                   {financialTasks.map((task: any) => {
                     const amount = Number(task.financial_value || 0);
                     const type = task.finance_type;
@@ -638,27 +704,42 @@ export const EmployeeDashboard: React.FC = () => {
                     return (
                       <div
                         key={task.id}
-                        className="flex items-center justify-between px-4 py-3"
+                        className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
                       >
-                        <div className="min-w-0 pr-4">
-                          <div className="font-semibold text-text-main dark:text-white truncate">
-                            {task.title}
+                        <div className="min-w-0 pr-4 flex items-center gap-3">
+                          <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                            isIncome 
+                              ? 'bg-emerald-50 dark:bg-emerald-900/20' 
+                              : 'bg-red-50 dark:bg-red-900/20'
+                          }`}>
+                            <span className={`material-icons-outlined text-base ${
+                              isIncome 
+                                ? 'text-emerald-600 dark:text-emerald-400' 
+                                : 'text-red-600 dark:text-red-400'
+                            }`}>
+                              {isIncome ? 'trending_up' : 'trending_down'}
+                            </span>
                           </div>
-                          {task.due_date && (
-                            <div className="text-xs text-text-muted dark:text-white/60">
-                              {formatDate(task.due_date)}
+                          <div>
+                            <div className="font-medium text-gray-900 dark:text-white truncate text-sm">
+                              {task.title}
                             </div>
-                          )}
+                            {task.due_date && (
+                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                {formatDate(task.due_date)}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <div className="text-right space-y-1">
+                        <div className="text-right space-y-1 flex-shrink-0">
                           {amount ? (
                             <div
-                              className={`text-sm font-bold ${
+                              className={`text-base font-semibold ${
                                 isIncome
                                   ? 'text-emerald-600 dark:text-emerald-400'
                                   : isExpense
-                                  ? 'text-rose-600 dark:text-rose-400'
-                                  : 'text-text-main dark:text-white'
+                                  ? 'text-red-600 dark:text-red-400'
+                                  : 'text-gray-900 dark:text-white'
                               }`}
                             >
                               {isExpense ? '-' : '+'}
@@ -666,7 +747,11 @@ export const EmployeeDashboard: React.FC = () => {
                             </div>
                           ) : null}
                           {type && (
-                            <div className="text-[11px] uppercase tracking-wide text-text-muted dark:text-white/60">
+                            <div className={`text-xs font-medium uppercase tracking-wide px-2 py-0.5 rounded ${
+                              isIncome
+                                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300'
+                                : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+                            }`}>
                               {type === 'income'
                                 ? 'Income'
                                 : type === 'expense'
@@ -689,9 +774,12 @@ export const EmployeeDashboard: React.FC = () => {
             if (!todoSelf.length) return null;
             return (
               <div className="space-y-4">
-                <h2 className="text-2xl font-bold text-text-main dark:text-white">
-                  To-Do (Today&apos;s Recurring Tasks)
-                </h2>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-1 h-8 bg-blue-500 rounded-full"></div>
+                  <h2 className="text-xl md:text-2xl font-semibold text-gray-900 dark:text-white">
+                    To-Do (Today&apos;s Recurring Tasks)
+                  </h2>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {todoSelf.map((task: any) => {
                     const full = taskDetails[task.id];
@@ -802,6 +890,20 @@ export const EmployeeDashboard: React.FC = () => {
           )} */}
         </div>
       </div>
+
+      {/* Task Transition Animation */}
+      {shouldAnimate && animationSection === 'self' && (
+        <TaskTransitionAnimation
+          sourceRef={selfTasksToDoIconRef}
+          targetRef={selfTasksInProgressIconRef}
+          taskId={taskId}
+          section="self"
+          onComplete={() => {
+            clearAnimationState();
+            refetchDashboardData();
+          }}
+        />
+      )}
     </EmployeeLayout>
   );
 };

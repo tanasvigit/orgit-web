@@ -140,6 +140,11 @@ export const authService = {
     return response.data;
   },
 
+  deleteProfilePhoto: async () => {
+    const response = await api.delete('/upload/profile-photo');
+    return response.data;
+  },
+
   changePassword: async (data: { currentPassword: string; newPassword: string }) => {
     const response = await api.put('/auth/change-password', data);
     return response.data;

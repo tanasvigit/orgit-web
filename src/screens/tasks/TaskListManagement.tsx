@@ -68,7 +68,7 @@ export const TaskListManagement: React.FC = () => {
         </div>
         <h2 className="text-gray-900 dark:text-white text-lg font-bold leading-tight tracking-tight">My Tasks</h2>
         <div className="flex size-10 items-center justify-center rounded-full active:bg-gray-100 dark:active:bg-gray-800 cursor-pointer">
-          <span className="material-symbols-outlined text-gray-900 dark:text-white">filter_list</span>
+          <span className="material-symbols-outlined text-gray-900 dark:text-white"></span>
         </div>
       </header>
 

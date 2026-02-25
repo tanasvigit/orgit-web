@@ -1,14 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import { taskService } from '../../services/taskService';
 import { conversationService } from '../../services/conversationService';
-import { chatUserService } from '../../services/chatUserService';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { format } from 'date-fns';
 import { Avatar } from '../shared';
-import { User } from '../../../shared/src/types';
 
 interface TaskGroupDetailsModalProps {
   visible: boolean;
@@ -16,6 +14,8 @@ interface TaskGroupDetailsModalProps {
   taskId: string | null | undefined;
   conversationId?: string | null;
   conversationData?: any;
+  /** When true, open the modal with Add Members section expanded (e.g. from "+" menu) */
+  openAddMembers?: boolean;
 }
 
 export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
@@ -24,6 +24,7 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
   taskId,
   conversationId,
   conversationData,
+  openAddMembers = false,
 }) => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -31,6 +32,12 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin';
   const [showAddMembers, setShowAddMembers] = useState(false);
+
+  React.useEffect(() => {
+    if (visible && openAddMembers) {
+      setShowAddMembers(true);
+    }
+  }, [visible, openAddMembers]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
 
@@ -66,29 +73,53 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
   // taskService.getTask already extracts the task object, so taskData should be the task directly
   const task = taskData;
 
-  // Search users for adding members
-  const { data: searchResults, isFetching: isSearching } = useQuery(
-    ['search-users', searchQuery],
-    () => chatUserService.searchUsers(searchQuery),
-    {
-      enabled: showAddMembers && searchQuery.trim().length > 0,
+  // Replicate Task Details page: fetch all users when Add Members is open, then filter by name/mobile
+  const { data: allUsers = [], isLoading: isLoadingUsers } = useQuery(
+    ['all-users'],
+    () => conversationService.getAllUsers(),
+    { enabled: showAddMembers && visible }
+  );
+
+  // Filter out users who are already group members
+  const availableUsers = useMemo(() => {
+    if (!allUsers || !Array.isArray(allUsers)) return [];
+    return allUsers.filter(
+      (u: any) => !groupMembers.some((m: any) => (m.id || m.userId) === u.id)
+    );
+  }, [allUsers, groupMembers]);
+
+  // By default show same-organisation members (company employees); on search show all matching users including outsiders
+  const currentOrgId = user?.organizationId || (user as any)?.organization_id;
+  const filteredUsers = useMemo(() => {
+    const hasSearch = (searchQuery || '').trim().length > 0;
+    const q = searchQuery.trim().toLowerCase();
+    if (hasSearch) {
+      return availableUsers.filter(
+        (u: any) =>
+          (u.name || '').toLowerCase().includes(q) ||
+          (u.mobile || u.phone || '').toString().toLowerCase().includes(q)
+      );
     }
-  );
+    if (currentOrgId) {
+      const sameOrg = availableUsers.filter(
+        (u: any) => (u.organization_id || u.organizationId) === currentOrgId
+      );
+      return sameOrg.length > 0 ? sameOrg : availableUsers;
+    }
+    return availableUsers;
+  }, [availableUsers, searchQuery, currentOrgId]);
 
-  const users: User[] = searchResults?.data || [];
-
-  // Filter out users who are already members
-  const availableUsers = users.filter(
-    (u) => !groupMembers.some((m: any) => (m.id || m.userId) === u.id)
-  );
-
-  // Add members mutation
+  // Add members mutation (also adds new members as task assignees on backend so they get TODO / Accept / Reject)
   const addMembersMutation = useMutation(
     (memberIds: string[]) => conversationService.addGroupMembers(conversationId!, memberIds),
     {
       onSuccess: () => {
         queryClient.invalidateQueries(['conversation', conversationId]);
         queryClient.invalidateQueries('conversations');
+        if (effectiveTaskId) {
+          queryClient.invalidateQueries(['task', effectiveTaskId]);
+          queryClient.invalidateQueries('dashboard');
+        }
         setShowAddMembers(false);
         setSearchQuery('');
         setSelectedUserIds([]);
@@ -172,7 +203,6 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
         <div className="flex items-center justify-between px-6 py-4 bg-primary dark:bg-primary/90 rounded-t-2xl">
           <h2 className="text-white text-lg font-bold flex items-center gap-2">
             <span className="material-icons-outlined">assignment</span>
-            Task Group Details
           </h2>
           <button
             onClick={onClose}
@@ -432,7 +462,7 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
               </button>
             </div>
             
-            {/* Add Members UI */}
+            {/* Add Members UI - same flow as Task Details page (search by name or mobile, show numbers) */}
             {showAddMembers && (
               <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
                 <div className="mb-3">
@@ -445,13 +475,13 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
                   />
                 </div>
                 
-                {isSearching && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Searching...</p>
+                {isLoadingUsers && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Loading users...</p>
                 )}
                 
-                {availableUsers.length > 0 && (
+                {filteredUsers.length > 0 && (
                   <div className="space-y-2 max-h-40 overflow-y-auto mb-3">
-                    {availableUsers.map((user) => (
+                    {filteredUsers.map((user: any) => (
                       <button
                         key={user.id}
                         onClick={() => toggleUserSelection(user.id)}
@@ -467,7 +497,7 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
                           onChange={() => toggleUserSelection(user.id)}
                           className="rounded"
                         />
-                        <Avatar size="sm" src={user.profilePhotoUrl} />
+                        <Avatar size="sm" src={user.profilePhotoUrl || user.profile_photo_url} />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                             {user.name || user.mobile}
@@ -481,9 +511,15 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
                   </div>
                 )}
                 
-                {searchQuery && !isSearching && availableUsers.length === 0 && (
+                {searchQuery && !isLoadingUsers && filteredUsers.length === 0 && (
                   <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
                     No users found or all users are already members
+                  </p>
+                )}
+                
+                {!searchQuery && !isLoadingUsers && filteredUsers.length === 0 && (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
+                    Start typing to search for users
                   </p>
                 )}
                 

@@ -75,6 +75,18 @@ export const TaskChatScreen: React.FC = () => {
         queryClient.invalidateQueries(['tasks']);
         queryClient.invalidateQueries(['dashboard']);
         queryClient.invalidateQueries(['dashboard-statistics']);
+        queryClient.invalidateQueries(['admin-dashboard']);
+        queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        const dashboardPath = isAdmin ? '/admin' : '/dashboard';
+        navigate(dashboardPath, {
+          state: {
+            animateTaskTransition: true,
+            taskId: taskId,
+            fromStatus: 'todo',
+            toStatus: 'inprogress',
+            taskSection: isCreator ? 'self' : 'assigned',
+          },
+        });
       },
     }
   );

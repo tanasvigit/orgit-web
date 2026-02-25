@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { format } from 'date-fns';
+import { parseTimestamp, formatChatTime, formatChatDate } from '../../utils/chatTime';
 import { messageService } from '../../services/messageService';
 import { conversationService } from '../../services/conversationService';
 import { taskService } from '../../services/taskService';
@@ -22,18 +22,23 @@ import { LocationMessage } from '../../components/messaging/LocationMessage';
 import { VoiceMessage } from '../../components/messaging/VoiceMessage';
 import { TaskGroupDetailsModal } from '../../components/messaging/TaskGroupDetailsModal';
 import { TaskDetailsModal } from '../../components/tasks/TaskDetailsModal';
+import { TaskDetailsScreen } from '../../screens/tasks/TaskDetailsScreen';
 import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
 import { NewChatModal } from '../../components/messaging/NewChatModal';
 import { MediaUpload } from '../../components/messaging/MediaUpload';
 import { VoiceRecorder } from '../../components/messaging/VoiceRecorder';
 import { LocationPicker } from '../../components/messaging/LocationPicker';
 import { extractUploadedMedia } from '../../utils/chatMedia';
+import { isTaskDeleted } from '../../utils/taskUtils';
+import { Avatar } from '../../components/shared';
 
 interface TaskGroupChatConversationProps {
   conversationId?: string; // Optional prop to override useParams
+  /** When true, render only chat content + modals (no layout). Parent provides task list layout. */
+  embedInTaskDashboard?: boolean;
 }
 
-export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps> = ({ conversationId: propConversationId }) => {
+export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps> = ({ conversationId: propConversationId, embedInTaskDashboard = false }) => {
   const { conversationId: paramConversationId, taskId: routeTaskId } = useParams<{ conversationId?: string; taskId?: string }>();
   // Use prop if provided, otherwise use param from route
   const conversationId = propConversationId || paramConversationId;
@@ -44,15 +49,17 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
   // Check if accessed from task module route (not from messages route)
-  // If pathname matches /tasks/... or /admin/tasks/... pattern, we're in task module
+  // If pathname matches /tasks/... or /admin/tasks/... pattern, we're in task module (or embedded in task dashboard)
   const isFromTaskModule =
-    /^\/tasks(\/|$)/.test(location.pathname) || /^\/admin\/tasks(\/|$)/.test(location.pathname);
+    embedInTaskDashboard || /^\/tasks(\/|$)/.test(location.pathname) || /^\/admin\/tasks(\/|$)/.test(location.pathname);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<any[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<any>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastPendingTempIdRef = useRef<string | null>(null);
   const hasMarkedAsReadRef = useRef<boolean>(false);
+  const attachmentMenuInputRef = useRef<HTMLInputElement>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -70,7 +77,12 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showTaskGroupDetails, setShowTaskGroupDetails] = useState(false);
+  const [openGroupDetailsForAddMembers, setOpenGroupDetailsForAddMembers] = useState(false);
   const [showTaskDetails, setShowTaskDetails] = useState(false);
+  const [showTaskDetailsInMain, setShowTaskDetailsInMain] = useState(false);
+  const [showAddMembersInline, setShowAddMembersInline] = useState(false);
+  const [addMembersSearchQuery, setAddMembersSearchQuery] = useState('');
+  const [selectedUserIdsForAdd, setSelectedUserIdsForAdd] = useState<string[]>([]);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [showMediaUpload, setShowMediaUpload] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
@@ -506,6 +518,15 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         onSocketEvent('message_reaction_added', handleMessageReactionAdded);
         onSocketEvent('message_reaction_removed', handleMessageReactionRemoved);
         onSocketEvent('conversation_updated', handleConversationUpdated);
+        const handleDisconnect = () => {
+          setMessages((prev) => prev.map((m) => {
+            if (!m.id?.startsWith('temp_')) return m;
+            const uid = user?.id || user?.userId;
+            if ((m.sender_id !== uid && m.senderId !== uid) || m.status !== 'pending') return m;
+            return { ...m, status: 'failed' };
+          }));
+        };
+        onSocketEvent('disconnect', handleDisconnect);
 
         socketRef.current = socket;
 
@@ -523,6 +544,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           offSocketEvent('message_reaction_added', handleMessageReactionAdded);
           offSocketEvent('message_reaction_removed', handleMessageReactionRemoved);
           offSocketEvent('conversation_updated', handleConversationUpdated);
+          offSocketEvent('disconnect', handleDisconnect);
         };
       } catch (error) {
         console.error('Socket setup error:', error);
@@ -538,6 +560,39 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       }
     };
   }, [conversationId, user, queryClient]);
+
+  // Mark pending temp messages as failed after 15s; remove old temp after 30s
+  useEffect(() => {
+    if (!conversationId) return;
+    const interval = setInterval(() => {
+      setMessages((prev) => {
+        const currentUserId = user?.id || user?.userId;
+        const now = Date.now();
+        const fifteenSecondsAgo = now - 15000;
+        const thirtySecondsAgo = now - 30000;
+        let next = prev;
+        const myPending = prev.filter(msg => {
+          if (!msg.id?.startsWith('temp_')) return false;
+          if (msg.sender_id !== currentUserId && msg.senderId !== currentUserId) return false;
+          return msg.status === 'pending';
+        });
+        const toMarkFailed = myPending.filter(m => new Date(m.created_at || 0).getTime() < fifteenSecondsAgo);
+        if (toMarkFailed.length > 0) {
+          next = next.map(m => (toMarkFailed.some(t => t.id === m.id) ? { ...m, status: 'failed' } : m));
+        }
+        const oldTemp = next.filter(msg => {
+          if (!msg.id?.startsWith('temp_')) return false;
+          if (msg.sender_id !== currentUserId && msg.senderId !== currentUserId) return false;
+          return new Date(msg.created_at || 0).getTime() < thirtySecondsAgo;
+        });
+        if (oldTemp.length > 0) {
+          next = next.filter(msg => !oldTemp.some(t => t.id === msg.id));
+        }
+        return next;
+      });
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [conversationId, user?.id, user?.userId]);
 
   // Mark messages as read when conversation is opened (only once per conversation)
   useEffect(() => {
@@ -620,47 +675,18 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Format time helper
-  const formatTime = (timestamp?: string) => {
-    if (!timestamp) return '';
-    try {
-      return format(new Date(timestamp), 'h:mm a');
-    } catch {
-      return '';
-    }
-  };
+  // Format time helper – device local (mirrors mobile formatTime / formatTimeHHMM)
+  const formatTime = (timestamp?: string) => formatChatTime(timestamp);
 
-  // Format date helper
-  const formatDate = (timestamp?: string) => {
-    if (!timestamp) return '';
-    try {
-      const date = new Date(timestamp);
-      const today = new Date();
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
+  // Format date helper – device local (Today, Yesterday, or date; mirrors mobile formatDate)
+  const formatDate = (timestamp?: string) => formatChatDate(timestamp);
 
-      if (date.toDateString() === today.toDateString()) {
-        return 'Today';
-      } else if (date.toDateString() === yesterday.toDateString()) {
-        return 'Yesterday';
-      } else {
-        return format(date, 'MMM d, yyyy');
-      }
-    } catch {
-      return '';
-    }
-  };
-
-  // Should show date separator
+  // Should show date separator – use parseTimestamp for device-local date comparison
   const shouldShowDateSeparator = (currentMessage: any, previousMessage: any) => {
     if (!previousMessage) return true;
-    try {
-      const currentDate = new Date(currentMessage.created_at).toDateString();
-      const previousDate = new Date(previousMessage.created_at).toDateString();
-      return currentDate !== previousDate;
-    } catch {
-      return false;
-    }
+    const currentDate = parseTimestamp(currentMessage.created_at)?.toDateString();
+    const previousDate = parseTimestamp(previousMessage.created_at)?.toDateString();
+    return currentDate != null && previousDate != null && currentDate !== previousDate;
   };
 
   // Handle typing (with debouncing)
@@ -721,9 +747,8 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     if ((!message.trim() && !replyingTo && !editingMessage && pendingAttachments.length === 0) || !conversationId) return;
 
     try {
-      const socket = await waitForSocketConnection();
-
       if (editingMessage) {
+        const socket = await waitForSocketConnection();
         await messageService.editMessage(editingMessage.id, message.trim());
         socket.emit('send_message', { conversationId, content: message.trim(), messageType: 'text', isEdit: true, messageId: editingMessage.id });
         setEditingMessage(null);
@@ -731,7 +756,9 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       } else if (pendingAttachments.length > 0) {
         const caption = message.trim();
         if (caption) {
+          const socket = await waitForSocketConnection();
           const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          lastPendingTempIdRef.current = tempId;
           const currentUserId = user?.id || user?.userId;
           const tempMessage = normalizeMessage({
             id: tempId,
@@ -739,8 +766,8 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             sender_id: currentUserId,
             content: caption,
             message_type: 'text',
-            status: 'sent',
-            created_at: new Date().toISOString(),
+            status: 'pending',
+            created_at: undefined,
             sender_name: user?.name || 'You',
             reply_to_message_id: replyingTo?.id || null,
             reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, content: replyingTo.content, message_type: replyingTo.message_type, sender_name: replyingTo.sender_name } : null,
@@ -756,12 +783,21 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             // Only send visibilityMode for task groups
             ...(isTaskGroup && { visibilityMode }),
           });
+          lastPendingTempIdRef.current = null;
           setMessage('');
           setReplyingTo(null);
         }
         setUploadingMedia(true);
         const toSend = [...pendingAttachments];
         setPendingAttachments([]);
+        let mediaSocket: any = null;
+        try {
+          mediaSocket = await waitForSocketConnection();
+        } catch (e) {
+          setUploadingMedia(false);
+          toast.error('No connection. Please check your internet.');
+          throw e;
+        }
         for (const item of toSend) {
           try {
             let uploadResponse: any;
@@ -773,7 +809,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             }
             const { storedValue } = extractUploadedMedia(uploadResponse);
             if (!storedValue) throw new Error('Upload did not return key');
-            socket.emit('send_message', { conversationId, messageType: item.type, mediaUrl: storedValue, fileName: item.name, fileSize: item.size, mimeType: item.file.type, replyToMessageId: replyingTo?.id || null, deviceTimestamp: getDeviceLocalTimestamp() });
+            mediaSocket.emit('send_message', { conversationId, messageType: item.type, mediaUrl: storedValue, fileName: item.name, fileSize: item.size, mimeType: item.file.type, replyToMessageId: replyingTo?.id || null, deviceTimestamp: getDeviceLocalTimestamp() });
           } catch (err) {
             console.error('Upload error:', err);
             toast.error(`Failed to upload ${item.name}. Please try again.`);
@@ -784,6 +820,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         setTimeout(() => scrollToBottom(), 100);
       } else {
         const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        lastPendingTempIdRef.current = tempId;
         const currentUserId = user?.id || user?.userId;
         const tempMessage = normalizeMessage({
           id: tempId,
@@ -791,8 +828,8 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           sender_id: currentUserId,
           content: message.trim(),
           message_type: 'text',
-          status: 'sent',
-          created_at: new Date().toISOString(),
+          status: 'pending',
+          created_at: undefined,
           sender_name: user?.name || 'You',
           reply_to_message_id: replyingTo?.id || null,
           reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, content: replyingTo.content, message_type: replyingTo.message_type, sender_name: replyingTo.sender_name } : null,
@@ -804,6 +841,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           setReplyingTo(null);
           setTimeout(() => scrollToBottom(), 100);
         }
+        const socket = await waitForSocketConnection();
         socket.emit('send_message', { 
           conversationId, 
           text: message.trim(), 
@@ -814,6 +852,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           // Only send visibilityMode for task groups; backend will use 'private' for personal chats
           ...(isTaskGroup && { visibilityMode }),
         });
+        lastPendingTempIdRef.current = null;
       }
 
       setIsTyping(false);
@@ -823,6 +862,12 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       }
     } catch (error) {
       console.error('Send message error:', error);
+      toast.error('Failed to send message. Please try again.');
+      const failedTempId = lastPendingTempIdRef.current;
+      lastPendingTempIdRef.current = null;
+      if (failedTempId) {
+        setMessages((prev) => prev.map((m) => (m.id === failedTempId ? { ...m, status: 'failed' } : m)));
+      }
     }
   };
 
@@ -968,6 +1013,26 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     addFileToPending(file, type);
     setShowMediaUpload(false);
     setShowAttachmentMenu(false);
+  };
+
+  const openAttachmentPicker = (accept: string) => {
+    setShowAttachmentMenu(false);
+    if (attachmentMenuInputRef.current) {
+      attachmentMenuInputRef.current.accept = accept;
+      attachmentMenuInputRef.current.value = '';
+      attachmentMenuInputRef.current.click();
+    }
+  };
+
+  const handleAttachmentMenuFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fileType = file.type;
+    let type: 'image' | 'video' | 'audio' | 'document' = 'document';
+    if (fileType.startsWith('image/')) type = 'image';
+    else if (fileType.startsWith('video/')) type = 'video';
+    else if (fileType.startsWith('audio/')) type = 'audio';
+    handleMediaSelectAddToPreview(file, type);
   };
 
   // Handle media upload (mirror DirectChat + mobile)
@@ -1131,6 +1196,87 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   // Get taskId from route params (when in task module) or from conversation data
   const taskId = routeTaskId || conversationData?.taskId || conversationData?.data?.taskId || conversationData?.task_id;
 
+  // Fetch all users for inline Add Members (same flow as Task Details page)
+  const { data: allUsers = [], isLoading: isLoadingUsersForAdd } = useQuery(
+    ['all-users'],
+    () => conversationService.getAllUsers(),
+    { enabled: showAddMembersInline }
+  );
+
+  // Filter out users who are already group members
+  const availableUsersForAdd = useMemo(() => {
+    if (!allUsers || !Array.isArray(allUsers)) return [];
+    return allUsers.filter(
+      (u: any) => !groupMembers.some((m: any) => (m.id || m.userId) === u.id)
+    );
+  }, [allUsers, groupMembers]);
+
+  // By default show same-organisation members (company employees); on search show all matching users including outsiders
+  const currentOrgId = user?.organizationId || (user as any)?.organization_id;
+  const filteredUsersForAdd = useMemo(() => {
+    const hasSearch = (addMembersSearchQuery || '').trim().length > 0;
+    const q = addMembersSearchQuery.trim().toLowerCase();
+    if (hasSearch) {
+      return availableUsersForAdd.filter(
+        (u: any) =>
+          (u.name || '').toLowerCase().includes(q) ||
+          (u.mobile || u.phone || '').toString().toLowerCase().includes(q)
+      );
+    }
+    if (currentOrgId) {
+      const sameOrg = availableUsersForAdd.filter(
+        (u: any) => (u.organization_id || u.organizationId) === currentOrgId
+      );
+      return sameOrg.length > 0 ? sameOrg : availableUsersForAdd;
+    }
+    return availableUsersForAdd;
+  }, [availableUsersForAdd, addMembersSearchQuery, currentOrgId]);
+
+  // Add members mutation (adds to conversation_members + task_assignees so new members see task in Task Management)
+  const addMembersInlineMutation = useMutation(
+    (memberIds: string[]) =>
+      conversationService.addGroupMembers(conversationId!, memberIds, effectiveTaskId || undefined),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['conversation', conversationId]);
+        queryClient.invalidateQueries('conversations');
+        if (effectiveTaskId) {
+          queryClient.invalidateQueries(['task', effectiveTaskId]);
+          queryClient.invalidateQueries('dashboard');
+        }
+        setShowAddMembersInline(false);
+        setAddMembersSearchQuery('');
+        setSelectedUserIdsForAdd([]);
+        toast.success('Members added successfully!');
+      },
+      onError: (error: any) => {
+        toast.error(`Failed to add members: ${error.response?.data?.error || error.message}`);
+      },
+    }
+  );
+
+  const handleAddMembersInline = () => {
+    if (selectedUserIdsForAdd.length === 0) {
+      toast.error('Please select at least one member to add');
+      return;
+    }
+    addMembersInlineMutation.mutate(selectedUserIdsForAdd);
+  };
+
+  const toggleUserSelectionForAdd = (userId: string) => {
+    setSelectedUserIdsForAdd((prev) =>
+      prev.includes(userId)
+        ? prev.filter((id) => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
+  const closeAddMembersPopover = () => {
+    setShowAddMembersInline(false);
+    setAddMembersSearchQuery('');
+    setSelectedUserIdsForAdd([]);
+  };
+
   // Fetch task data for verification logic
   const { data: taskData } = useQuery(
     ['task', taskId],
@@ -1140,6 +1286,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
   const task = taskData;
   const currentUserId = user?.id || (user as any)?.userId;
+  const taskDeleted = isTaskDeleted(task);
 
   // Check if current user is the task creator (task owner; use String so it works when owner was set by admin)
   const isTaskCreator = () => {
@@ -1218,8 +1365,11 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
   const [verifyingUserId, setVerifyingUserId] = useState<string | null>(null);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [acceptRejectProcessing, setAcceptRejectProcessing] = useState(false);
 
-  // Get current user assignee (EXACT mobile logic)
+  // Get current user assignee (EXACT mobile logic) — must be before canAccept/canReject
   const currentUserAssignee = React.useMemo(() => {
     if (!task?.assignees || !Array.isArray(task.assignees)) return null;
     return task.assignees.find((a: any) => {
@@ -1227,6 +1377,84 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       return assigneeId === currentUserId;
     });
   }, [task?.assignees, currentUserId]);
+
+  // Accept / Reject (assignee who has not yet accepted)
+  const canAccept = !isTaskCreator() && !!currentUserAssignee && !(currentUserAssignee.accepted_at || currentUserAssignee.has_accepted);
+  const canReject = canAccept;
+
+  // Task flow: TODO → Accept → In Progress. Without accepting, show Task Details (with Accept/Reject) where chat would open; no redirect.
+  const canAccessChat = isTaskCreator() || (!!currentUserAssignee && !!(currentUserAssignee.accepted_at || currentUserAssignee.has_accepted));
+
+  const acceptTaskMutation = useMutation(
+    () => taskService.acceptTask(taskId!),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        if (user?.role === 'admin') {
+          queryClient.invalidateQueries(['admin-dashboard']);
+          queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        }
+        const dashboardPath = isAdmin ? '/admin' : '/dashboard';
+        navigate(dashboardPath, {
+          state: {
+            animateTaskTransition: true,
+            taskId: taskId,
+            fromStatus: 'todo',
+            toStatus: 'inprogress',
+            taskSection: isTaskCreator() ? 'self' : 'assigned',
+          },
+        });
+      },
+      onError: (error: any) => {
+        toast.error(error?.response?.data?.error || error?.message || 'Failed to accept task');
+      },
+    }
+  );
+  const rejectTaskMutation = useMutation(
+    (reason: string) => taskService.rejectTask(taskId!, reason),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        if (user?.role === 'admin') {
+          queryClient.invalidateQueries(['admin-dashboard']);
+          queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        }
+        setShowRejectModal(false);
+        setRejectionReason('');
+      },
+      onError: (error: any) => {
+        toast.error(error?.response?.data?.error || error?.message || 'Failed to reject task');
+      },
+    }
+  );
+  const handleAccept = async () => {
+    try {
+      setAcceptRejectProcessing(true);
+      await acceptTaskMutation.mutateAsync();
+    } finally {
+      setAcceptRejectProcessing(false);
+    }
+  };
+  const handleReject = async () => {
+    if (!rejectionReason.trim()) {
+      toast.error('Please enter a reason for rejection');
+      return;
+    }
+    try {
+      setAcceptRejectProcessing(true);
+      await rejectTaskMutation.mutateAsync(rejectionReason.trim());
+    } finally {
+      setAcceptRejectProcessing(false);
+    }
+  };
 
   // Check if current user can mark complete. After verify, task.status is 'completed' but creator still needs to mark complete — show button for creator.
   const canMarkComplete = React.useMemo(() => {
@@ -1392,7 +1620,13 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     let statusIcon = null;
     let statusColor = '#6B7280';
     if (isMyMessage) {
-      if (messageStatus === 'read') {
+      if (messageStatus === 'failed') {
+        statusIcon = 'error';
+        statusColor = '#DC2626';
+      } else if (messageStatus === 'pending') {
+        statusIcon = 'schedule';
+        statusColor = '#9CA3AF';
+      } else if (messageStatus === 'read') {
         statusIcon = '✓✓';
         statusColor = '#7C3AED';
       } else if (messageStatus === 'delivered') {
@@ -1555,14 +1789,15 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                 <p className={`text-[15px] font-normal leading-relaxed break-words ${isMyMessage ? 'text-[#1F2937]' : 'text-[#1F2937] dark:text-gray-100'}`}>{msg.content}</p>
                 <div className={`flex items-center justify-end gap-1.5 mt-2 ${isMyMessage ? '' : 'absolute bottom-1 right-3'}`}>
                   <span className={`text-[11px] ${isMyMessage ? 'text-[#6B7280]' : 'text-[#6B7280] dark:text-gray-400'}`}>
-                    {formatTime(msg.created_at)}
+                    {msg.created_at ? formatTime(msg.created_at) : (msg.status === 'pending' || msg.status === 'failed' ? '...' : '')}
                   </span>
                   {isMyMessage && statusIcon && (
                     <span 
                       className="material-icons-round text-[16px] font-semibold leading-none" 
                       style={{ color: statusColor }}
+                      title={messageStatus === 'pending' ? 'Sending...' : messageStatus === 'failed' ? 'Failed to send' : undefined}
                     >
-                      {statusIcon === '✓✓' ? 'done_all' : 'done'}
+                      {statusIcon === '✓✓' ? 'done_all' : statusIcon === '✓' ? 'done' : statusIcon}
                     </span>
                   )}
                 </div>
@@ -1620,14 +1855,10 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       >
         <button
           onClick={() => {
-            // Navigate to full Task Details page from the task header
+            // Open Task Details in main chat area (same panel) when clicking header
             const id = effectiveTaskId || taskId;
             if (!id) return;
-            if (isAdmin) {
-              navigate(`/admin/tasks/${id}`);
-            } else {
-              navigate(`/tasks/${id}`);
-            }
+            setShowTaskDetailsInMain(true);
           }}
           className="flex items-center gap-4 flex-1 text-left hover:opacity-80 transition-opacity cursor-pointer"
         >
@@ -1641,9 +1872,17 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             </div>
           </div>
           <div>
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-              {conversationName}
-            </h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                {conversationName}
+              </h2>
+              {taskDeleted && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300">
+                  <span className="material-symbols-outlined text-sm">delete</span>
+                  Deleted
+                </span>
+              )}
+            </div>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {isTyping ? (
                 <span className="flex items-center gap-1">
@@ -1707,6 +1946,17 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                     <span className="material-icons-outlined text-lg">info</span>
                     Task group details
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMoreMenu(false);
+                      setShowAddMembersInline(true);
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2"
+                  >
+                    <span className="material-icons-outlined text-lg">person_add</span>
+                    Add Member
+                  </button>
                   {taskId && (
                     <button
                       type="button"
@@ -1726,6 +1976,71 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           </div>
         </div>
       </header>
+
+      {/* Accept / Reject Task (assignee who has not yet accepted) */}
+      {(canAccept || canReject) && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800 px-6 py-4">
+          <p className="text-xs font-semibold text-amber-800 dark:text-amber-200 mb-3">Accept or reject this task to continue</p>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              type="button"
+              onClick={handleAccept}
+              disabled={acceptRejectProcessing}
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              {acceptRejectProcessing && acceptTaskMutation.isLoading ? (
+                <>
+                  <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                  Accepting...
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-lg">check</span>
+                  Accept Task
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowRejectModal(true)}
+              disabled={acceptRejectProcessing}
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-red-500/60 px-4 py-2.5 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-lg">close</span>
+              Reject
+            </button>
+          </div>
+          {showRejectModal && (
+            <div className="mt-4 pt-4 border-t border-amber-200 dark:border-amber-800 space-y-2">
+              <label className="block text-xs font-semibold text-amber-900 dark:text-amber-200">Rejection reason</label>
+              <textarea
+                rows={3}
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50"
+                placeholder="Enter reason for rejecting this task..."
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowRejectModal(false); setRejectionReason(''); }}
+                  className="px-3 py-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReject}
+                  disabled={!rejectionReason.trim() || acceptRejectProcessing}
+                  className="px-3 py-1.5 text-sm font-semibold bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                >
+                  {acceptRejectProcessing && rejectTaskMutation.isLoading ? 'Rejecting...' : 'Confirm Reject'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Mark My Task Complete Section - EXACT mobile logic (assignee completion sends to backend) */}
       {canMarkComplete && (
@@ -1916,7 +2231,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       )}
 
       {/* Footer */}
-      <div className="p-4 bg-surface-light dark:bg-surface-dark border-t border-border-light dark:border-border-dark relative">
+      <div className="p-3 sm:p-4 bg-surface-light dark:bg-surface-dark border-t border-border-light dark:border-border-dark relative shrink-0">
         {/* File upload preview strip */}
         {pendingAttachments.length > 0 && (
           <div className="flex gap-3 overflow-x-auto pb-4 mb-2 -mx-2 px-2 scroll-smooth max-w-5xl mx-auto" style={{ scrollbarWidth: 'thin' }}>
@@ -1965,15 +2280,12 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           </div>
         )}
 
-        {/* Plus menu (attachments) */}
+        {/* Plus menu (attachments): Upload File, Upload Image, Upload Video, Add Member (Task Group) */}
         {showAttachmentMenu && (
           <div className="absolute bottom-[calc(100%+12px)] left-6 w-56 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl shadow-2xl overflow-hidden py-2 z-20">
             <button
               type="button"
-              onClick={() => {
-                setShowAttachmentMenu(false);
-                setShowMediaUpload(true);
-              }}
+              onClick={() => openAttachmentPicker('*/*')}
               className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
             >
               <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:scale-110 transition-transform">
@@ -1983,111 +2295,139 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             </button>
             <button
               type="button"
+              onClick={() => openAttachmentPicker('image/*')}
+              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
+            >
+              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:scale-110 transition-transform">
+                <span className="material-icons-round text-base">image</span>
+              </div>
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Upload Image</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openAttachmentPicker('video/*')}
+              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
+            >
+              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:scale-110 transition-transform">
+                <span className="material-icons-round text-base">videocam</span>
+              </div>
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Upload Video</span>
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 setShowAttachmentMenu(false);
-                setShowLocationPicker(true);
+                setShowAddMembersInline(true);
               }}
               className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
             >
-              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform">
-                <span className="material-icons-round text-base">location_on</span>
+              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:scale-110 transition-transform">
+                <span className="material-icons-round text-base">person_add</span>
               </div>
-              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Share Location</span>
-            </button>
-            <button
-              type="button"
-              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
-            >
-              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform">
-                <span className="material-icons-round text-base">contact_page</span>
-              </div>
-              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Send Contact</span>
-            </button>
-            <div className="mx-4 my-1 h-px bg-gray-100 dark:bg-slate-800" />
-            <button
-              type="button"
-              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors group text-left"
-            >
-              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform">
-                <span className="material-icons-round text-base">poll</span>
-              </div>
-              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Create Poll</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Add Member </span>
             </button>
           </div>
         )}
 
+        {/* Add Members popover – same style as + menu / More options */}
+        {showAddMembersInline && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={closeAddMembersPopover} aria-hidden="true" />
+            <div className="absolute bottom-[calc(100%+12px)] left-6 w-72 max-h-[min(70vh,420px)] flex flex-col bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl shadow-2xl overflow-hidden z-20">
+              <div className="shrink-0 px-3 py-2.5 border-b border-border-light dark:border-border-dark flex items-center gap-2">
+                <span className="material-icons-outlined text-primary text-lg">person_add</span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">Add Members</span>
+              </div>
+              <div className="shrink-0 p-2">
+                <input
+                  type="text"
+                  value={addMembersSearchQuery}
+                  onChange={(e) => setAddMembersSearchQuery(e.target.value)}
+                  placeholder="Search by name or mobile number..."
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto py-1">
+                {isLoadingUsersForAdd && (
+                  <div className="flex items-center justify-center py-8 text-gray-500 dark:text-gray-400">
+                    <span className="animate-spin rounded-full h-5 w-5 border-2 border-primary border-t-transparent mr-2" />
+                    <span className="text-xs">Loading...</span>
+                  </div>
+                )}
+                {!isLoadingUsersForAdd && filteredUsersForAdd.length > 0 && (
+                  <div>
+                    {filteredUsersForAdd.map((user: any) => (
+                      <button
+                        key={user.id}
+                        type="button"
+                        onClick={() => toggleUserSelectionForAdd(user.id)}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${
+                          selectedUserIdsForAdd.includes(user.id)
+                            ? 'bg-primary/10 dark:bg-primary/20'
+                            : 'hover:bg-gray-50 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedUserIdsForAdd.includes(user.id)}
+                          onChange={() => toggleUserSelectionForAdd(user.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary"
+                        />
+                        <Avatar size="sm" src={user.profilePhotoUrl || user.profile_photo_url} alt={user.name || user.mobile} />
+                        <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                          {user.name || user.mobile}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {!isLoadingUsersForAdd && addMembersSearchQuery && filteredUsersForAdd.length === 0 && (
+                  <div className="text-center py-6 text-gray-500 dark:text-gray-400 text-xs">No users found</div>
+                )}
+                {!isLoadingUsersForAdd && !addMembersSearchQuery && filteredUsersForAdd.length === 0 && (
+                  <div className="text-center py-6 text-gray-500 dark:text-gray-400 text-xs">Start typing to search</div>
+                )}
+              </div>
+              <div className="shrink-0 flex gap-2 p-2 border-t border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark">
+                <button
+                  type="button"
+                  onClick={closeAddMembersPopover}
+                  className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddMembersInline}
+                  disabled={addMembersInlineMutation.isLoading || selectedUserIdsForAdd.length === 0}
+                  className="flex-1 px-3 py-2 rounded-lg text-sm font-medium text-white bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1.5"
+                >
+                  {addMembersInlineMutation.isLoading ? (
+                    <>
+                      <span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent" />
+                      Adding...
+                    </>
+                  ) : (
+                    `Add ${selectedUserIdsForAdd.length} Member(s)`
+                  )}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        <input
+          ref={attachmentMenuInputRef}
+          type="file"
+          className="hidden"
+          onChange={handleAttachmentMenuFileChange}
+        />
+
         <div className="flex flex-col gap-1 max-w-5xl mx-auto">
-          <div className="flex items-center gap-3 bg-gray-100 dark:bg-background-dark/70 p-2 rounded-2xl border border-border-light dark:border-border-dark">
-            {/* Plus button */}
-            <button
-              type="button"
-              className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-all"
-              onClick={() => setShowAttachmentMenu((prev) => !prev)}
-              title="More options"
-            >
-              <span className="material-icons-round">add_circle</span>
-            </button>
-
-            {/* Quick image shortcut */}
-            <button
-              type="button"
-              className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-              onClick={() => setShowMediaUpload(true)}
-              title="Send photo or video"
-            >
-              <span className="material-icons-round">image</span>
-            </button>
-
-            {/* Input */}
-          <textarea
-            className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-gray-900 dark:text-gray-100 resize-none max-h-32 placeholder-gray-400 dark:placeholder-gray-500 py-2 px-2"
-            placeholder={editingMessage ? 'Edit message...' : pendingAttachments.length > 0 ? 'Add a caption...' : 'Type a message...'}
-            rows={1}
-            value={message}
-            onChange={(e) => handleTyping(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-          />
-
-          {/* Emoji */}
-          <button
-            type="button"
-            className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-            onClick={() => setShowEmojiPicker(true)}
-            title="Emoji"
-          >
-            <span className="material-icons-round">sentiment_satisfied_alt</span>
-          </button>
-
-          {/* Voice note */}
-          <button
-            type="button"
-            className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-            title="Voice note"
-            onClick={() => setShowVoiceRecorder(true)}
-          >
-            <span className="material-icons-round">mic</span>
-          </button>
-            {/* Send */}
-            <button
-              type="button"
-              onClick={handleSend}
-              disabled={(!message.trim() && !replyingTo && !editingMessage && pendingAttachments.length === 0) || sendMessageMutation.isLoading || uploadingMedia}
-              className="p-3 bg-primary hover:bg-primary-dark text-white rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 transition-opacity flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span className="material-icons-round -rotate-45 translate-x-[1px] -translate-y-[1px]">
-                send
-              </span>
-            </button>
-          </div>
-
-          {/* Visibility toggle row (Org-Only vs Shared-to-Group) - ONLY for Task Groups */}
+          {/* Visibility toggle (Shared to All / Org-Only) - top of input box - ONLY for Task Groups */}
           {isTaskGroup && (
-            <div className="flex items-center justify-end px-1">
+            <div className="flex items-center justify-end px-1 pb-0.5">
               <div className="flex items-center gap-1 text-[11px]">
                 <button
                   type="button"
@@ -2120,6 +2460,81 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
               </div>
             </div>
           )}
+          <div className="flex items-center gap-2 sm:gap-3 bg-gray-100 dark:bg-background-dark/70 p-2 sm:p-3 rounded-2xl border border-border-light dark:border-border-dark relative">
+            {/* Plus button */}
+            <button
+              type="button"
+              className="p-2 sm:p-2.5 text-primary hover:bg-primary/10 rounded-xl transition-all min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0"
+              onClick={() => setShowAttachmentMenu((prev) => !prev)}
+              title="More options"
+              aria-label="More options"
+            >
+              <span className="material-icons-round text-lg sm:text-xl">add_circle</span>
+            </button>
+
+            {/* Quick image shortcut */}
+            <button
+              type="button"
+              className="p-2 sm:p-2.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0"
+              onClick={() => setShowMediaUpload(true)}
+              title="Send photo or video"
+              aria-label="Send photo or video"
+            >
+              <span className="material-icons-round text-lg sm:text-xl">image</span>
+            </button>
+
+            {/* Input */}
+          <textarea
+            className="flex-1 bg-transparent border-none focus:ring-0 text-sm sm:text-base text-gray-900 dark:text-gray-100 resize-none max-h-32 placeholder-gray-400 dark:placeholder-gray-500 py-2 sm:py-2.5 px-2 sm:px-3 min-h-[44px] leading-relaxed"
+            placeholder={editingMessage ? 'Edit message...' : pendingAttachments.length > 0 ? 'Add a caption...' : 'Type a message...'}
+            rows={1}
+            value={message}
+            onChange={(e) => handleTyping(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+          />
+
+          {/* Emoji */}
+          <button
+            type="button"
+            className="p-2 sm:p-2.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0"
+            onClick={() => setShowEmojiPicker(true)}
+            title="Emoji"
+            aria-label="Emoji"
+          >
+            <span className="material-icons-round text-lg sm:text-xl">sentiment_satisfied_alt</span>
+          </button>
+
+          {/* Voice note */}
+          <button
+            type="button"
+            className="p-2 sm:p-2.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0"
+            title="Voice note"
+            aria-label="Voice note"
+            onClick={() => setShowVoiceRecorder(true)}
+          >
+            <span className="material-icons-round text-lg sm:text-xl">mic</span>
+          </button>
+            {/* Send */}
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={(!message.trim() && !replyingTo && !editingMessage && pendingAttachments.length === 0) || sendMessageMutation.isLoading || uploadingMedia}
+              className="p-2.5 sm:p-3 bg-primary hover:bg-primary-dark text-white rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 transition-opacity flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] shrink-0"
+              aria-label="Send message"
+            >
+              <span className="material-icons-round text-lg sm:text-xl -rotate-45 translate-x-[1px] -translate-y-[1px]">
+                send
+              </span>
+            </button>
+
+            {/* Spacer for FAB - reserves space so send button doesn't get hidden */}
+            <div className="w-12 sm:w-14 md:w-16 lg:w-20 flex-shrink-0"></div>
+          </div>
         </div>
       </div>
 
@@ -2202,6 +2617,78 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     </div>
   );
 
+  // Task flow: when user has not accepted, show full Task Details Page in place of chat (same area where chat opens)
+  const taskDetailsGateView = (
+    <div className="flex-1 flex flex-col bg-background-light dark:bg-background-dark h-full overflow-hidden">
+      {effectiveTaskId ? (
+        <div className="flex-1 overflow-y-auto">
+          <TaskDetailsScreen embedded taskId={effectiveTaskId} />
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400">
+          <span className="material-icons-outlined text-4xl mb-2">assignment</span>
+          <p className="text-sm font-medium">No task linked to this conversation</p>
+        </div>
+      )}
+    </div>
+  );
+
+  const displayContent = (isTaskGroup && !canAccessChat) ? taskDetailsGateView : mainContent;
+
+  // When user clicks task group header: show Task Details in main chat area (with Back to chat)
+  const taskDetailsInMainView = effectiveTaskId ? (
+    <div className="flex-1 flex flex-col bg-background-light dark:bg-background-dark h-full overflow-hidden">
+      <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-border-light dark:border-border-dark bg-white/80 dark:bg-surface-dark/80 backdrop-blur-sm">
+        <button
+          type="button"
+          onClick={() => setShowTaskDetailsInMain(false)}
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-primary hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors"
+        >
+          <span className="material-icons-outlined text-lg">arrow_back</span>
+          Back to chat
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        <TaskDetailsScreen embedded taskId={effectiveTaskId} />
+      </div>
+    </div>
+  ) : null;
+
+  const mainPanelContent = (showTaskDetailsInMain && canAccessChat && taskDetailsInMainView)
+    ? taskDetailsInMainView
+    : displayContent;
+
+  // When embedded in Task Dashboard: no layout, only chat content + modals (parent has task list)
+  if (embedInTaskDashboard) {
+    return (
+      <>
+        <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden h-full">
+          {mainPanelContent}
+        </div>
+        <TaskDetailsModal
+          visible={showTaskDetails}
+          onClose={() => setShowTaskDetails(false)}
+          taskId={effectiveTaskId || undefined}
+        />
+        <TaskGroupDetailsModal
+          visible={showTaskGroupDetails && !showAddMembersInline}
+          onClose={() => {
+            setShowTaskGroupDetails(false);
+            setOpenGroupDetailsForAddMembers(false);
+          }}
+          taskId={taskId}
+          conversationId={conversationId}
+          conversationData={conversationData}
+          openAddMembers={openGroupDetailsForAddMembers}
+        />
+        <NewChatModal
+          visible={showNewChatModal}
+          onClose={() => setShowNewChatModal(false)}
+        />
+      </>
+    );
+  }
+
   // Wrap in appropriate layout matching DirectChatConversation structure
   // If accessed from task module, use full width (no conversation list sidebar)
   if (isFromTaskModule) {
@@ -2210,7 +2697,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       return (
         <AdminLayout hideSearch>
           <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden h-full">
-            {mainContent}
+            {mainPanelContent}
 
             {/* Task Details Modal */}
             <TaskDetailsModal
@@ -2233,7 +2720,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     return (
       <EmployeeLayout hideSearch>
         <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden h-full">
-          {mainContent}
+          {mainPanelContent}
 
           {/* Task Details Modal */}
           <TaskDetailsModal
@@ -2261,7 +2748,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             {conversationListContent}
           </div>
           <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden">
-            {mainContent}
+            {mainPanelContent}
           </div>
         </div>
 
@@ -2274,11 +2761,15 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
         {/* Task Group Details Modal */}
         <TaskGroupDetailsModal
-          visible={showTaskGroupDetails}
-          onClose={() => setShowTaskGroupDetails(false)}
+          visible={showTaskGroupDetails && !showAddMembersInline}
+          onClose={() => {
+            setShowTaskGroupDetails(false);
+            setOpenGroupDetailsForAddMembers(false);
+          }}
           taskId={taskId}
           conversationId={conversationId}
           conversationData={conversationData}
+          openAddMembers={openGroupDetailsForAddMembers}
         />
 
         {/* New Chat Modal */}
@@ -2297,7 +2788,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       conversationListContent={conversationListContent}
       hideSearch
     >
-      {mainContent}
+      {mainPanelContent}
 
       {/* Task Details Modal */}
       <TaskDetailsModal
@@ -2308,11 +2799,15 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
       {/* Task Group Details Modal */}
       <TaskGroupDetailsModal
-        visible={showTaskGroupDetails}
-        onClose={() => setShowTaskGroupDetails(false)}
+        visible={showTaskGroupDetails && !showAddMembersInline}
+        onClose={() => {
+          setShowTaskGroupDetails(false);
+          setOpenGroupDetailsForAddMembers(false);
+        }}
         taskId={taskId}
         conversationId={conversationId}
         conversationData={conversationData}
+        openAddMembers={openGroupDetailsForAddMembers}
       />
 
       {/* New Chat Modal */}

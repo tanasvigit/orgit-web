@@ -1,62 +1,60 @@
+import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import ErrorBoundary from './components/ErrorBoundary';
-// import { BottomNav } from './components/shared'; // Not used in super admin routes
-import { MobileNumberRegistration } from './screens/auth/MobileNumberRegistration';
-import { Login } from './screens/auth/Login';
-import { OTPVerification } from './screens/auth/OTPVerification';
-import { UserProfileCreation } from './screens/auth/UserProfileCreation';
-import { EmployeeDashboard } from './screens/dashboard/EmployeeDashboard';
-import { MainMessagingScreen } from './screens/messaging/MainMessagingScreen';
-import { NewChatScreen } from './screens/messaging/NewChatScreen';
-import { DirectChatConversation } from './screens/messaging/DirectChatConversation';
-import { TaskGroupChatConversation } from './screens/messaging/TaskGroupChatConversation';
-import { TaskCreationScreen } from './screens/tasks/TaskCreationScreen';
-import { TaskDashboardScreen } from './screens/tasks/TaskDashboardScreen';
-import { TaskDetailsScreen } from './screens/tasks/TaskDetailsScreen';
-import { TaskChatScreen } from './screens/tasks/TaskChatScreen';
-import { DocumentManagementHome } from './screens/documents/DocumentManagementHome';
-import { DocumentLibrary } from './screens/admin/documents/DocumentLibrary';
-import { CreateDocument } from './screens/admin/documents/CreateDocument';
-import { DocumentViewer } from './screens/admin/documents/DocumentViewer';
-// import { ComplianceManagementHome } from './screens/compliance/ComplianceManagementHome';
-// import { ComplianceView } from './screens/compliance/ComplianceView';
-import { AdminSettings } from './screens/settings/AdminSettings';
-import { Dashboard as SuperAdminDashboard } from './screens/super-admin/Dashboard';
-import { OrganizationList } from './screens/super-admin/organizations/OrganizationList';
-import { OrganizationDetail } from './screens/super-admin/organizations/OrganizationDetail';
-import { OrganizationForm } from './screens/super-admin/organizations/OrganizationForm';
-import { DocumentTemplateList } from './screens/super-admin/document-templates/DocumentTemplateList';
-import { DocumentTemplateForm } from './screens/super-admin/document-templates/DocumentTemplateForm';
-// import { ComplianceList } from './screens/super-admin/compliance/ComplianceList';
-// import { ComplianceForm } from './screens/super-admin/compliance/ComplianceForm';
-// import { AdminComplianceForm } from './screens/admin/compliance/AdminComplianceForm';
-import { TaskMonitoring } from './screens/super-admin/tasks/TaskMonitoring';
-import { TestSuperAdmin } from './screens/super-admin/TestSuperAdmin';
-import { UserList } from './screens/super-admin/users/UserList';
-import { EmployeeList } from './screens/admin/employees/EmployeeList';
-import { PlatformSettings } from './screens/super-admin/settings/PlatformSettings';
-import { AdminDashboard } from './screens/admin/Dashboard';
-import { EntityMasterData } from './screens/admin/EntityMasterData';
-import { ServiceList } from './screens/admin/ServiceList';
-import { EntityList } from './screens/admin/EntityList';
-import { ProfileScreen } from './screens/profile/ProfileScreen';
-import { UserProfileScreen } from './screens/profile/UserProfileScreen';
-import { ProfileSettings } from './screens/settings/ProfileSettings';
-import { ChangePassword } from './screens/settings/ChangePassword';
-import { ThemeSettings } from './screens/settings/ThemeSettings';
-import { SettingsScreen } from './screens/settings/SettingsScreen';
-import { Departments } from './screens/admin/settings/Departments';
-import { Designations } from './screens/admin/settings/Designations';
-import { ReportingHierarchy } from './screens/admin/settings/ReportingHierarchy';
-import { ReminderConfig } from './screens/admin/settings/ReminderConfig';
-import { AutoEscalationConfig } from './screens/admin/settings/AutoEscalationConfig';
-import { RecurringTaskSettings } from './screens/admin/settings/RecurringTaskSettings';
-import { OrganisationStructureScreen } from './screens/admin/settings/OrganisationStructureScreen';
 import { ChangePasswordPopup } from './components/auth/ChangePasswordPopup';
 import './App.css';
+
+// Lazy-loaded route screens (named-export pattern)
+const Login = lazy(() => import('./screens/auth/Login').then(m => ({ default: m.Login })));
+const MobileNumberRegistration = lazy(() => import('./screens/auth/MobileNumberRegistration').then(m => ({ default: m.MobileNumberRegistration })));
+const OTPVerification = lazy(() => import('./screens/auth/OTPVerification').then(m => ({ default: m.OTPVerification })));
+const UserProfileCreation = lazy(() => import('./screens/auth/UserProfileCreation').then(m => ({ default: m.UserProfileCreation })));
+const EmployeeDashboard = lazy(() => import('./screens/dashboard/EmployeeDashboard').then(m => ({ default: m.EmployeeDashboard })));
+const MainMessagingScreen = lazy(() => import('./screens/messaging/MainMessagingScreen').then(m => ({ default: m.MainMessagingScreen })));
+const NewChatScreen = lazy(() => import('./screens/messaging/NewChatScreen').then(m => ({ default: m.NewChatScreen })));
+const DirectChatConversation = lazy(() => import('./screens/messaging/DirectChatConversation').then(m => ({ default: m.DirectChatConversation })));
+const TaskGroupChatConversation = lazy(() => import('./screens/messaging/TaskGroupChatConversation').then(m => ({ default: m.TaskGroupChatConversation })));
+const TaskCreationScreen = lazy(() => import('./screens/tasks/TaskCreationScreen').then(m => ({ default: m.TaskCreationScreen })));
+const TaskDashboardScreen = lazy(() => import('./screens/tasks/TaskDashboardScreen').then(m => ({ default: m.TaskDashboardScreen })));
+const TaskDetailsScreen = lazy(() => import('./screens/tasks/TaskDetailsScreen').then(m => ({ default: m.TaskDetailsScreen })));
+const DocumentManagementHome = lazy(() => import('./screens/documents/DocumentManagementHome').then(m => ({ default: m.DocumentManagementHome })));
+const DocumentLibrary = lazy(() => import('./screens/admin/documents/DocumentLibrary').then(m => ({ default: m.DocumentLibrary })));
+const CreateDocument = lazy(() => import('./screens/admin/documents/CreateDocument').then(m => ({ default: m.CreateDocument })));
+const DocumentViewer = lazy(() => import('./screens/admin/documents/DocumentViewer').then(m => ({ default: m.DocumentViewer })));
+const AdminSettings = lazy(() => import('./screens/settings/AdminSettings').then(m => ({ default: m.AdminSettings })));
+const SuperAdminDashboard = lazy(() => import('./screens/super-admin/Dashboard').then(m => ({ default: m.Dashboard })));
+const OrganizationList = lazy(() => import('./screens/super-admin/organizations/OrganizationList').then(m => ({ default: m.OrganizationList })));
+const OrganizationDetail = lazy(() => import('./screens/super-admin/organizations/OrganizationDetail').then(m => ({ default: m.OrganizationDetail })));
+const OrganizationForm = lazy(() => import('./screens/super-admin/organizations/OrganizationForm').then(m => ({ default: m.OrganizationForm })));
+const DocumentTemplateList = lazy(() => import('./screens/super-admin/document-templates/DocumentTemplateList').then(m => ({ default: m.DocumentTemplateList })));
+const DocumentTemplateForm = lazy(() => import('./screens/super-admin/document-templates/DocumentTemplateForm').then(m => ({ default: m.DocumentTemplateForm })));
+const TaskMonitoring = lazy(() => import('./screens/super-admin/tasks/TaskMonitoring').then(m => ({ default: m.TaskMonitoring })));
+const TestSuperAdmin = lazy(() => import('./screens/super-admin/TestSuperAdmin').then(m => ({ default: m.TestSuperAdmin })));
+const UserList = lazy(() => import('./screens/super-admin/users/UserList').then(m => ({ default: m.UserList })));
+const EmployeeList = lazy(() => import('./screens/admin/employees/EmployeeList').then(m => ({ default: m.EmployeeList })));
+const PlatformSettings = lazy(() => import('./screens/super-admin/settings/PlatformSettings').then(m => ({ default: m.PlatformSettings })));
+const AdminDashboard = lazy(() => import('./screens/admin/Dashboard').then(m => ({ default: m.AdminDashboard })));
+const EntityMasterData = lazy(() => import('./screens/admin/EntityMasterData').then(m => ({ default: m.EntityMasterData })));
+const ServiceList = lazy(() => import('./screens/admin/ServiceList').then(m => ({ default: m.ServiceList })));
+const EntityList = lazy(() => import('./screens/admin/EntityList').then(m => ({ default: m.EntityList })));
+const ProfileScreen = lazy(() => import('./screens/profile/ProfileScreen').then(m => ({ default: m.ProfileScreen })));
+const UserProfileScreen = lazy(() => import('./screens/profile/UserProfileScreen').then(m => ({ default: m.UserProfileScreen })));
+// Note: internal ProfileSettings screen has been replaced by an external profile app
+// const ProfileSettings = lazy(() => import('./screens/settings/ProfileSettings').then(m => ({ default: m.ProfileSettings })));
+const _ProfileSettings = lazy(() => import('./screens/settings/ProfileSettings').then(m => ({ default: m.ProfileSettings })));
+const ChangePassword = lazy(() => import('./screens/settings/ChangePassword').then(m => ({ default: m.ChangePassword })));
+const ThemeSettings = lazy(() => import('./screens/settings/ThemeSettings').then(m => ({ default: m.ThemeSettings })));
+const SettingsScreen = lazy(() => import('./screens/settings/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
+const Departments = lazy(() => import('./screens/admin/settings/Departments').then(m => ({ default: m.Departments })));
+const Designations = lazy(() => import('./screens/admin/settings/Designations').then(m => ({ default: m.Designations })));
+const ReportingHierarchy = lazy(() => import('./screens/admin/settings/ReportingHierarchy').then(m => ({ default: m.ReportingHierarchy })));
+const ReminderConfig = lazy(() => import('./screens/admin/settings/ReminderConfig').then(m => ({ default: m.ReminderConfig })));
+const AutoEscalationConfig = lazy(() => import('./screens/admin/settings/AutoEscalationConfig').then(m => ({ default: m.AutoEscalationConfig })));
+const RecurringTaskSettings = lazy(() => import('./screens/admin/settings/RecurringTaskSettings').then(m => ({ default: m.RecurringTaskSettings })));
+const OrganisationStructureScreen = lazy(() => import('./screens/admin/settings/OrganisationStructureScreen').then(m => ({ default: m.OrganisationStructureScreen })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -66,6 +64,12 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+const RouteFallback = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="text-primary">Loading...</div>
+  </div>
+);
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -83,16 +87,17 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     return <Navigate to="/login" replace />;
   }
 
-  // Allow admin users to access settings routes
+  // Allow admin/super_admin to access settings and profile routes
   const isSettingsRoute = location.pathname.startsWith('/settings');
-  
-  // Redirect admin users to admin dashboard (except for settings routes)
-  if (user?.role === 'admin' && !isSettingsRoute) {
+  const isProfileRoute = location.pathname.startsWith('/profile');
+
+  // Redirect admin users to admin dashboard (except for settings and profile routes)
+  if (user?.role === 'admin' && !isSettingsRoute && !isProfileRoute) {
     return <Navigate to="/admin" replace />;
   }
 
-  // Redirect super_admin users to super admin dashboard (except for settings routes)
-  if (user?.role === 'super_admin' && !isSettingsRoute) {
+  // Redirect super_admin users to super admin dashboard (except for settings and profile routes)
+  if (user?.role === 'super_admin' && !isSettingsRoute && !isProfileRoute) {
     return <Navigate to="/super-admin" replace />;
   }
 
@@ -143,7 +148,7 @@ const AdminProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children
   return <>{children}</>;
 };
 
-const AdminOrSuperAdminProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const _AdminOrSuperAdminProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
@@ -165,6 +170,14 @@ const AdminOrSuperAdminProtectedRoute: React.FC<{ children: React.ReactNode }> =
   return <>{children}</>;
 };
 
+// Simple component to redirect the user to the external profile application
+const ExternalProfileRedirect: React.FC = () => {
+  useEffect(() => {
+    window.location.href = 'http://localhost:3001/profile';
+  }, []);
+  return null;
+};
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -173,15 +186,15 @@ function App() {
         <Router>
           <ChangePasswordPopup />
           <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<MobileNumberRegistration />} />
-            <Route path="/otp-verification" element={<OTPVerification />} />
-            <Route path="/profile-setup" element={<UserProfileCreation />} />
+            <Route path="/login" element={<Suspense fallback={<RouteFallback />}><Login /></Suspense>} />
+            <Route path="/register" element={<Suspense fallback={<RouteFallback />}><MobileNumberRegistration /></Suspense>} />
+            <Route path="/otp-verification" element={<Suspense fallback={<RouteFallback />}><OTPVerification /></Suspense>} />
+            <Route path="/profile-setup" element={<Suspense fallback={<RouteFallback />}><UserProfileCreation /></Suspense>} />
             <Route
               path="/dashboard"
               element={
                 <ProtectedRoute>
-                  <EmployeeDashboard />
+                  <Suspense fallback={<RouteFallback />}><EmployeeDashboard /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -189,7 +202,7 @@ function App() {
               path="/messages"
               element={
                 <ProtectedRoute>
-                  <MainMessagingScreen />
+                  <Suspense fallback={<RouteFallback />}><MainMessagingScreen /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -197,7 +210,7 @@ function App() {
               path="/messages/new"
               element={
                 <ProtectedRoute>
-                  <NewChatScreen />
+                  <Suspense fallback={<RouteFallback />}><NewChatScreen /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -206,7 +219,7 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ErrorBoundary>
-                    <DirectChatConversation />
+                    <Suspense fallback={<RouteFallback />}><DirectChatConversation /></Suspense>
                   </ErrorBoundary>
                 </ProtectedRoute>
               }
@@ -215,7 +228,7 @@ function App() {
               path="/messages/task-group/:conversationId"
               element={
                 <ProtectedRoute>
-                  <TaskGroupChatConversation />
+                  <Suspense fallback={<RouteFallback />}><TaskGroupChatConversation /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -223,7 +236,7 @@ function App() {
               path="/tasks/task-group/:conversationId"
               element={
                 <ProtectedRoute>
-                  <TaskGroupChatConversation />
+                  <Suspense fallback={<RouteFallback />}><TaskDashboardScreen /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -231,7 +244,7 @@ function App() {
               path="/tasks"
               element={
                 <ProtectedRoute>
-                  <TaskDashboardScreen />
+                  <Suspense fallback={<RouteFallback />}><TaskDashboardScreen /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -239,7 +252,7 @@ function App() {
               path="/tasks/create"
               element={
                 <ProtectedRoute>
-                  <TaskCreationScreen />
+                  <Suspense fallback={<RouteFallback />}><TaskCreationScreen /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -247,7 +260,7 @@ function App() {
               path="/tasks/:taskId"
               element={
                 <ProtectedRoute>
-                  <TaskDetailsScreen />
+                  <Suspense fallback={<RouteFallback />}><TaskDetailsScreen /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -255,7 +268,7 @@ function App() {
               path="/documents"
               element={
                 <ProtectedRoute>
-                  <DocumentManagementHome />
+                  <Suspense fallback={<RouteFallback />}><DocumentManagementHome /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -263,7 +276,7 @@ function App() {
               path="/documents/create"
               element={
                 <ProtectedRoute>
-                  <CreateDocument />
+                  <Suspense fallback={<RouteFallback />}><CreateDocument /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -271,7 +284,7 @@ function App() {
               path="/documents/create/:templateId"
               element={
                 <ProtectedRoute>
-                  <CreateDocument />
+                  <Suspense fallback={<RouteFallback />}><CreateDocument /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -279,7 +292,7 @@ function App() {
               path="/documents/:id"
               element={
                 <ProtectedRoute>
-                  <DocumentViewer />
+                  <Suspense fallback={<RouteFallback />}><DocumentViewer /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -303,7 +316,7 @@ function App() {
               path="/settings"
               element={
                 <ProtectedRoute>
-                  <SettingsScreen />
+                  <Suspense fallback={<RouteFallback />}><SettingsScreen /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -311,7 +324,8 @@ function App() {
               path="/settings/profile"
               element={
                 <ProtectedRoute>
-                  <ProfileSettings />
+                  {/* Redirect to external profile app */}
+                  <ExternalProfileRedirect />
                 </ProtectedRoute>
               }
             />
@@ -319,7 +333,7 @@ function App() {
               path="/settings/change-password"
               element={
                 <ProtectedRoute>
-                  <ChangePassword />
+                  <Suspense fallback={<RouteFallback />}><ChangePassword /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -327,7 +341,7 @@ function App() {
               path="/settings/theme"
               element={
                 <ProtectedRoute>
-                  <ThemeSettings />
+                  <Suspense fallback={<RouteFallback />}><ThemeSettings /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -335,7 +349,7 @@ function App() {
               path="/profile"
               element={
                 <ProtectedRoute>
-                  <ProfileScreen />
+                  <Suspense fallback={<RouteFallback />}><ProfileScreen /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -343,7 +357,7 @@ function App() {
               path="/profile/:userId"
               element={
                 <ProtectedRoute>
-                  <UserProfileScreen />
+                  <Suspense fallback={<RouteFallback />}><UserProfileScreen /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -351,13 +365,13 @@ function App() {
             {/* Test route - remove after debugging */}
             <Route
               path="/super-admin-test"
-              element={<TestSuperAdmin />}
+              element={<Suspense fallback={<RouteFallback />}><TestSuperAdmin /></Suspense>}
             />
             <Route
               path="/super-admin"
               element={
                 <SuperAdminProtectedRoute>
-                  <SuperAdminDashboard />
+                  <Suspense fallback={<RouteFallback />}><SuperAdminDashboard /></Suspense>
                 </SuperAdminProtectedRoute>
               }
             />
@@ -365,7 +379,7 @@ function App() {
               path="/super-admin/organizations"
               element={
                 <SuperAdminProtectedRoute>
-                  <OrganizationList />
+                  <Suspense fallback={<RouteFallback />}><OrganizationList /></Suspense>
                 </SuperAdminProtectedRoute>
               }
             />
@@ -373,7 +387,7 @@ function App() {
               path="/super-admin/users"
               element={
                 <SuperAdminProtectedRoute>
-                  <UserList />
+                  <Suspense fallback={<RouteFallback />}><UserList /></Suspense>
                 </SuperAdminProtectedRoute>
               }
             />
@@ -381,7 +395,7 @@ function App() {
               path="/super-admin/organizations/create"
               element={
                 <SuperAdminProtectedRoute>
-                  <OrganizationForm />
+                  <Suspense fallback={<RouteFallback />}><OrganizationForm /></Suspense>
                 </SuperAdminProtectedRoute>
               }
             />
@@ -389,7 +403,7 @@ function App() {
               path="/super-admin/organizations/:id"
               element={
                 <SuperAdminProtectedRoute>
-                  <OrganizationDetail />
+                  <Suspense fallback={<RouteFallback />}><OrganizationDetail /></Suspense>
                 </SuperAdminProtectedRoute>
               }
             />
@@ -397,7 +411,7 @@ function App() {
               path="/super-admin/organizations/:id/edit"
               element={
                 <SuperAdminProtectedRoute>
-                  <OrganizationForm />
+                  <Suspense fallback={<RouteFallback />}><OrganizationForm /></Suspense>
                 </SuperAdminProtectedRoute>
               }
             />
@@ -405,7 +419,7 @@ function App() {
               path="/super-admin/document-templates"
               element={
                 <SuperAdminProtectedRoute>
-                  <DocumentTemplateList />
+                  <Suspense fallback={<RouteFallback />}><DocumentTemplateList /></Suspense>
                 </SuperAdminProtectedRoute>
               }
             />
@@ -413,7 +427,7 @@ function App() {
               path="/super-admin/document-templates/create"
               element={
                 <SuperAdminProtectedRoute>
-                  <DocumentTemplateForm />
+                  <Suspense fallback={<RouteFallback />}><DocumentTemplateForm /></Suspense>
                 </SuperAdminProtectedRoute>
               }
             />
@@ -421,7 +435,7 @@ function App() {
               path="/super-admin/document-templates/:id"
               element={
                 <SuperAdminProtectedRoute>
-                  <DocumentTemplateForm />
+                  <Suspense fallback={<RouteFallback />}><DocumentTemplateForm /></Suspense>
                 </SuperAdminProtectedRoute>
               }
             />
@@ -464,7 +478,7 @@ function App() {
               path="/super-admin/tasks"
               element={
                 <SuperAdminProtectedRoute>
-                  <TaskMonitoring />
+                  <Suspense fallback={<RouteFallback />}><TaskMonitoring /></Suspense>
                 </SuperAdminProtectedRoute>
               }
             />
@@ -472,7 +486,7 @@ function App() {
               path="/super-admin/settings"
               element={
                 <SuperAdminProtectedRoute>
-                  <PlatformSettings />
+                  <Suspense fallback={<RouteFallback />}><PlatformSettings /></Suspense>
                 </SuperAdminProtectedRoute>
               }
             />
@@ -481,7 +495,7 @@ function App() {
               path="/admin"
               element={
                 <AdminProtectedRoute>
-                  <AdminDashboard />
+                  <Suspense fallback={<RouteFallback />}><AdminDashboard /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -489,7 +503,7 @@ function App() {
               path="/admin/messages"
               element={
                 <AdminProtectedRoute>
-                  <MainMessagingScreen />
+                  <Suspense fallback={<RouteFallback />}><MainMessagingScreen /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -497,7 +511,7 @@ function App() {
               path="/admin/messages/new"
               element={
                 <AdminProtectedRoute>
-                  <NewChatScreen />
+                  <Suspense fallback={<RouteFallback />}><NewChatScreen /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -506,7 +520,7 @@ function App() {
               element={
                 <AdminProtectedRoute>
                   <ErrorBoundary>
-                    <DirectChatConversation />
+                    <Suspense fallback={<RouteFallback />}><DirectChatConversation /></Suspense>
                   </ErrorBoundary>
                 </AdminProtectedRoute>
               }
@@ -515,7 +529,7 @@ function App() {
               path="/admin/messages/task-group/:conversationId"
               element={
                 <AdminProtectedRoute>
-                  <TaskGroupChatConversation />
+                  <Suspense fallback={<RouteFallback />}><TaskGroupChatConversation /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -523,7 +537,7 @@ function App() {
               path="/admin/tasks/task-group/:conversationId"
               element={
                 <AdminProtectedRoute>
-                  <TaskGroupChatConversation />
+                  <Suspense fallback={<RouteFallback />}><TaskDashboardScreen /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -531,7 +545,7 @@ function App() {
               path="/admin/tasks"
               element={
                 <AdminProtectedRoute>
-                  <TaskDashboardScreen />
+                  <Suspense fallback={<RouteFallback />}><TaskDashboardScreen /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -539,7 +553,7 @@ function App() {
               path="/admin/tasks/create"
               element={
                 <AdminProtectedRoute>
-                  <TaskCreationScreen />
+                  <Suspense fallback={<RouteFallback />}><TaskCreationScreen /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -547,7 +561,7 @@ function App() {
               path="/admin/tasks/:taskId"
               element={
                 <AdminProtectedRoute>
-                  <TaskDetailsScreen />
+                  <Suspense fallback={<RouteFallback />}><TaskDetailsScreen /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -555,7 +569,7 @@ function App() {
               path="/admin/documents"
               element={
                 <AdminProtectedRoute>
-                  <DocumentLibrary />
+                  <Suspense fallback={<RouteFallback />}><DocumentLibrary /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -563,7 +577,7 @@ function App() {
               path="/admin/documents/create"
               element={
                 <AdminProtectedRoute>
-                  <CreateDocument />
+                  <Suspense fallback={<RouteFallback />}><CreateDocument /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -571,7 +585,7 @@ function App() {
               path="/admin/documents/create/:templateId"
               element={
                 <AdminProtectedRoute>
-                  <CreateDocument />
+                  <Suspense fallback={<RouteFallback />}><CreateDocument /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -579,7 +593,7 @@ function App() {
               path="/admin/documents/:id"
               element={
                 <AdminProtectedRoute>
-                  <DocumentViewer />
+                  <Suspense fallback={<RouteFallback />}><DocumentViewer /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -619,7 +633,7 @@ function App() {
               path="/admin/users"
               element={
                 <AdminProtectedRoute>
-                  <EmployeeList />
+                  <Suspense fallback={<RouteFallback />}><EmployeeList /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -627,7 +641,7 @@ function App() {
               path="/admin/entity-master"
               element={
                 <AdminProtectedRoute>
-                  <EntityMasterData />
+                  <Suspense fallback={<RouteFallback />}><EntityMasterData /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -635,7 +649,7 @@ function App() {
               path="/admin/services"
               element={
                 <AdminProtectedRoute>
-                  <ServiceList />
+                  <Suspense fallback={<RouteFallback />}><ServiceList /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -643,7 +657,15 @@ function App() {
               path="/admin/entities"
               element={
                 <AdminProtectedRoute>
-                  <EntityList />
+                  <Suspense fallback={<RouteFallback />}><EntityList /></Suspense>
+                </AdminProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/settings"
+              element={
+                <AdminProtectedRoute>
+                  <Suspense fallback={<RouteFallback />}><SettingsScreen /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -651,7 +673,7 @@ function App() {
               path="/admin/settings/organisation-structure"
               element={
                 <AdminProtectedRoute>
-                  <OrganisationStructureScreen />
+                  <Suspense fallback={<RouteFallback />}><OrganisationStructureScreen /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -659,7 +681,7 @@ function App() {
               path="/admin/settings/departments"
               element={
                 <AdminProtectedRoute>
-                  <Departments />
+                  <Suspense fallback={<RouteFallback />}><Departments /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -667,7 +689,7 @@ function App() {
               path="/admin/settings/designations"
               element={
                 <AdminProtectedRoute>
-                  <Designations />
+                  <Suspense fallback={<RouteFallback />}><Designations /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -675,7 +697,7 @@ function App() {
               path="/admin/settings/reporting-hierarchy"
               element={
                 <AdminProtectedRoute>
-                  <ReportingHierarchy />
+                  <Suspense fallback={<RouteFallback />}><ReportingHierarchy /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -683,7 +705,7 @@ function App() {
               path="/admin/settings/reminder-config"
               element={
                 <AdminProtectedRoute>
-                  <ReminderConfig />
+                  <Suspense fallback={<RouteFallback />}><ReminderConfig /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -691,7 +713,7 @@ function App() {
               path="/admin/settings/auto-escalation"
               element={
                 <AdminProtectedRoute>
-                  <AutoEscalationConfig />
+                  <Suspense fallback={<RouteFallback />}><AutoEscalationConfig /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -699,7 +721,7 @@ function App() {
               path="/admin/settings/recurring-tasks"
               element={
                 <AdminProtectedRoute>
-                  <RecurringTaskSettings />
+                  <Suspense fallback={<RouteFallback />}><RecurringTaskSettings /></Suspense>
                 </AdminProtectedRoute>
               }
             />
@@ -707,7 +729,7 @@ function App() {
               path="/admin/configuration/notifications"
               element={
                 <AdminProtectedRoute>
-                  <AdminSettings />
+                  <Suspense fallback={<RouteFallback />}><AdminSettings /></Suspense>
                 </AdminProtectedRoute>
               }
             />

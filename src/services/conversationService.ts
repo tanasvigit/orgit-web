@@ -82,6 +82,8 @@ export interface User {
   phone?: string;
   profile_photo_url?: string;
   profile_photo?: string;
+  organization_id?: string;
+  organizationId?: string;
 }
 
 export interface UsersListResponse {
@@ -159,8 +161,11 @@ export const conversationService = {
   getConversationDetails: async (conversationId: string): Promise<Conversation> => {
     try {
       const response = await api.get<ConversationDetailsResponse>(`/conversations/${conversationId}`);
-      const conv = response.data.conversation || response.data as any;
-      const members = response.data.members || conv.members || [];
+      const data = response.data as any;
+      const conv = data.conversation || data;
+      const members = data.members || conv.members || [];
+      // is_pinned is on the current user's membership, returned at top level by API (not on conversation)
+      const isPinned = data.is_pinned ?? data.isPinned ?? conv.is_pinned ?? conv.isPinned ?? false;
     
     // Extract other members (excluding current user) for direct conversations
     let otherMembers: any[] = [];
@@ -195,8 +200,8 @@ export const conversationService = {
       name: conversationName,
       photoUrl: conv.group_photo || conv.photoUrl || (otherMembers.length > 0 ? (otherMembers[0]?.profile_photo_url || otherMembers[0]?.profile_photo || otherMembers[0]?.profilePhotoUrl) : ''),
       group_photo: conv.group_photo || conv.photoUrl,
-      isPinned: conv.is_pinned ?? conv.isPinned ?? false,
-      is_pinned: conv.is_pinned ?? conv.isPinned ?? false,
+      isPinned,
+      is_pinned: isPinned,
       unreadCount: conv.unread_count ?? conv.unreadCount ?? 0,
       unread_count: conv.unread_count ?? conv.unreadCount ?? 0,
       lastMessage: conv.last_message,
@@ -246,7 +251,12 @@ export const conversationService = {
    */
   getAllUsers: async (): Promise<User[]> => {
     const response = await api.get<UsersListResponse>('/conversations/users/list');
-    return response.data.users || [];
+    const raw = response.data.users || [];
+    return raw.map((u: any) => ({
+      ...u,
+      organization_id: u.organization_id ?? u.organizationId,
+      organizationId: u.organizationId ?? u.organization_id,
+    }));
   },
 
   /**
@@ -272,12 +282,13 @@ export const conversationService = {
   },
 
   /**
-   * Add members to a group conversation
+   * Add members to a group conversation.
+   * For task groups, pass taskId so the backend can add members to task_assignees (so they see the task in Task Management).
    */
-  addGroupMembers: async (conversationId: string, memberIds: string[]): Promise<any> => {
-    const response = await api.post(`/conversations/groups/${conversationId}/members`, {
-      memberIds,
-    });
+  addGroupMembers: async (conversationId: string, memberIds: string[], taskId?: string): Promise<any> => {
+    const body: { memberIds: string[]; taskId?: string } = { memberIds };
+    if (taskId) body.taskId = taskId;
+    const response = await api.post(`/conversations/groups/${conversationId}/members`, body);
     return response.data;
   },
 

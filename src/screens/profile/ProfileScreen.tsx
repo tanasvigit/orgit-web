@@ -77,11 +77,43 @@ export const ProfileScreen: React.FC = () => {
       const response = await authService.uploadProfilePhoto(file);
       if (response.success && response.data?.url) {
         setLocalPhoto(response.data.url);
+        // Update user context immediately so other users see the change
+        updateUser({ ...user, profilePhotoUrl: response.data.url, profile_photo: response.data.url });
+        toast.success('Profile photo updated successfully');
       }
     } catch (error) {
       console.error('Photo upload error:', error);
       toast.error('Failed to upload photo. Please try again.');
     }
+  };
+
+  const handleDeletePhoto = async () => {
+    if (!localPhoto) return;
+    
+    toast.confirm('Are you sure you want to delete your profile photo?', {
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      onConfirm: async () => {
+        try {
+          const response = await authService.deleteProfilePhoto();
+          if (response.success) {
+            setLocalPhoto(null);
+            // Refetch user data from backend to ensure consistency
+            const userResponse = await authService.getCurrentUser();
+            if (userResponse.success && userResponse.data) {
+              updateUser(userResponse.data);
+            } else {
+              // Fallback: update optimistically if refetch fails
+              updateUser({ ...user, profilePhotoUrl: null, profile_photo: null, profile_photo_url: null });
+            }
+            toast.success('Profile photo deleted successfully');
+          }
+        } catch (error: any) {
+          console.error('Photo delete error:', error);
+          toast.error(error.response?.data?.error || 'Failed to delete photo. Please try again.');
+        }
+      },
+    });
   };
 
   const handleSave = async () => {
@@ -184,22 +216,48 @@ export const ProfileScreen: React.FC = () => {
           <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
             {/* Profile Photo */}
             <div className="flex-shrink-0">
-              <div className="relative group cursor-pointer" onClick={isEditing ? handlePickPhoto : undefined}>
+              <div className="relative group">
                 {localPhoto ? (
-                  <img
-                    src={localPhoto}
-                    alt="Profile"
-                    className="w-32 h-32 rounded-full object-cover border-4 border-white dark:border-gray-800 shadow-lg"
-                  />
+                  <>
+                    <img
+                      src={localPhoto}
+                      alt="Profile"
+                      className="w-32 h-32 rounded-full object-cover border-4 border-white dark:border-gray-800 shadow-lg"
+                    />
+                    {isEditing && (
+                      <>
+                        <button
+                          onClick={handlePickPhoto}
+                          className="absolute bottom-0 right-0 p-3 bg-primary rounded-full border-4 border-white dark:border-gray-800 shadow-lg hover:bg-primary-dark transition-colors"
+                          title="Change Photo"
+                        >
+                          <span className="material-symbols-outlined text-white text-xl">photo_camera</span>
+                        </button>
+                        <button
+                          onClick={handleDeletePhoto}
+                          className="absolute top-0 right-0 p-2 bg-red-500 rounded-full border-2 border-white dark:border-gray-800 shadow-lg hover:bg-red-600 transition-colors"
+                          title="Delete Photo"
+                        >
+                          <span className="material-symbols-outlined text-white text-sm">delete</span>
+                        </button>
+                      </>
+                    )}
+                  </>
                 ) : (
-                  <div className="w-32 h-32 rounded-full bg-primary flex items-center justify-center text-white text-4xl font-bold shadow-lg">
-                    {initials}
-                  </div>
-                )}
-                {isEditing && (
-                  <div className="absolute bottom-0 right-0 p-3 bg-primary rounded-full border-4 border-white dark:border-gray-800 shadow-lg hover:bg-primary-dark transition-colors">
-                    <span className="material-symbols-outlined text-white text-xl">photo_camera</span>
-                  </div>
+                  <>
+                    <div className="w-32 h-32 rounded-full bg-primary flex items-center justify-center text-white text-4xl font-bold shadow-lg">
+                      {initials}
+                    </div>
+                    {isEditing && (
+                      <button
+                        onClick={handlePickPhoto}
+                        className="absolute bottom-0 right-0 p-3 bg-primary rounded-full border-4 border-white dark:border-gray-800 shadow-lg hover:bg-primary-dark transition-colors"
+                        title="Add Photo"
+                      >
+                        <span className="material-symbols-outlined text-white text-xl">photo_camera</span>
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
               <input
@@ -226,14 +284,20 @@ export const ProfileScreen: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Contact Number</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Contact Number
+                    </label>
                     <input
                       type="tel"
                       value={contactNumber}
-                      onChange={(e) => setContactNumber(e.target.value)}
+                      disabled
                       placeholder="Contact number"
-                      className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-text-main-light dark:text-text-main-dark"
+                      className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 cursor-not-allowed"
                     />
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                      <span className="material-icons-outlined text-sm">info</span>
+                      Mobile number cannot be changed. Contact your administrator for updates.
+                    </p>
                   </div>
                 </div>
               ) : (

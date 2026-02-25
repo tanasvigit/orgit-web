@@ -55,17 +55,25 @@ export const EmployeeList: React.FC = () => {
   const bulkUploadMutation = useMutation(
     (file: File) => entityMasterBulkService.uploadFile(file),
     {
-      onSuccess: (res) => {
+      onSuccess: async (res) => {
         const data = res.data?.data;
-        if (data) {
-          const { updated, errors } = data;
-          if (updated.employees != null && updated.employees > 0) {
-            toast.success(`Updated ${updated.employees} employee(s).`);
+        if (!data?.uploadId) {
+          if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
+          return;
+        }
+        try {
+          const status = await entityMasterBulkService.pollUntilDone(data.uploadId);
+          if (status.status === 'completed') {
+            toast.success('Employee bulk upload completed.');
+          } else {
+            toast.warning('Bulk upload finished with errors.');
           }
-          if (errors?.length) {
-            errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
-            if (errors.length > 5) toast.error(`… and ${errors.length - 5} more errors`);
+          if (status.errors?.length) {
+            status.errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
+            if (status.errors.length > 5) toast.error(`… and ${status.errors.length - 5} more errors`);
           }
+        } catch (err: any) {
+          toast.error(err?.message || 'Failed to get upload status');
         }
         queryClient.invalidateQueries('employees');
         if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
@@ -249,7 +257,7 @@ export const EmployeeList: React.FC = () => {
             Bulk update from Excel
           </h2>
           <p className="text-text-muted text-sm mb-4">
-            Download the Employee template, fill in NAME OF THE EMPLOYEE, MOBILE NUMBER, DESIGNATON, REPORTING TO, LEVEL, then upload to add or update employees in your organization.
+            
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -829,9 +837,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
         )}
       </div>
       <div>
-        <label className="block text-sm font-medium text-text-main mb-1">Department *</label>
+        <label className="block text-sm font-medium text-text-main mb-1">Department</label>
         <select
-          required
           className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
           value={formData.department}
           onChange={(e) => setFormData({ ...formData, department: e.target.value })}
@@ -845,9 +852,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
         </select>
       </div>
       <div>
-        <label className="block text-sm font-medium text-text-main mb-1">Designation *</label>
+        <label className="block text-sm font-medium text-text-main mb-1">Designation</label>
         <select
-          required
           className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
           value={formData.designation}
           onChange={(e) => setFormData({ ...formData, designation: e.target.value })}

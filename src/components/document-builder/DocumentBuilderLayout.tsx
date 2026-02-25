@@ -11,10 +11,10 @@ export const DocumentBuilderContent: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'config' | 'sections' | 'header'>('sections');
 
     return (
-        <div className="flex h-full overflow-hidden bg-gray-100 dark:bg-gray-900">
+        <div className="flex flex-col md:flex-row h-full overflow-hidden bg-gray-100 dark:bg-gray-900">
             {/* Left Panel - Configuration & Builder (only in design mode) */}
             {state.mode === 'design' && (
-                <div className="w-[450px] flex flex-col border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a2632] shadow-sm z-10">
+                <div className="w-full md:w-[320px] lg:w-[400px] xl:w-[450px] flex flex-col border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a2632] shadow-sm z-10">
                     {/* Tabs */}
                     <div className="flex border-b border-gray-200 dark:border-gray-700">
                         <button
@@ -56,7 +56,7 @@ export const DocumentBuilderContent: React.FC = () => {
             )}
 
             {/* Main Panel - Editable Document Editor */}
-            <div className={`${state.mode === 'design' ? 'flex-1' : 'w-full'} overflow-auto p-8 flex justify-center bg-gray-100 dark:bg-gray-900`}>
+            <div className={`${state.mode === 'design' ? 'flex-1' : 'w-full'} overflow-auto p-4 sm:p-6 md:p-8 flex justify-center bg-gray-100 dark:bg-gray-900`}>
                 <EditableDocumentEditor />
             </div>
         </div>

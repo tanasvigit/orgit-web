@@ -103,7 +103,8 @@ const BuilderIntegration: React.FC<{ templateId?: string }> = ({ templateId }) =
       const payload = {
         name: state.meta.name || 'Untitled Template',
         type: state.meta.type || 'invoice',
-        status: state.meta.status || 'draft',
+        // Super Admin templates default to 'active' so they're immediately visible to all users
+        status: state.meta.status || 'active',
         ...serialized
       };
 

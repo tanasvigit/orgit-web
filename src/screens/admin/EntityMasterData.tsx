@@ -7,6 +7,7 @@ import { entityMasterBulkService } from '../../services/entityMasterBulkService'
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import api from '../../services/api';
+import { getBackendBaseUrlWithSlash } from '../../config/env';
 import { masterDataService } from '../../services/masterDataService';
 
 export const EntityMasterData: React.FC = () => {
@@ -150,24 +151,25 @@ export const EntityMasterData: React.FC = () => {
   const bulkUploadMutation = useMutation(
     (file: File) => entityMasterBulkService.uploadFile(file),
     {
-      onSuccess: (res) => {
+      onSuccess: async (res) => {
         const data = res.data?.data;
-        console.log('[EntityMaster] upload success', { data: res.data?.data });
-        if (data) {
-          const { updated, errors } = data;
-          const parts = [];
-          if (updated.organizations) parts.push(`${updated.organizations} organizations`);
-          if (updated.cost_centres) parts.push(`${updated.cost_centres} cost centres`);
-          if (updated.branches) parts.push(`${updated.branches} branches`);
-          if (updated.task_services) parts.push(`${updated.task_services} task services`);
-          if (updated.client_entities) parts.push(`${updated.client_entities} client entities`);
-          if (updated.client_entity_services) parts.push(`${updated.client_entity_services} client services`);
-          if (updated.employees) parts.push(`${updated.employees} employees`);
-          if (parts.length) toast.success(`Updated: ${parts.join(', ')}`);
-          if (errors.length) {
-            errors.slice(0, 5).forEach((e) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
-            if (errors.length > 5) toast.error(`… and ${errors.length - 5} more errors`);
+        if (!data?.uploadId) {
+          if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
+          return;
+        }
+        try {
+          const status = await entityMasterBulkService.pollUntilDone(data.uploadId);
+          if (status.status === 'completed') {
+            toast.success('Entity Master bulk upload completed.');
+          } else {
+            toast.warning('Bulk upload finished with errors.');
           }
+          if (status.errors?.length) {
+            status.errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
+            if (status.errors.length > 5) toast.error(`… and ${status.errors.length - 5} more errors`);
+          }
+        } catch (err: any) {
+          toast.error(err?.message || 'Failed to get upload status');
         }
         queryClient.invalidateQueries('admin-organization');
         queryClient.invalidateQueries(['client-entities']);
@@ -233,8 +235,7 @@ export const EntityMasterData: React.FC = () => {
         // Construct full URL if it's a relative path
         let imageUrl = result.data.url;
         if (imageUrl.startsWith('/')) {
-          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/';
-          imageUrl = `${apiUrl}${imageUrl}`;
+          imageUrl = `${getBackendBaseUrlWithSlash()}${imageUrl.replace(/^\//, '')}`;
         }
         setFormData(prev => ({ ...prev, logoUrl: imageUrl }));
         toast.success('Logo uploaded successfully!');
@@ -301,7 +302,7 @@ export const EntityMasterData: React.FC = () => {
               Bulk update from Excel
             </h2>
             <p className="text-slate-600 text-sm mb-4">
-              Download the template, fill in your data, then upload the file to update organizations, cost centres, branches, client entities, and client entity services in one go.
+              
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <button
@@ -339,7 +340,7 @@ export const EntityMasterData: React.FC = () => {
                 <span className="material-symbols-outlined text-primary text-2xl">business</span>
                 Organisation details
               </h2>
-              <p className="text-sm text-slate-500 mb-6">Bulk template: Name of the Organisation, Short Name, Address, E Mail ID, Web Site, Phone Number, Org Constitution, PAN, GST Number, Depot, Warehouse.</p>
+              <p className="text-sm text-slate-500 mb-6"></p>
               <div className="flex flex-col md:flex-row gap-8">
                 <div className="w-full md:w-1/3 flex flex-col gap-2">
                   <p className="text-xs text-slate-500 mb-1">Additional (not in bulk template)</p>

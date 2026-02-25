@@ -40,16 +40,23 @@ export const PaymentVoucherInlineLayout: React.FC<PaymentVoucherInlineLayoutProp
     name: 'payment_entries',
   });
 
-  const companyLogo = watch('company_logo_data_uri');
+  const companyLogoDataUri = watch('company_logo_data_uri');
+  const companyLogoUrl = watch('company_logo_url');
+  const logoSrc = companyLogoDataUri && typeof companyLogoDataUri === 'string' && companyLogoDataUri.startsWith('data:image')
+    ? companyLogoDataUri
+    : companyLogoUrl && typeof companyLogoUrl === 'string'
+      ? companyLogoUrl
+      : null;
 
   return (
     <div className="inline-doc-viewport payment-voucher">
       <div className="inline-doc-page">
-        <div className="top-header">
+        {/* Header: Logo | FIRM NAME, Address L1 | L2, City – Pincode | Phone | Email | GSTIN (from Entity Master) */}
+        <div className="top-header top-header-single">
           <div className="logo-wrap">
             <div className="logo">
-              {companyLogo && typeof companyLogo === 'string' && companyLogo.startsWith('data:image') ? (
-                <img src={companyLogo} alt="Logo" />
+              {logoSrc ? (
+                <img src={logoSrc} alt="Logo" />
               ) : (
                 <label style={{ cursor: 'pointer', fontSize: 10 }}>
                   <input
@@ -66,17 +73,11 @@ export const PaymentVoucherInlineLayout: React.FC<PaymentVoucherInlineLayoutProp
                 </label>
               )}
             </div>
-            <div>
-              <p className="company-name"><input {...register('company_name')} className="doc-inline-input" placeholder="Company Name" disabled={disabled} style={{ width: '100%' }} /></p>
-              <p className="company-meta"><textarea {...register('company_address')} className="doc-inline-textarea preline" placeholder="Address" rows={2} disabled={disabled} style={{ width: '100%', minHeight: 32 }} /></p>
-              <p className="company-meta"><input {...register('company_phone')} className="doc-inline-input" placeholder="Phone" disabled={disabled} style={{ width: '60%' }} /></p>
+            <div className="firm-info">
+              <p className="company-name"><input {...register('company_name')} className="doc-inline-input" placeholder="Firm Name" disabled={disabled} style={{ width: '100%', fontWeight: 700 }} /></p>
+              <p className="company-meta company-meta-line"><input {...register('address_line1')} className="doc-inline-input" placeholder="Address Line 1" disabled={disabled} style={{ width: '48%' }} /> | <input {...register('address_line2')} className="doc-inline-input" placeholder="Address Line 2" disabled={disabled} style={{ width: '48%' }} /></p>
+              <p className="company-meta company-meta-line"><input {...register('city')} className="doc-inline-input" placeholder="City" disabled={disabled} style={{ width: '18%' }} /> – <input {...register('pincode')} className="doc-inline-input" placeholder="Pincode" disabled={disabled} style={{ width: '12%' }} /> | <input {...register('company_phone')} className="doc-inline-input" placeholder="Phone" disabled={disabled} style={{ width: '18%' }} /> | <input {...register('company_email')} className="doc-inline-input" placeholder="Email" disabled={disabled} style={{ width: '22%' }} /> | <input {...register('company_gstin')} className="doc-inline-input" placeholder="GSTIN" disabled={disabled} style={{ width: '18%' }} /></p>
             </div>
-          </div>
-          <div className="firm-details">
-            <p className="company-name"><input {...register('company_name')} className="doc-inline-input" placeholder="Company" disabled={disabled} style={{ width: '100%', textAlign: 'right' }} /></p>
-            <p className="company-meta"><textarea {...register('company_address')} className="doc-inline-textarea preline" placeholder="Address" rows={2} disabled={disabled} style={{ width: '100%', textAlign: 'right', minHeight: 32 }} /></p>
-            <p className="company-meta">GSTIN: <input {...register('company_gstin')} className="doc-inline-input" placeholder="GSTIN" disabled={disabled} style={{ width: '50%', textAlign: 'right' }} /></p>
-            <p className="company-meta">Email: <input {...register('company_email')} className="doc-inline-input" placeholder="Email" disabled={disabled} style={{ width: '60%', textAlign: 'right' }} /></p>
           </div>
         </div>
 

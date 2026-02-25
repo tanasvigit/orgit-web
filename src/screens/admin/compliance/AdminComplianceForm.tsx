@@ -574,9 +574,21 @@ export const AdminComplianceForm: React.FC = () => {
                   </label>
                   <input
                     type="date"
+                    min={new Date().toISOString().split('T')[0]}
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     value={formData.dueDate ? (typeof formData.dueDate === 'string' ? formData.dueDate.split('T')[0] : '') : ''}
-                    onChange={(e) => setFormData({ ...formData, dueDate: e.target.value || null })}
+                    onChange={(e) => {
+                      const selectedDate = e.target.value;
+                      if (selectedDate && new Date(selectedDate) < new Date().setHours(0, 0, 0, 0)) {
+                        alert('Cannot select a past date. Please choose today or a future date.');
+                        return;
+                      }
+                      setFormData({ ...formData, dueDate: selectedDate || null });
+                    }}
+                    onInvalid={(e) => {
+                      e.preventDefault();
+                      alert('Cannot select a past date. Please choose today or a future date.');
+                    }}
                   />
                 </div>
 

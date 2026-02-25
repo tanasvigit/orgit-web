@@ -120,20 +120,25 @@ export const EntityList: React.FC = () => {
   const bulkUploadMutation = useMutation(
     (file: File) => entityMasterBulkService.uploadFile(file),
     {
-      onSuccess: (res) => {
+      onSuccess: async (res) => {
         const data = res.data?.data;
-        if (data) {
-          const { updated, errors } = data;
-          if (updated?.client_entities != null && updated.client_entities > 0) {
-            toast.success(`Updated ${updated.client_entities} client(s).`);
+        if (!data?.uploadId) {
+          if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
+          return;
+        }
+        try {
+          const status = await entityMasterBulkService.pollUntilDone(data.uploadId);
+          if (status.status === 'completed') {
+            toast.success('Entity List bulk upload completed.');
+          } else {
+            toast.warning('Bulk upload finished with errors.');
           }
-          if (updated?.client_entity_services != null && updated.client_entity_services > 0) {
-            toast.success(`Updated ${updated.client_entity_services} client service(s).`);
+          if (status.errors?.length) {
+            status.errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
+            if (status.errors.length > 5) toast.error(`… and ${status.errors.length - 5} more errors`);
           }
-          if (errors?.length) {
-            errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
-            if (errors.length > 5) toast.error(`… and ${errors.length - 5} more errors`);
-          }
+        } catch (err: any) {
+          toast.error(err?.message || 'Failed to get upload status');
         }
         qc.invalidateQueries(['client-entities']);
         qc.invalidateQueries(['client-matrix', 'recurring']);
@@ -172,7 +177,7 @@ export const EntityList: React.FC = () => {
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-1.5">Entity List</h1>
             <p className="text-gray-500 dark:text-gray-400 text-sm">
-              NAME OF THE CLIENT, ENTITY TYPE, COST CENTRE, GSTR & compliance fields (dropdowns). Clients and services (Admin only).
+              
             </p>
           </div>
           <div className="flex gap-2">
@@ -222,7 +227,7 @@ export const EntityList: React.FC = () => {
             >
               {isBulkUploading ? 'Uploading…' : 'Upload file'}
             </button>
-            <span className="text-xs text-slate-500">First 3 columns: text. All compliance columns (GSTR 1, GSTR 1A, …): dropdown (Daily, Weekly, … NA, Custom).</span>
+            <span className="text-xs text-slate-500"></span>
           </div>
         </div>
 
@@ -330,8 +335,9 @@ export const EntityList: React.FC = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="min-w-[1200px] divide-y divide-slate-200 dark:divide-slate-700">
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <div className="inline-block min-w-full align-middle px-4 sm:px-0">
+                  <table className="min-w-[1200px] divide-y divide-slate-200 dark:divide-slate-700">
                   <thead className="bg-slate-50 dark:bg-slate-900">
                     <tr>
                       <th className="sticky left-0 bg-slate-50 dark:bg-slate-900 px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -415,7 +421,8 @@ export const EntityList: React.FC = () => {
                       </tr>
                     )}
                   </tbody>
-                </table>
+                  </table>
+                </div>
               </div>
             </div>
           </div>

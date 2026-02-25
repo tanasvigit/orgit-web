@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { format } from 'date-fns';
+import { formatChatListTimestamp } from '../../utils/chatTime';
 import { Conversation } from '../../services/conversationService';
 import { useAuth } from '../../context/AuthContext';
 
@@ -14,6 +14,8 @@ interface ConversationListProps {
   onCreateNew: () => void;
   hideHeader?: boolean;
   hideSearchAndFilters?: boolean; // Hide search bar and filters (for task module)
+  /** Real-time online user ids from socket (single source of truth for green dot). */
+  onlineUserIds?: string[];
 }
 
 export const ConversationList: React.FC<ConversationListProps> = ({
@@ -26,31 +28,13 @@ export const ConversationList: React.FC<ConversationListProps> = ({
   onCreateNew,
   hideHeader = false,
   hideSearchAndFilters = false,
+  onlineUserIds,
 }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
 
-  const formatTime = (dateString?: string) => {
-    if (!dateString) return '';
-    try {
-      const date = new Date(dateString);
-      const now = new Date();
-      const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
-      
-      if (diffInHours < 24) {
-        return format(date, 'h:mm a');
-      } else if (diffInHours < 48) {
-        return 'Yesterday';
-      } else if (diffInHours < 168) {
-        return format(date, 'EEE');
-      } else {
-        return format(date, 'MMM d');
-      }
-    } catch {
-      return '';
-    }
-  };
+  const formatTime = (dateString?: string) => formatChatListTimestamp(dateString);
 
   const getConversationName = (conv: Conversation) => {
     // For direct chats, prioritize otherMembers name
@@ -275,9 +259,14 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                           </span>
                         </div>
                       )}
-                      {!isGroup && !isTaskGroup && (
-                        <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-700 rounded-full"></span>
-                      )}
+                      {!isGroup && !isTaskGroup && (() => {
+                        const otherMember = conv.otherMembers?.[0] as { id?: string; user_id?: string; userId?: string } | undefined;
+                        const otherMemberId = otherMember?.id ?? otherMember?.user_id ?? otherMember?.userId;
+                        const isOnline = Boolean(otherMemberId && (onlineUserIds ?? []).includes(otherMemberId));
+                        return isOnline ? (
+                          <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-700 rounded-full"></span>
+                        ) : null;
+                      })()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-baseline">

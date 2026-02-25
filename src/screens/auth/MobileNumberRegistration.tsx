@@ -151,8 +151,12 @@ export const MobileNumberRegistration: React.FC = () => {
               />
               <button
                 type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                onClick={() => !isLoading && setShowPassword(!showPassword)}
+                disabled={isLoading}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className={`absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition-opacity ${
+                  isLoading ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'hover:text-slate-600 dark:hover:text-slate-300'
+                }`}
               >
                 <span className="material-symbols-outlined">
                   {showPassword ? 'visibility_off' : 'visibility'}

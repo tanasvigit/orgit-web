@@ -3,6 +3,7 @@ import { useDocumentBuilder, TableBlock, TextBlock, KeyValueBlock, SignatureBloc
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { organizationService } from '../../../services/organizationService';
+import { getBackendBaseUrlWithSlash } from '../../../config/env';
 
 const TextFiller: React.FC<{ section: TextBlock }> = ({ section }) => {
     // In a real implementation, we would extract {{data}} variables and show inputs.
@@ -274,9 +275,21 @@ const DocumentDataFiller: React.FC = () => {
                         <label className="block text-xs text-gray-500 font-medium mb-1">Date</label>
                         <input
                             type="date"
+                            min={new Date().toISOString().split('T')[0]}
                             className="w-full text-sm border-gray-300 rounded px-3 py-2"
                             value={data.date || ''}
-                            onChange={(e) => updateData({ date: e.target.value })}
+                            onChange={(e) => {
+                              const selectedDate = e.target.value;
+                              if (selectedDate && new Date(selectedDate) < new Date().setHours(0, 0, 0, 0)) {
+                                alert('Cannot select a past date. Please choose today or a future date.');
+                                return;
+                              }
+                              updateData({ date: selectedDate });
+                            }}
+                            onInvalid={(e) => {
+                              e.preventDefault();
+                              alert('Cannot select a past date. Please choose today or a future date.');
+                            }}
                         />
                     </div>
                     <div>
@@ -329,8 +342,7 @@ const HeaderFiller: React.FC = () => {
             if (orgData.logoUrl && header.showLogo) {
                 let logoUrl = orgData.logoUrl;
                 if (logoUrl.startsWith('/')) {
-                    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/';
-                    logoUrl = `${apiUrl}${logoUrl}`;
+                    logoUrl = `${getBackendBaseUrlWithSlash()}${logoUrl.replace(/^\//, '')}`;
                 }
                 updates.orgLogoUrl = logoUrl;
             }

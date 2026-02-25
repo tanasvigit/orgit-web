@@ -37,10 +37,7 @@
       }
 
       .top-header {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-        align-items: start;
+        display: block;
         margin-bottom: 10px;
       }
       .logo-wrap {
@@ -58,11 +55,16 @@
         font-weight: 700;
         color: var(--muted);
         overflow: hidden;
+        flex-shrink: 0;
       }
       .logo img {
         width: 100%;
         height: 100%;
         object-fit: contain;
+      }
+      .firm-info {
+        flex: 1;
+        min-width: 0;
       }
       .company-name {
         font-size: 14px;
@@ -73,14 +75,8 @@
         margin: 0;
         color: var(--muted);
       }
-      .firm-details {
-        text-align: right;
-      }
-      .firm-details .company-name {
-        margin: 0 0 2px;
-      }
-      .firm-details .company-meta {
-        margin: 0;
+      .company-meta-line {
+        margin: 0 0 4px;
       }
 
       .title-bar {
@@ -286,23 +282,17 @@
   </head>
   <body>
     <div class="page">
+      <!-- Header: Logo | FIRM NAME, Address L1 | L2, City – Pincode | Phone | Email | GSTIN (from Entity Master) -->
       <div class="top-header">
         <div class="logo-wrap">
           <div class="logo">
-            <img src="{{company_logo}}" alt="Logo" />
+            <img src="{{company_logo_data_uri}}" alt="Logo" />
           </div>
-          <div>
+          <div class="firm-info">
             <p class="company-name">{{company_name}}</p>
-            <p class="company-meta">{{company_address}}</p>
-            <p class="company-meta">{{company_phone}}</p>
+            <p class="company-meta company-meta-line">{{address_line1}} | {{address_line2}}</p>
+            <p class="company-meta company-meta-line">{{city}} – {{pincode}} | {{company_phone}} | {{company_email}} | {{company_gstin}}</p>
           </div>
-        </div>
-
-        <div class="firm-details">
-          <p class="company-name">{{company_name}}</p>
-          <p class="company-meta">{{company_address}}</p>
-          <p class="company-meta">GSTIN: {{company_gstin}}</p>
-          <p class="company-meta">Email: {{company_email}}</p>
         </div>
       </div>
 

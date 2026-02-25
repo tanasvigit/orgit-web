@@ -52,45 +52,33 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, headerAction
       <AdminSidebar onToggleRef={sidebarToggleRef} />
       <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-background">
         {!hideHeader && (
-          <header className="h-16 border-b border-border bg-surface/80 backdrop-blur-md flex items-center justify-between px-8 shrink-0 z-10 sticky top-0">
-            <div className="flex items-center gap-4">
+          <header className="h-16 border-b border-border bg-surface/80 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 md:px-8 shrink-0 z-[100] sticky top-0">
+            <div className="flex items-center gap-2 sm:gap-4">
               <button 
                 onClick={() => sidebarToggleRef.current?.()}
-                className="p-2 rounded-lg text-text-main hover:bg-slate-100 transition-colors"
+                className="p-2 rounded-lg text-text-main hover:bg-slate-100 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
                 title="Toggle Sidebar"
+                aria-label="Toggle Sidebar"
               >
-                <span className="material-symbols-outlined">menu</span>
+                <span className="material-symbols-outlined text-xl">menu</span>
               </button>
-              <div className="flex items-center gap-2 text-sm text-text-muted">
-                <span>Dashboard</span>
-                <span className="material-symbols-outlined text-base">chevron_right</span>
-                <span className="font-semibold text-text-main">Admin Panel</span>
+              <div className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm text-text-muted">
+                <span className="hidden sm:inline">Dashboard</span>
+                <span className="material-symbols-outlined text-sm sm:text-base">chevron_right</span>
+                <span className="font-semibold text-text-main truncate max-w-[120px] sm:max-w-none">Admin Panel</span>
               </div>
             </div>
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 sm:gap-4 md:gap-6">
               {headerActions}
-              {!hideSearch && (
-                <div className="relative hidden sm:block">
-                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-[18px]">
-                    search
-                  </span>
-                  <input
-                    className="bg-slate-100 border border-transparent hover:border-border focus:border-primary-600 rounded-full py-2 pl-10 pr-4 text-sm text-slate-900 focus:ring-0 focus:outline-none w-64 placeholder:text-slate-500 transition-all"
-                    placeholder="Search..."
-                    type="text"
-                  />
-                </div>
-              )}
-              <button className="relative text-text-muted hover:text-primary-700 transition-colors">
-                <span className="material-symbols-outlined">notifications</span>
-                <span className="absolute top-0.5 right-0.5 size-2 bg-red-500 rounded-full ring-2 ring-white"></span>
-              </button>
               
-              {/* Profile Dropdown */}
-              <div className="relative z-[100]" ref={profileMenuRef}>
+              {/* Profile Dropdown - fixed positioning so it appears above task/message header */}
+              <div className="relative" ref={profileMenuRef}>
                 <button
+                  type="button"
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
                   className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                  aria-expanded={showProfileMenu}
+                  aria-haspopup="true"
                 >
                   {user?.profilePhotoUrl ? (
                     <img
@@ -107,28 +95,30 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, headerAction
                 </button>
 
                 {showProfileMenu && (
-                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-slate-200 py-2 z-[100]">
+                  <div className="fixed right-6 top-16 w-56 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-[9999]">
                     <div className="px-4 py-3 border-b border-slate-100">
                       <p className="text-sm font-semibold text-slate-900">{user?.name || 'Admin'}</p>
                       <p className="text-xs text-slate-500 truncate">{user?.email || 'admin@orgit.com'}</p>
                     </div>
                     <div className="py-1">
                       <button
+                        type="button"
                         onClick={() => {
                           setShowProfileMenu(false);
                           navigate('/profile');
                         }}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors text-left"
                       >
                         <span className="material-symbols-outlined text-lg">person</span>
                         View Profile
                       </button>
                       <button
+                        type="button"
                         onClick={() => {
                           setShowProfileMenu(false);
                           navigate('/settings');
                         }}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors text-left"
                       >
                         <span className="material-symbols-outlined text-lg">settings</span>
                         Settings
@@ -136,8 +126,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children, headerAction
                     </div>
                     <div className="border-t border-slate-100 pt-1">
                       <button
+                        type="button"
                         onClick={handleLogout}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors text-left w-full"
                       >
                         <span className="material-symbols-outlined text-lg">logout</span>
                         Sign Out
