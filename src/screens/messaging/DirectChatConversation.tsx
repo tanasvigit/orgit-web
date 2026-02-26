@@ -1021,18 +1021,18 @@ export const DirectChatConversation: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Format time helper – device local (mirrors mobile formatTime / formatTimeHHMM)
+  // Format time helper – now uses IST (Asia/Kolkata)
   const formatTime = (timestamp?: string) => formatChatTime(timestamp);
 
-  // Format date helper – device local (Today, Yesterday, or date; mirrors mobile formatDate)
+  // Format date helper – Today / Yesterday / short date in IST
   const formatDate = (timestamp?: string) => formatChatDate(timestamp);
 
-  // Should show date separator – use parseTimestamp for device-local date comparison
+  // Show date separator when the formatted IST date label changes
   const shouldShowDateSeparator = (currentMessage: any, previousMessage: any) => {
     if (!previousMessage) return true;
-    const currentDate = parseTimestamp(currentMessage.created_at)?.toDateString();
-    const previousDate = parseTimestamp(previousMessage.created_at)?.toDateString();
-    return currentDate != null && previousDate != null && currentDate !== previousDate;
+    const currentLabel = formatDate(currentMessage.created_at);
+    const previousLabel = formatDate(previousMessage.created_at);
+    return !!currentLabel && !!previousLabel && currentLabel !== previousLabel;
   };
 
   // Handle typing (with debouncing)
@@ -1103,6 +1103,7 @@ export const DirectChatConversation: React.FC = () => {
           messageType: 'text',
           isEdit: true,
           messageId: editingMessage.id,
+          deviceTimestamp: getDeviceLocalTimestamp(),
         });
         setEditingMessage(null);
         setMessage('');
@@ -1622,6 +1623,18 @@ export const DirectChatConversation: React.FC = () => {
     // CRITICAL FIX: Get status from message, ensuring we use the latest status
     const messageStatus = msg.status || 'sent';
     const messageType = msg.message_type || 'text';
+
+    // Timestamp debug: compare raw DB value, parsed Date, and displayed IST time
+    if (msg.created_at && index < 10) {
+      const parsed = parseTimestamp(msg.created_at);
+      const display = formatTime(msg.created_at);
+      console.log('[ChatTimeDebug][web]', {
+        messageId: msg.id,
+        rawCreatedAt: msg.created_at,
+        parsedIso: parsed?.toISOString?.(),
+        displayTime: display,
+      });
+    }
 
     // Status icon and color - debug log for status changes
     let statusIcon = null;

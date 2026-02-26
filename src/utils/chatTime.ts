@@ -1,8 +1,27 @@
 /**
  * Chat time utilities – mirrors orgit-mobile utils/time.js.
  * Parses server timestamps (ISO, epoch, "YYYY-MM-DD HH:mm:ss") and formats
- * using the device's local timezone and locale (toLocaleTimeString / toLocaleDateString).
+ * using Indian Standard Time (IST / Asia-Kolkata) for all devices.
  */
+
+const IST_OFFSET_MINUTES = 330; // UTC+5:30
+
+function toIstDate(d: Date): Date {
+  // Convert local time to UTC, then shift to IST
+  const utcMs = d.getTime() + d.getTimezoneOffset() * 60000;
+  const istMs = utcMs + IST_OFFSET_MINUTES * 60000;
+  return new Date(istMs);
+}
+
+function isSameIstDay(a: Date, b: Date): boolean {
+  const ia = toIstDate(a);
+  const ib = toIstDate(b);
+  return (
+    ia.getFullYear() === ib.getFullYear() &&
+    ia.getMonth() === ib.getMonth() &&
+    ia.getDate() === ib.getDate()
+  );
+}
 
 /**
  * Robust timestamp parsing (same logic as mobile).
@@ -40,9 +59,9 @@ export function parseTimestamp(value: string | number | Date | null | undefined)
       return Number.isNaN(d.getTime()) ? null : d;
     }
 
-    // "YYYY-MM-DD HH:mm:ss" or "YYYY-MM-DDTHH:mm:ss" – parse as local (device) time
+    // "YYYY-MM-DD HH:mm:ss" or "YYYY-MM-DDTHH:mm:ss" – treat as UTC from backend, then shift to IST on format
     const m = s.match(
-      /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,3}))?$/
+      /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,6}))?$/
     );
     if (m) {
       const year = Number(m[1]);
@@ -51,9 +70,12 @@ export function parseTimestamp(value: string | number | Date | null | undefined)
       const hour = Number(m[4]);
       const minute = Number(m[5]);
       const second = Number(m[6] || '0');
-      const milliRaw = m[7] || '0';
-      const ms = Number(milliRaw.padEnd(3, '0').slice(0, 3));
-      const d = new Date(year, month, day, hour, minute, second, ms);
+      const microRaw = m[7] || '0';
+      // DB often stores microseconds; keep only first 3 digits as milliseconds
+      const ms = Number(microRaw.padEnd(3, '0').slice(0, 3));
+      // Interpret as UTC instant
+      const utcMs = Date.UTC(year, month, day, hour, minute, second, ms);
+      const d = new Date(utcMs);
       return Number.isNaN(d.getTime()) ? null : d;
     }
 
@@ -82,7 +104,11 @@ export function timestampToMs(value: string | number | Date | null | undefined, 
 export function formatTimeHHMM(value: string | number | Date | null | undefined): string {
   const d = parseTimestamp(value);
   if (!d) return '';
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Asia/Kolkata',
+  });
 }
 
 /**
@@ -92,10 +118,10 @@ export function formatShortDate(value: string | number | Date | null | undefined
   const d = parseTimestamp(value);
   if (!d) return '';
   const today = new Date();
-  return d.toLocaleDateString([], {
+  return d.toLocaleDateString('en-IN', {
     month: 'short',
     day: 'numeric',
-    year: d.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
+    year: toIstDate(d).getFullYear() !== toIstDate(today).getFullYear() ? 'numeric' : undefined,
   });
 }
 
@@ -116,17 +142,13 @@ export function formatChatDate(value: string | number | Date | null | undefined)
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
-  if (d.toDateString() === today.toDateString()) {
+  if (isSameIstDay(d, today)) {
     return 'Today';
   }
-  if (d.toDateString() === yesterday.toDateString()) {
+  if (isSameIstDay(d, yesterday)) {
     return 'Yesterday';
   }
-  return d.toLocaleDateString([], {
-    month: 'short',
-    day: 'numeric',
-    year: d.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
-  });
+  return formatShortDate(value);
 }
 
 /**
@@ -136,10 +158,21 @@ export function formatChatListTimestamp(value: string | number | Date | null | u
   const d = parseTimestamp(value);
   if (!d) return '';
   const today = new Date();
-  const diffDays = Math.floor((today.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (diffDays === 0) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // Compute day difference in IST
+  const istNow = toIstDate(today).getTime();
+  const istMsg = toIstDate(d).getTime();
+  const diffDays = Math.floor((istNow - istMsg) / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) {
+    return d.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Kolkata',
+    });
+  }
   if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return d.toLocaleDateString([], { weekday: 'short' });
+  if (diffDays < 7)
+    return d.toLocaleDateString('en-IN', { weekday: 'short', timeZone: 'Asia/Kolkata' });
   return formatShortDate(value);
 }

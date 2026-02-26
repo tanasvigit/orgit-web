@@ -678,15 +678,15 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   // Format time helper – device local (mirrors mobile formatTime / formatTimeHHMM)
   const formatTime = (timestamp?: string) => formatChatTime(timestamp);
 
-  // Format date helper – device local (Today, Yesterday, or date; mirrors mobile formatDate)
+  // Format date helper – Today / Yesterday / short date in IST
   const formatDate = (timestamp?: string) => formatChatDate(timestamp);
 
-  // Should show date separator – use parseTimestamp for device-local date comparison
+  // Show date separator when the formatted IST date label changes
   const shouldShowDateSeparator = (currentMessage: any, previousMessage: any) => {
     if (!previousMessage) return true;
-    const currentDate = parseTimestamp(currentMessage.created_at)?.toDateString();
-    const previousDate = parseTimestamp(previousMessage.created_at)?.toDateString();
-    return currentDate != null && previousDate != null && currentDate !== previousDate;
+    const currentLabel = formatDate(currentMessage.created_at);
+    const previousLabel = formatDate(previousMessage.created_at);
+    return !!currentLabel && !!previousLabel && currentLabel !== previousLabel;
   };
 
   // Handle typing (with debouncing)
@@ -750,7 +750,14 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       if (editingMessage) {
         const socket = await waitForSocketConnection();
         await messageService.editMessage(editingMessage.id, message.trim());
-        socket.emit('send_message', { conversationId, content: message.trim(), messageType: 'text', isEdit: true, messageId: editingMessage.id });
+        socket.emit('send_message', { 
+          conversationId, 
+          content: message.trim(), 
+          messageType: 'text', 
+          isEdit: true, 
+          messageId: editingMessage.id,
+          deviceTimestamp: getDeviceLocalTimestamp(),
+        });
         setEditingMessage(null);
         setMessage('');
       } else if (pendingAttachments.length > 0) {
@@ -1615,6 +1622,18 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     const messageType = msg.message_type || 'text';
     const senderName = msg.sender_name || msg.senderName || 'Unknown';
     const visibilityMode = msg.visibility_mode || msg.visibilityMode || 'shared_to_group';
+
+    // Timestamp debug: compare raw DB value, parsed Date, and displayed IST time
+    if (msg.created_at && index < 10) {
+      const parsed = parseTimestamp(msg.created_at);
+      const display = formatTime(msg.created_at);
+      console.log('[ChatTimeDebug][web-task-group]', {
+        messageId: msg.id,
+        rawCreatedAt: msg.created_at,
+        parsedIso: parsed?.toISOString?.(),
+        displayTime: display,
+      });
+    }
 
     // Status icon and color
     let statusIcon = null;
