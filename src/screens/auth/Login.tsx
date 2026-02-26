@@ -40,13 +40,17 @@ export const Login: React.FC = () => {
 
   // Restrict mobile input to numbers only (and optional leading +)
   const handleMobileInput = (field: 'mobile', form: 'password' | 'otp') => {
-    const formInstance = form === 'password' ? passwordForm : otpForm;
     return (e: React.ChangeEvent<HTMLInputElement>) => {
       const raw = e.target.value;
       const hasPlus = raw.trimStart().startsWith('+');
       const digits = raw.replace(/\D/g, '');
       const value = hasPlus ? `+${digits}` : digits;
-      formInstance.setValue(field, value, { shouldValidate: true });
+
+      if (form === 'password') {
+        passwordForm.setValue(field, value, { shouldValidate: true });
+      } else {
+        otpForm.setValue(field, value, { shouldValidate: true });
+      }
     };
   };
 
@@ -137,8 +141,9 @@ export const Login: React.FC = () => {
           navigate(redirectPath);
         }
       } else {
-        const errorMsg = response.error || response.message || 'Invalid mobile number or password';
-        console.error('[Login UI] Login failed:', errorMsg);
+        // Backend should not reach here with success=false on 2xx, but handle defensively
+        const errorMsg = response.message || response.error || 'Invalid mobile number or password.';
+        console.error('[Login UI] Login failed (2xx with success=false):', errorMsg);
         console.error('[Login UI] Full response:', response);
         setError(errorMsg);
         toast.error(errorMsg);
@@ -152,20 +157,23 @@ export const Login: React.FC = () => {
         stack: err.stack,
       });
       
-      // Use API error message when available (User not found, Incorrect password, etc.)
+      // Map server responses to safe, user-friendly messages without revealing which field is wrong.
       let errorMsg = 'Login failed. Please try again.';
-      if (err.response?.data?.error) {
-        errorMsg = err.response.data.error;
-      } else if (err.response?.status === 401) {
-        errorMsg = 'Invalid credentials. Please check your mobile number and password.';
-      } else if (err.response?.status === 403) {
+      const status = err.response?.status;
+      const data = err.response?.data || {};
+
+      if (status === 401) {
+        // Invalid credentials – do not reveal whether mobile/email or password is incorrect
+        errorMsg = data.message || 'Invalid mobile number or password.';
+      } else if (status === 400) {
+        // Validation / bad request from backend
+        errorMsg = data.message || 'Invalid request. Please check your input.';
+      } else if (status === 403) {
         errorMsg = 'Your account is not active. Please contact administrator.';
-      } else if (err.response?.status === 400) {
-        errorMsg = err.response?.data?.error || 'Invalid request. Please check your input.';
       } else if (!err.response) {
         errorMsg = 'Network error. Please check your internet connection.';
-      } else if (err.response?.data?.message) {
-        errorMsg = err.response.data.message;
+      } else if (data.message) {
+        errorMsg = data.message;
       } else if (err.message) {
         errorMsg = err.message;
       }

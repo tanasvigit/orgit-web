@@ -33,12 +33,25 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      // Handle unauthorized - clear token and redirect to login
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
-      window.location.href = '/login';
+    const status = error.response?.status;
+    const url: string | undefined = error.config?.url;
+
+    if (status === 401) {
+      const isAuthLogin =
+        url?.includes('/auth/login') ||
+        url?.includes('/auth/request-otp') ||
+        url?.includes('/auth/verify-otp');
+
+      // Only treat 401 as session-expired if it's NOT from auth endpoints
+      // and there is an existing token. This prevents reloads on failed login.
+      const hasToken = !!localStorage.getItem('token');
+      if (!isAuthLogin && hasToken) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('refreshToken');
+        window.location.href = '/login';
+      }
     }
+
     return Promise.reject(error);
   }
 );

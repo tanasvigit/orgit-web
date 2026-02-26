@@ -6,8 +6,22 @@ import { z } from 'zod';
 import { TopAppBar, Button } from '../../components/shared';
 import { authService } from '../../services/authService';
 
+/** Name: 2-50 chars, letters/spaces/hyphens/apostrophes only, no HTML/script (XSS-safe). */
+const nameSchema = z
+  .string()
+  .trim()
+  .min(2, 'Name must be at least 2 characters')
+  .max(50, 'Name must be at most 50 characters')
+  .regex(
+    /^[\p{L}\p{M}\s\-']+$/u,
+    'Name can only contain letters, spaces, hyphens, and apostrophes'
+  )
+  .refine((val) => !/<[^>]*>|<\/\s*script|on\w+\s*=/i.test(val), {
+    message: 'Name contains invalid characters',
+  });
+
 const mobileSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
+  name: nameSchema,
   mobile: z.string().min(10, 'Mobile number must be at least 10 digits'),
   password: z.string().min(4, 'Password must be at least 4 characters'),
 });
