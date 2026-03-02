@@ -9,6 +9,8 @@ import './App.css';
 
 // Lazy-loaded route screens (named-export pattern)
 const Login = lazy(() => import('./screens/auth/Login').then(m => ({ default: m.Login })));
+const ForgotPassword = lazy(() => import('./screens/auth/ForgotPassword').then(m => ({ default: m.ForgotPassword })));
+const ResetPassword = lazy(() => import('./screens/auth/ResetPassword').then(m => ({ default: m.ResetPassword })));
 const MobileNumberRegistration = lazy(() => import('./screens/auth/MobileNumberRegistration').then(m => ({ default: m.MobileNumberRegistration })));
 const OTPVerification = lazy(() => import('./screens/auth/OTPVerification').then(m => ({ default: m.OTPVerification })));
 const UserProfileCreation = lazy(() => import('./screens/auth/UserProfileCreation').then(m => ({ default: m.UserProfileCreation })));
@@ -187,6 +189,8 @@ function App() {
           <ChangePasswordPopup />
           <Routes>
             <Route path="/login" element={<Suspense fallback={<RouteFallback />}><Login /></Suspense>} />
+            <Route path="/forgot-password" element={<Suspense fallback={<RouteFallback />}><ForgotPassword /></Suspense>} />
+            <Route path="/reset-password" element={<Suspense fallback={<RouteFallback />}><ResetPassword /></Suspense>} />
             <Route path="/register" element={<Suspense fallback={<RouteFallback />}><MobileNumberRegistration /></Suspense>} />
             <Route path="/otp-verification" element={<Suspense fallback={<RouteFallback />}><OTPVerification /></Suspense>} />
             <Route path="/profile-setup" element={<Suspense fallback={<RouteFallback />}><UserProfileCreation /></Suspense>} />

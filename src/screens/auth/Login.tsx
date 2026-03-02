@@ -321,6 +321,16 @@ export const Login: React.FC = () => {
               )}
             </label>
 
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => navigate('/forgot-password')}
+                className="text-sm text-primary hover:text-primary/80 font-medium"
+              >
+                Forgot password?
+              </button>
+            </div>
+
             {error && (
               <div className="mt-2 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
                 <p className="text-red-600 dark:text-red-400 text-sm font-medium flex items-center gap-2">

@@ -154,5 +154,17 @@ export const authService = {
     const response = await api.post('/auth/dismiss-change-password');
     return response.data;
   },
+
+  /** Forgot password (OTP-based, no email). Sends OTP to the given mobile. */
+  requestPasswordReset: async (data: { mobile: string }) => {
+    const response = await api.post('/auth/password/forgot', data);
+    return response.data;
+  },
+
+  /** Reset password using OTP received on mobile (no email). */
+  resetPasswordWithOTP: async (data: { mobile: string; otpCode: string; newPassword: string }) => {
+    const response = await api.post('/auth/password/reset', data);
+    return response.data;
+  },
 };
 

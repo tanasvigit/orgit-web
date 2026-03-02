@@ -54,6 +54,13 @@ export const employeeService = {
   getEmployees: () => api.get('/admin/employees'),
 
   /**
+   * Search users by mobile number for the Admin Add Employee form.
+   * This can return users that are not yet part of the admin's organization.
+   */
+  searchUsersByMobile: (query: string) =>
+    api.get('/admin/employees/search-users', { params: { q: query, limit: 20 } }),
+
+  /**
    * Add a new employee to the admin's organization
    */
   addEmployee: (data: AddEmployeeRequest) => api.post('/admin/employees', data),

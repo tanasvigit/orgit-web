@@ -638,9 +638,9 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
       setSearchLoading(true);
       searchTimeoutRef.current = setTimeout(async () => {
         try {
-          // Search users by phone number
-          const response = await chatUserService.searchUsers(digits);
-          const users = response.data || response || [];
+          // Search users by phone number specifically for Admin Add Employee
+          const response = await employeeService.searchUsersByMobile(digits);
+          const users = response.data?.data || response.data || response || [];
           
           // Filter to only show users whose mobile number matches exactly (last 10 digits)
           const normalizedSearch = digits.slice(-10);
