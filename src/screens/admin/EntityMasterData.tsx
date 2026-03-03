@@ -42,6 +42,8 @@ export const EntityMasterData: React.FC = () => {
     accountingYearStart: '',
     costCentres: [] as Array<{ name: string; shortName?: string; displayOrder?: number }>,
     branches: [] as Array<{ name: string; shortName?: string; address?: string; gstNumber?: string }>,
+    depots: [] as Array<{ name: string; shortName?: string; displayOrder?: number }>,
+    warehouses: [] as Array<{ name: string; shortName?: string; address?: string; gstNumber?: string }>,
   });
 
   const { data: orgConstitutionsData } = useQuery(['master-org-constitutions'], async () => {
@@ -96,6 +98,8 @@ export const EntityMasterData: React.FC = () => {
         accountingYearStart: orgData.accountingYearStart || '',
         costCentres: Array.isArray(orgData.costCentres) ? orgData.costCentres : [],
         branches: Array.isArray(orgData.branches) ? orgData.branches : [],
+        depots: Array.isArray(orgData.depots) ? orgData.depots : [],
+        warehouses: Array.isArray(orgData.warehouses) ? orgData.warehouses : [],
       });
     }
   }, [orgData]);
@@ -620,26 +624,6 @@ export const EntityMasterData: React.FC = () => {
                     placeholder="L12345MH2023PLC123456"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Depot</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={formData.depotCount}
-                    onChange={(e) => setFormData({ ...formData, depotCount: Number(e.target.value || 0) })}
-                    className="w-full rounded-lg border-slate-200 bg-white text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Warehouse</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={formData.warehouseCount}
-                    onChange={(e) => setFormData({ ...formData, warehouseCount: Number(e.target.value || 0) })}
-                    className="w-full rounded-lg border-slate-200 bg-white text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3"
-                  />
-                </div>
               </div>
             </div>
 
@@ -780,6 +764,146 @@ export const EntityMasterData: React.FC = () => {
                   </div>
                 ))}
                 {formData.branches.length === 0 && <div className="text-sm text-slate-500">No branches yet.</div>}
+              </div>
+            </div>
+
+            {/* Depot */}
+            <div className="p-6 md:p-8 border-b border-slate-100">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-2xl">local_shipping</span>
+                  Depot
+                </h2>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      depots: [...formData.depots, { name: '', shortName: '' }],
+                    })
+                  }
+                  className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90"
+                >
+                  Add
+                </button>
+              </div>
+              <div className="space-y-3">
+                {formData.depots.map((d, idx) => (
+                  <div key={idx} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-center">
+                    <input
+                      className="md:col-span-3 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      placeholder="Depot Name"
+                      value={d.name}
+                      onChange={(e) => {
+                        const next = [...formData.depots];
+                        next[idx] = { ...next[idx], name: e.target.value };
+                        setFormData({ ...formData, depots: next });
+                      }}
+                    />
+                    <input
+                      className="md:col-span-1 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      placeholder="Short Name"
+                      value={d.shortName || ''}
+                      onChange={(e) => {
+                        const next = [...formData.depots];
+                        next[idx] = { ...next[idx], shortName: e.target.value };
+                        setFormData({ ...formData, depots: next });
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = formData.depots.filter((_, i) => i !== idx);
+                        setFormData({ ...formData, depots: next });
+                      }}
+                      className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                {formData.depots.length === 0 && (
+                  <div className="text-sm text-slate-500">No depots yet.</div>
+                )}
+              </div>
+            </div>
+
+            {/* Warehouse */}
+            <div className="p-6 md:p-8">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-2xl">warehouse</span>
+                  Warehouse
+                </h2>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      warehouses: [...formData.warehouses, { name: '', shortName: '', address: '', gstNumber: '' }],
+                    })
+                  }
+                  className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90"
+                >
+                  Add
+                </button>
+              </div>
+              <div className="space-y-3">
+                {formData.warehouses.map((w, idx) => (
+                  <div key={idx} className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
+                    <input
+                      className="md:col-span-2 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      placeholder="Warehouse Name"
+                      value={w.name}
+                      onChange={(e) => {
+                        const next = [...formData.warehouses];
+                        next[idx] = { ...next[idx], name: e.target.value };
+                        setFormData({ ...formData, warehouses: next });
+                      }}
+                    />
+                    <input
+                      className="md:col-span-1 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      placeholder="Short"
+                      value={w.shortName || ''}
+                      onChange={(e) => {
+                        const next = [...formData.warehouses];
+                        next[idx] = { ...next[idx], shortName: e.target.value };
+                        setFormData({ ...formData, warehouses: next });
+                      }}
+                    />
+                    <input
+                      className="md:col-span-2 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      placeholder="Address"
+                      value={w.address || ''}
+                      onChange={(e) => {
+                        const next = [...formData.warehouses];
+                        next[idx] = { ...next[idx], address: e.target.value };
+                        setFormData({ ...formData, warehouses: next });
+                      }}
+                    />
+                    <input
+                      className="md:col-span-1 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      placeholder="GST"
+                      value={(w as any).gstNumber || ''}
+                      onChange={(e) => {
+                        const next = [...formData.warehouses];
+                        next[idx] = { ...next[idx], gstNumber: e.target.value.toUpperCase() } as any;
+                        setFormData({ ...formData, warehouses: next });
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = formData.warehouses.filter((_, i) => i !== idx);
+                        setFormData({ ...formData, warehouses: next });
+                      }}
+                      className="md:col-span-6 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                {formData.warehouses.length === 0 && <div className="text-sm text-slate-500">No warehouses yet.</div>}
               </div>
             </div>
 

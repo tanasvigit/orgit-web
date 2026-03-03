@@ -116,7 +116,8 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     {
       onSuccess: () => {
         queryClient.invalidateQueries(['task', taskId]);
-        queryClient.invalidateQueries(['tasks']);
+        // Invalidate all task list queries (e.g. ['tasks', 'one_time'], ['tasks', 'recurring'])
+        queryClient.invalidateQueries('tasks');
         queryClient.invalidateQueries(['dashboard']);
         queryClient.invalidateQueries(['admin-dashboard']);
         queryClient.invalidateQueries(['admin-dashboard-statistics']);

@@ -11,7 +11,7 @@ const ROLLOUT_OPTIONS: Array<{ value: 'end_of_period' | 'one_month_before_period
 ];
 
 export const ServiceList: React.FC = () => {
-  const [type, setType] = useState<TaskServiceType>('recurring');
+  const [type, setType] = useState<'all' | TaskServiceType>('all');
   const [showAddForm, setShowAddForm] = useState(false);
   const [addTitle, setAddTitle] = useState('');
   const [addTaskType, setAddTaskType] = useState<TaskServiceType>('recurring');
@@ -24,6 +24,15 @@ export const ServiceList: React.FC = () => {
   const { toast } = useToast();
 
   const { data, isLoading, error } = useQuery(['task-services', type], async () => {
+    if (type === 'all') {
+      const [recurringRes, oneTimeRes] = await Promise.all([
+        masterDataService.getTaskServices('recurring'),
+        masterDataService.getTaskServices('one_time'),
+      ]);
+      const recurring = (recurringRes.data.data || recurringRes.data) as TaskServiceItem[];
+      const oneTime = (oneTimeRes.data.data || oneTimeRes.data) as TaskServiceItem[];
+      return [...recurring, ...oneTime] as TaskServiceItem[];
+    }
     const res = await masterDataService.getTaskServices(type);
     return (res.data.data || res.data) as TaskServiceItem[];
   });
@@ -149,7 +158,7 @@ export const ServiceList: React.FC = () => {
   return (
     <AdminLayout>
       <div className="p-6 md:p-8">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-1.5">
               Service List
@@ -159,20 +168,12 @@ export const ServiceList: React.FC = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => setType('recurring')}
+              onClick={() => setType('all')}
               className={`px-4 py-2 rounded-lg text-sm font-semibold ${
-                type === 'recurring' ? 'bg-primary text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                type === 'all' ? 'bg-primary text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
               }`}
             >
-              Recurring
-            </button>
-            <button
-              onClick={() => setType('one_time')}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold ${
-                type === 'one_time' ? 'bg-primary text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
-              }`}
-            >
-              One-Time
+              All
             </button>
             <button
               onClick={() => setShowAddForm(true)}
@@ -301,18 +302,17 @@ export const ServiceList: React.FC = () => {
                 <thead className="bg-slate-50 dark:bg-slate-900">
                   <tr>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      {type === 'recurring' ? 'RECURRING TASK TITLE/SERVICE LIST' : 'ONE TIME TASK LIST'}
+                      SERVICE TITLE
                     </th>
-                    {type === 'recurring' && (
-                      <>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                          FREQUENCY
-                        </th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                          TASK ROLL OUT
-                        </th>
-                      </>
-                    )}
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      FREQUENCY
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      TASK ROLL OUT
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      TYPE
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -321,31 +321,29 @@ export const ServiceList: React.FC = () => {
                       <td className="px-6 py-4 text-sm font-semibold text-slate-900 dark:text-white">
                         {s.title}
                       </td>
-                      {type === 'recurring' && (
-                        <>
-                          <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-200">
-                            <select
-                              className="min-w-[160px] px-3 py-2 rounded-lg border border-slate-200 bg-white dark:bg-slate-800 text-sm"
-                              defaultValue={s.frequency}
-                            >
-                              {frequencyOptions.map((o) => (
-                                <option key={o.value} value={o.value}>
-                                  {o.label}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-200">
-                            {formatRollout(s.rollout_rule)}
-                          </td>
-                        </>
-                      )}
+                      <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-200">
+                        {s.task_type === 'recurring' ? (s.frequency || 'NA') : 'NA'}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-200">
+                        {s.task_type === 'recurring' ? formatRollout(s.rollout_rule) : '-'}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-200 text-right">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                            s.task_type === 'recurring'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-700'
+                              : 'bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-900/30 dark:text-sky-200 dark:border-sky-700'
+                          }`}
+                        >
+                          {s.task_type === 'recurring' ? 'Recurring' : 'One-Time'}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                   {services.length === 0 && (
                     <tr>
                       <td
-                        colSpan={type === 'recurring' ? 3 : 1}
+                        colSpan={4}
                         className="px-6 py-10 text-center text-sm text-slate-500"
                       >
                         No services found.

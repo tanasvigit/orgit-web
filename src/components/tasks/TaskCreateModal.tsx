@@ -6,6 +6,7 @@ import { conversationService } from '../../services/conversationService';
 import { taskService } from '../../services/taskService';
 import { documentInstanceService } from '../../services/documentInstanceService';
 import { masterDataService } from '../../services/masterDataService';
+import { entityListService, ServiceMatrixResponse } from '../../services/entityListService';
 import { setTaskFinancial } from '../../utils/taskFinancialStorage';
 import { CustomDatePicker } from '../shared/CustomDatePicker';
 import { waitForSocketConnection } from '../../services/socketService';
@@ -169,13 +170,40 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     { enabled: visible, staleTime: 5 * 60 * 1000 }
   );
   const allTitleServices = Array.isArray(taskServicesData) ? taskServicesData : [];
+
+  // Fetch client-service matrix so we know which services each client has
+  const { data: clientMatrixData } = useQuery(
+    'client-service-matrix-for-task-create',
+    async () => {
+      const res = await entityListService.matrix('recurring');
+      return (res.data?.data || res.data || {}) as ServiceMatrixResponse;
+    },
+    { enabled: visible, staleTime: 5 * 60 * 1000 }
+  );
+
+  const [selectedClientId, setSelectedClientId] = useState<string>('');
+
+  const clientMatrixServices = clientMatrixData?.services || [];
+  const clientMatrixClients = clientMatrixData?.clients || [];
+
+  const titleServicePool = useMemo(() => {
+    if (selectedClientId && clientMatrixClients.length > 0) {
+      const selected = clientMatrixClients.find((c) => c.id === selectedClientId);
+      const serviceIds = selected ? Object.keys(selected.serviceFrequencies || {}) : [];
+      if (serviceIds.length === 0) return allTitleServices;
+      const ids = new Set(serviceIds);
+      return allTitleServices.filter((s) => ids.has(s.id));
+    }
+    return allTitleServices;
+  }, [selectedClientId, clientMatrixClients, allTitleServices]);
+
   const titleSuggestions = useMemo(() => {
     const q = title.trim().toLowerCase();
     if (q) {
-      return allTitleServices.filter((s) => (s.title || '').toLowerCase().includes(q));
+      return titleServicePool.filter((s) => (s.title || '').toLowerCase().includes(q));
     }
-    return allTitleServices.slice(0, 15);
-  }, [title, allTitleServices]);
+    return titleServicePool.slice(0, 15);
+  }, [title, titleServicePool]);
 
   // Fetch users for assignee selection
   const { data: usersData } = useQuery(
@@ -402,6 +430,25 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
+          {/* 0. Client Name (optional) */}
+          <div>
+            <label className="block text-sm sm:text-base font-semibold text-gray-700 dark:text-gray-300 mb-2">
+              Client Name
+            </label>
+            <select
+              value={selectedClientId}
+              onChange={(e) => setSelectedClientId(e.target.value)}
+              className="w-full px-4 py-3 sm:py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm sm:text-base text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[44px]"
+            >
+              <option value="">All clients</option>
+              {clientMatrixClients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* 1. Task Title - with service list suggestions (Google-like) */}
           <div className="relative" ref={titleSuggestionsRef}>
             <label className="block text-sm sm:text-base font-semibold text-gray-700 dark:text-gray-300 mb-2">

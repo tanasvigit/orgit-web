@@ -8,6 +8,16 @@ export interface ClientEntity {
   cost_centre_id?: string;
   cost_centre_name?: string;
   cost_centre_short_name?: string;
+  depot_id?: string;
+  depot_name?: string;
+  depot_short_name?: string;
+  warehouse_id?: string;
+  warehouse_name?: string;
+  warehouse_short_name?: string;
+  pan?: string;
+  reporting_partner_mobile?: string;
+  reporting_partner_name?: string;
+  status?: 'active' | 'inactive';
   created_at?: string;
   updated_at?: string;
   serviceFrequencies?: Record<string, TaskServiceFrequency>;
@@ -26,9 +36,30 @@ export interface ServiceMatrixResponse {
 
 export const entityListService = {
   list: () => api.get('/admin/entities'),
-  create: (data: { name: string; entityType?: string; costCentreId?: string }) =>
+  create: (data: {
+    name: string;
+    entityType?: string;
+    costCentreId?: string;
+    depotId?: string;
+    warehouseId?: string;
+    pan?: string;
+    reportingPartnerMobile?: string;
+    status?: 'active' | 'inactive';
+  }) =>
     api.post('/admin/entities', data),
-  update: (id: string, data: { name?: string; entityType?: string; costCentreId?: string }) =>
+  update: (
+    id: string,
+    data: {
+      name?: string;
+      entityType?: string;
+      costCentreId?: string;
+      depotId?: string;
+      warehouseId?: string;
+      pan?: string;
+      reportingPartnerMobile?: string;
+      status?: 'active' | 'inactive';
+    }
+  ) =>
     api.put(`/admin/entities/${id}`, data),
   remove: (id: string) => api.delete(`/admin/entities/${id}`),
   matrix: (type?: 'recurring' | 'one_time') =>
