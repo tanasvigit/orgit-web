@@ -1284,16 +1284,29 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     setSelectedUserIdsForAdd([]);
   };
 
-  // Fetch task data for verification logic
-  const { data: taskData } = useQuery(
+  // Fetch task data for verification logic. Do not retry 404 (deleted task).
+  const { data: taskData, isError: taskFetchError } = useQuery(
     ['task', taskId],
     () => taskService.getTask(taskId!),
-    { enabled: !!taskId }
+    {
+      enabled: !!taskId,
+      retry: (failureCount, error: any) =>
+        error?.response?.status === 404 ? false : failureCount < 2,
+    }
   );
 
   const task = taskData;
   const currentUserId = user?.id || (user as any)?.userId;
   const taskDeleted = isTaskDeleted(task);
+  const taskNotFound = !!taskId && taskFetchError;
+
+  // When task no longer exists (deleted), keep conversation list in sync so this conv disappears from sidebar
+  useEffect(() => {
+    if (taskNotFound) {
+      queryClient.invalidateQueries(['conversations']);
+      queryClient.invalidateQueries(['conversation-details']);
+    }
+  }, [taskNotFound, queryClient]);
 
   // Check if current user is the task creator (task owner; use String so it works when owner was set by admin)
   const isTaskCreator = () => {
@@ -1895,10 +1908,10 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
               <h2 className="text-lg font-bold text-gray-900 dark:text-white">
                 {conversationName}
               </h2>
-              {taskDeleted && (
+              {(taskDeleted || taskNotFound) && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300">
                   <span className="material-symbols-outlined text-sm">delete</span>
-                  Deleted
+                  {taskNotFound ? 'Task removed' : 'Deleted'}
                 </span>
               )}
             </div>
@@ -2636,17 +2649,20 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     </div>
   );
 
+  // Do not render task details when task was deleted (404)
+  const showTaskContent = effectiveTaskId && !taskNotFound;
+
   // Task flow: when user has not accepted, show full Task Details Page in place of chat (same area where chat opens)
   const taskDetailsGateView = (
     <div className="flex-1 flex flex-col bg-background-light dark:bg-background-dark h-full overflow-hidden">
-      {effectiveTaskId ? (
+      {showTaskContent ? (
         <div className="flex-1 overflow-y-auto">
           <TaskDetailsScreen embedded taskId={effectiveTaskId} />
         </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400">
           <span className="material-icons-outlined text-4xl mb-2">assignment</span>
-          <p className="text-sm font-medium">No task linked to this conversation</p>
+          <p className="text-sm font-medium">{taskNotFound ? 'This task has been removed' : 'No task linked to this conversation'}</p>
         </div>
       )}
     </div>
@@ -2655,7 +2671,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const displayContent = (isTaskGroup && !canAccessChat) ? taskDetailsGateView : mainContent;
 
   // When user clicks task group header: show Task Details in main chat area (with Back to chat)
-  const taskDetailsInMainView = effectiveTaskId ? (
+  const taskDetailsInMainView = showTaskContent ? (
     <div className="flex-1 flex flex-col bg-background-light dark:bg-background-dark h-full overflow-hidden">
       <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-border-light dark:border-border-dark bg-white/80 dark:bg-surface-dark/80 backdrop-blur-sm">
         <button
@@ -2668,7 +2684,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         </button>
       </div>
       <div className="flex-1 overflow-y-auto">
-        <TaskDetailsScreen embedded taskId={effectiveTaskId} />
+        <TaskDetailsScreen embedded taskId={effectiveTaskId!} />
       </div>
     </div>
   ) : null;
@@ -2687,7 +2703,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         <TaskDetailsModal
           visible={showTaskDetails}
           onClose={() => setShowTaskDetails(false)}
-          taskId={effectiveTaskId || undefined}
+          taskId={showTaskContent ? effectiveTaskId || undefined : undefined}
         />
         <TaskGroupDetailsModal
           visible={showTaskGroupDetails && !showAddMembersInline}
@@ -2722,7 +2738,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             <TaskDetailsModal
               visible={showTaskDetails}
               onClose={() => setShowTaskDetails(false)}
-              taskId={effectiveTaskId || undefined}
+              taskId={showTaskContent ? effectiveTaskId || undefined : undefined}
             />
 
             {/* New Chat Modal */}
@@ -2745,7 +2761,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           <TaskDetailsModal
             visible={showTaskDetails}
             onClose={() => setShowTaskDetails(false)}
-            taskId={effectiveTaskId || undefined}
+            taskId={showTaskContent ? effectiveTaskId || undefined : undefined}
           />
 
           {/* New Chat Modal */}
@@ -2775,7 +2791,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         <TaskDetailsModal
           visible={showTaskDetails}
           onClose={() => setShowTaskDetails(false)}
-          taskId={effectiveTaskId || undefined}
+          taskId={showTaskContent ? effectiveTaskId || undefined : undefined}
         />
 
         {/* Task Group Details Modal */}
@@ -2813,7 +2829,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       <TaskDetailsModal
         visible={showTaskDetails}
         onClose={() => setShowTaskDetails(false)}
-        taskId={effectiveTaskId || undefined}
+        taskId={showTaskContent ? effectiveTaskId || undefined : undefined}
       />
 
       {/* Task Group Details Modal */}

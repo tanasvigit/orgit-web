@@ -1,7 +1,7 @@
 import React from 'react';
 import { StatusBadge } from './StatusBadge';
 import { Avatar } from './Avatar';
-import { format } from 'date-fns';
+import { formatTaskDueLabel } from '../../utils/chatTime';
 
 interface TaskCardProps {
   id: string;
@@ -47,14 +47,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
   const formatDueDate = (date?: string) => {
     if (!date) return null;
-    const due = new Date(date);
-    const today = new Date();
-    const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (diffDays < 0) return 'Overdue';
-    if (diffDays === 0) return 'Today';
-    if (diffDays === 1) return 'Tomorrow';
-    return format(due, 'MMM d');
+    return formatTaskDueLabel(date);
   };
 
   return (

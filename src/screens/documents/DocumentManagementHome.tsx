@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { Button } from '../../components/shared';
 import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
+import { formatDocumentCreatedLabel, formatShortDate } from '../../utils/chatTime';
 
 export const DocumentManagementHome: React.FC = () => {
   const navigate = useNavigate();
@@ -285,11 +286,7 @@ export const DocumentManagementHome: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-medium">
-                      {new Date(instance.uploadedAt).toLocaleDateString('en-IN', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric'
-                      })}
+                      {formatShortDate(instance.uploadedAt)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end gap-1">
@@ -401,11 +398,7 @@ export const DocumentManagementHome: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-medium">
-                    {new Date(instance.createdAt).toLocaleDateString('en-IN', {
-                      day: '2-digit',
-                      month: 'short',
-                      year: 'numeric'
-                    })}
+                    {formatDocumentCreatedLabel(instance.createdAt)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex items-center justify-end gap-1">

@@ -453,11 +453,22 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     () => taskService.deleteTask(taskId!),
     {
       onSuccess: () => {
-        // Remove from caches and dashboard
-        queryClient.invalidateQueries(['task', taskId]);
+        const deletedId = taskId!;
+        queryClient.removeQueries(['task', deletedId]);
+        queryClient.setQueryData('tasks', (old: any) =>
+          Array.isArray(old) ? old.filter((t: any) => t?.id !== deletedId) : old
+        );
         queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['conversation-details']);
         queryClient.invalidateQueries(['dashboard']);
         queryClient.invalidateQueries(['dashboard-statistics']);
+        queryClient.invalidateQueries(['admin-dashboard']);
+        queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        void queryClient.refetchQueries({ queryKey: ['admin-dashboard'] });
+        void queryClient.refetchQueries({ queryKey: ['admin-dashboard-statistics'] });
+        void queryClient.refetchQueries({ queryKey: ['dashboard'] });
+        void queryClient.refetchQueries({ queryKey: ['dashboard-statistics'] });
         toast.success('Task deleted successfully');
         navigate(isAdmin ? '/admin/tasks' : '/tasks');
       },

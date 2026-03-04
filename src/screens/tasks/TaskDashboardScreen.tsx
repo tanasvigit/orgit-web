@@ -13,7 +13,7 @@ import { TaskGroupChatConversation } from '../messaging/TaskGroupChatConversatio
 import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
 import { taskBulkService } from '../../services/taskBulkService';
 import { isTaskDeleted } from '../../utils/taskUtils';
-import { format } from 'date-fns';
+import { formatChatListTimestamp, timestampToMs } from '../../utils/chatTime';
 
 /**
  * Derive task list status from task details (from getTask).
@@ -142,7 +142,7 @@ export const TaskDashboardScreen: React.FC = () => {
   }, [searchParams]);
 
   // Fetch conversations (all conversations)
-  const { data: conversations = [] } = useQuery(
+  const { data: conversations = [], isLoading: isConversationsLoading } = useQuery(
     'conversations',
     () => conversationService.getConversations(),
     {
@@ -151,7 +151,7 @@ export const TaskDashboardScreen: React.FC = () => {
   );
 
   // Fetch tasks directly (to show newly assigned tasks that might not have conversations yet)
-  const { data: directTasks = [] } = useQuery(
+  const { data: directTasks = [], isLoading: isDirectTasksLoading } = useQuery(
     'tasks',
     () => taskService.getTasks(),
     {
@@ -191,14 +191,25 @@ export const TaskDashboardScreen: React.FC = () => {
     [taskIdByConvId]
   );
 
-  // Fetch task details for each task (status comes from task details)
+  // Fetch task details for each task (status comes from task details). Do not retry 404 (deleted task).
   const taskDetailsQueries = useQueries(
     uniqueTaskIds.map((taskId) => ({
       queryKey: ['task', taskId],
       queryFn: () => taskService.getTask(taskId),
       enabled: !!taskId,
+      retry: (failureCount, error: any) => {
+        const status = error?.response?.status;
+        if (status === 404) return false;
+        return failureCount < 2;
+      },
     }))
   );
+
+  // Loading flags to control initial UI and prevent flicker
+  const isTaskDetailsLoading = taskDetailsQueries.some((q) => q.isLoading);
+  const isConversationDetailsLoading = detailsResults.some((q) => q.isLoading);
+  const isTaskGroupsLoading =
+    isConversationsLoading || isConversationDetailsLoading || isTaskDetailsLoading;
 
   // Map convId -> task (from task details). Use string keys so lookups work whether conv.id is number or string.
   const taskByConvId = useMemo(() => {
@@ -219,7 +230,7 @@ export const TaskDashboardScreen: React.FC = () => {
     return new Set(Object.values(taskIdByConvId).filter(Boolean));
   }, [taskIdByConvId]);
 
-  // Get tasks without conversations (newly assigned tasks)
+    // Get tasks without conversations (newly assigned tasks)
   const tasksWithoutConversations = useMemo(() => {
     if (!Array.isArray(directTasks)) return [];
     const currentUserId = user?.id || (user as any)?.userId;
@@ -260,17 +271,27 @@ export const TaskDashboardScreen: React.FC = () => {
 
     // Sort by created date (newest first)
     return filtered.sort((a: any, b: any) => {
-      const aTime = new Date(a.created_at || a.createdAt || 0).getTime();
-      const bTime = new Date(b.created_at || b.createdAt || 0).getTime();
+      const aTime = timestampToMs(a.created_at || a.createdAt || 0);
+      const bTime = timestampToMs(b.created_at || b.createdAt || 0);
       return bTime - aTime;
     });
   }, [directTasks, tasksWithConversations, user, searchQuery, statusFilter]);
 
-  // Filter task groups by search and by status (using task details). Hide deleted tasks from list (still visible in Messages with deleted indicator).
+  // Task IDs that failed to load (e.g. 404 = deleted) — exclude those convs from list
+  const failedTaskIds = useMemo(
+    () => new Set(
+      uniqueTaskIds.filter((taskId, i) => taskDetailsQueries[i]?.isError === true)
+    ),
+    [uniqueTaskIds, taskDetailsQueries]
+  );
+
+  // Filter task groups by search and by status (using task details). Hide deleted tasks and convs whose task no longer exists (404).
   const filteredTaskGroups = useMemo(() => {
     let filtered = taskGroups.filter(conv => {
       const convId = conv.id ?? conv.conversationId;
       const key = convId != null ? String(convId) : '';
+      const taskId = key ? taskIdByConvId[key] : undefined;
+      if (taskId && failedTaskIds.has(taskId)) return false;
       const task = key ? taskByConvId[key] : undefined;
       return !task || !isTaskDeleted(task);
     });
@@ -310,7 +331,7 @@ export const TaskDashboardScreen: React.FC = () => {
       const bTime = new Date(b.lastMessageTime || b.last_message_time || 0).getTime();
       return bTime - aTime;
     });
-  }, [taskGroups, searchQuery, statusFilter, taskByConvId]);
+  }, [taskGroups, searchQuery, statusFilter, taskByConvId, taskIdByConvId, failedTaskIds]);
 
   // Update conversation with new message (matching mobile pattern)
   const updateConversationWithNewMessage = (message: any) => {
@@ -777,7 +798,31 @@ export const TaskDashboardScreen: React.FC = () => {
 
       {/* Task Groups List */}
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-6">
-        {filteredTaskGroups.length > 0 ? (
+        {/* Loading state to avoid flicker / incorrect default actions */}
+        {isTaskGroupsLoading && (
+          <div>
+            <h3 className="flex items-center text-xs font-bold text-primary uppercase tracking-wider mb-3 px-2">
+              <span className="material-icons-round text-sm mr-1">groups</span>
+              Task Groups
+            </h3>
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-surface-dark animate-pulse flex items-center gap-3"
+                >
+                  <div className="w-12 h-12 rounded-xl bg-gray-200 dark:bg-gray-700" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 w-2/3 rounded bg-gray-200 dark:bg-gray-700" />
+                    <div className="h-2 w-1/2 rounded bg-gray-100 dark:bg-gray-800" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!isTaskGroupsLoading && filteredTaskGroups.length > 0 ? (
           <div>
             <h3 className="flex items-center text-xs font-bold text-primary uppercase tracking-wider mb-3 px-2">
               <span className="material-icons-round text-sm mr-1">groups</span>
@@ -793,28 +838,7 @@ export const TaskDashboardScreen: React.FC = () => {
                 const unreadCount = conv.unreadCount || conv.unread_count || 0;
                 const lastMessageTime = conv.lastMessageTime || conv.last_message_time;
                 
-                const formatTime = (dateString?: string) => {
-                  if (!dateString) return '';
-                  try {
-                    const date = new Date(dateString);
-                    const now = new Date();
-                    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
-                    
-                    if (diffInHours < 24) {
-                      return format(date, 'h:mm a');
-                    } else if (diffInHours < 48) {
-                      return 'Yesterday';
-                    } else if (diffInHours < 168) {
-                      return format(date, 'EEE');
-                    } else {
-                      return format(date, 'MMM d');
-                    }
-                  } catch {
-                    return '';
-                  }
-                };
-
-                const timeDisplay = formatTime(lastMessageTime);
+                const timeDisplay = lastMessageTime ? formatChatListTimestamp(lastMessageTime) : '';
                 const task = convId ? taskByConvId[String(convId)] : undefined;
                 const taskStatusCategory = getTaskStatusCategory(task);
                 const isSelected = selectedConversationId === convId;
@@ -823,11 +847,13 @@ export const TaskDashboardScreen: React.FC = () => {
                 const currentUserId = user?.id || (user as any)?.userId;
                 const creatorId = task?.created_by ?? task?.creator_id;
                 const isCreator = !!creatorId && creatorId === currentUserId;
-                const currentUserStatus = task?.current_user_status || task?.currentUserStatus || {};
-                const hasAccepted = currentUserStatus.has_accepted || false;
-                const hasRejected = currentUserStatus.has_rejected || false;
-                const canAccept = !isCreator && !hasAccepted && !hasRejected;
-                const canReject = !isCreator && !hasRejected && !hasAccepted;
+                const currentUserStatus =
+                  task && (task.current_user_status || (task as any).currentUserStatus);
+                const hasAccepted = !!(currentUserStatus && currentUserStatus.has_accepted);
+                const hasRejected = !!(currentUserStatus && currentUserStatus.has_rejected);
+                // Only show Accept / Reject once we have real status from API
+                const canAccept = !!task && !!currentUserStatus && !isCreator && !hasAccepted && !hasRejected;
+                const canReject = !!task && !!currentUserStatus && !isCreator && !hasRejected && !hasAccepted;
 
                 const handleTaskGroupAccept = async (e: React.MouseEvent) => {
                   e.stopPropagation();
@@ -981,7 +1007,7 @@ export const TaskDashboardScreen: React.FC = () => {
         ) : null}
 
         {/* Tasks Without Conversations (Newly Assigned) */}
-        {tasksWithoutConversations.length > 0 && (
+        {!isDirectTasksLoading && tasksWithoutConversations.length > 0 && (
           <div>
             <h3 className="flex items-center text-xs font-bold text-primary uppercase tracking-wider mb-3 px-2">
               <span className="material-icons-round text-sm mr-1">assignment</span>
@@ -995,11 +1021,15 @@ export const TaskDashboardScreen: React.FC = () => {
                 const currentUserId = user?.id || (user as any)?.userId;
                 const creatorId = task.created_by || task.creator_id;
                 const isCreator = creatorId === currentUserId;
-                const currentUserStatus = task.current_user_status || {};
-                const hasAccepted = currentUserStatus.has_accepted || false;
-                const hasRejected = currentUserStatus.has_rejected || false;
-                const canAccept = !isCreator && !hasAccepted && !hasRejected;
-                const canReject = !isCreator && !hasRejected && !hasAccepted;
+                const currentUserStatus =
+                  task.current_user_status || (task as any).currentUserStatus || null;
+                const hasAccepted = !!(currentUserStatus && currentUserStatus.has_accepted);
+                const hasRejected = !!(currentUserStatus && currentUserStatus.has_rejected);
+                // Only show Accept / Reject once we have a status object from API
+                const canAccept =
+                  !!currentUserStatus && !isCreator && !hasAccepted && !hasRejected;
+                const canReject =
+                  !!currentUserStatus && !isCreator && !hasRejected && !hasAccepted;
 
                 // Handle accept
                 const handleAccept = async (e: React.MouseEvent) => {
@@ -1113,7 +1143,7 @@ export const TaskDashboardScreen: React.FC = () => {
           </div>
         )}
 
-        {filteredTaskGroups.length === 0 && tasksWithoutConversations.length === 0 && (
+        {!isTaskGroupsLoading && !isDirectTasksLoading && filteredTaskGroups.length === 0 && tasksWithoutConversations.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 px-4">
             <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-4">
               <span className="material-icons-outlined text-4xl text-gray-400 dark:text-gray-600">

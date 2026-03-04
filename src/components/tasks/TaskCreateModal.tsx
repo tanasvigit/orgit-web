@@ -171,11 +171,13 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   );
   const allTitleServices = Array.isArray(taskServicesData) ? taskServicesData : [];
 
-  // Fetch client-service matrix so we know which services each client has
+  // Fetch client-service matrix so we know which services each client has.
+  // Use full matrix (recurring + one_time) so all enabled services for the
+  // selected client appear in Task Title suggestions.
   const { data: clientMatrixData } = useQuery(
     'client-service-matrix-for-task-create',
     async () => {
-      const res = await entityListService.matrix('recurring');
+      const res = await entityListService.matrix();
       return (res.data?.data || res.data || {}) as ServiceMatrixResponse;
     },
     { enabled: visible, staleTime: 5 * 60 * 1000 }

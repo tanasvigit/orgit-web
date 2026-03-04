@@ -62,8 +62,9 @@ export const entityListService = {
   ) =>
     api.put(`/admin/entities/${id}`, data),
   remove: (id: string) => api.delete(`/admin/entities/${id}`),
+  // Service matrix for the current user's organization (read-only, used by Admin + Employees)
   matrix: (type?: 'recurring' | 'one_time') =>
-    api.get('/admin/entities/matrix', { params: type ? { type } : undefined }),
+    api.get('/organization/client-matrix', { params: type ? { type } : undefined }),
   upsertClientServices: (clientId: string, items: Array<{ taskServiceId: string; frequency: TaskServiceFrequency }>) =>
     api.put(`/admin/entities/${clientId}/services`, { items }),
 };

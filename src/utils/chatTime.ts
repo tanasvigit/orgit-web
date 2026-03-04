@@ -176,3 +176,37 @@ export function formatChatListTimestamp(value: string | number | Date | null | u
     return d.toLocaleDateString('en-IN', { weekday: 'short', timeZone: 'Asia/Kolkata' });
   return formatShortDate(value);
 }
+
+/**
+ * Task created label – short date + time, reusing chat formatting.
+ */
+export function formatTaskCreatedLabel(value: string | number | Date | null | undefined): string {
+  const d = parseTimestamp(value);
+  if (!d) return '';
+  return `${formatShortDate(d)} · ${formatTimeHHMM(d)}`;
+}
+
+/**
+ * Task due label – Today / Tomorrow / weekday / Overdue / short date.
+ */
+export function formatTaskDueLabel(value: string | number | Date | null | undefined): string | null {
+  const d = parseTimestamp(value);
+  if (!d) return null;
+  const now = new Date();
+  const diffDays = Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) return 'Overdue';
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Tomorrow';
+  if (diffDays < 7) {
+    return d.toLocaleDateString('en-IN', { weekday: 'short', timeZone: 'Asia/Kolkata' });
+  }
+  return formatShortDate(d);
+}
+
+/**
+ * Document created label – short date, same as chat list.
+ */
+export function formatDocumentCreatedLabel(value: string | number | Date | null | undefined): string {
+  return formatShortDate(value);
+}

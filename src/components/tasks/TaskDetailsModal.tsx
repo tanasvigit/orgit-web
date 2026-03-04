@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { taskService } from '../../services/taskService';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { format } from 'date-fns';
+import { formatShortDate, formatTaskCreatedLabel } from '../../utils/chatTime';
 
 interface TaskDetailsModalProps {
   visible: boolean;
@@ -169,9 +169,22 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
     () => taskService.deleteTask(taskId!),
     {
       onSuccess: () => {
-        queryClient.invalidateQueries(['task', taskId]);
+        const deletedId = taskId!;
+        queryClient.removeQueries(['task', deletedId]);
+        queryClient.setQueryData('tasks', (old: any) =>
+          Array.isArray(old) ? old.filter((t: any) => t?.id !== deletedId) : old
+        );
         queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['conversation-details']);
         queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        queryClient.invalidateQueries(['admin-dashboard']);
+        queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        void queryClient.refetchQueries({ queryKey: ['admin-dashboard'] });
+        void queryClient.refetchQueries({ queryKey: ['admin-dashboard-statistics'] });
+        void queryClient.refetchQueries({ queryKey: ['dashboard'] });
+        void queryClient.refetchQueries({ queryKey: ['dashboard-statistics'] });
         toast.success('Task deleted successfully');
         onClose();
       },
@@ -198,11 +211,8 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Not set';
-    try {
-      return format(new Date(dateString), 'MMM dd, yyyy');
-    } catch {
-      return 'Invalid date';
-    }
+    const formatted = formatShortDate(dateString);
+    return formatted || 'Not set';
   };
 
   const getStatusLabel = (status: string) => {
@@ -263,10 +273,10 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
             </div>
             <h2 className="text-2xl md:text-3xl font-bold leading-tight text-gray-900 dark:text-white mb-4">{displayTask.title}</h2>
             <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-              <span className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-lg text-gray-400">calendar_today</span>
-                Created {formatDate(displayTask.created_at)}
-              </span>
+                <span className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-lg text-gray-400">calendar_today</span>
+                  Created {formatTaskCreatedLabel(displayTask.created_at)}
+                </span>
               {displayTask.id && (
                 <span className="flex items-center gap-2 text-gray-400 dark:text-gray-500">
                   <span className="text-gray-300 dark:text-gray-600">•</span>
