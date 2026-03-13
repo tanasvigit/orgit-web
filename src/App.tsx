@@ -22,6 +22,7 @@ const TaskGroupChatConversation = lazy(() => import('./screens/messaging/TaskGro
 const TaskCreationScreen = lazy(() => import('./screens/tasks/TaskCreationScreen').then(m => ({ default: m.TaskCreationScreen })));
 const TaskDashboardScreen = lazy(() => import('./screens/tasks/TaskDashboardScreen').then(m => ({ default: m.TaskDashboardScreen })));
 const TaskDetailsScreen = lazy(() => import('./screens/tasks/TaskDetailsScreen').then(m => ({ default: m.TaskDetailsScreen })));
+const TaskChatScreen = lazy(() => import('./screens/tasks/TaskChatScreen').then(m => ({ default: m.TaskChatScreen })));
 const DocumentManagementHome = lazy(() => import('./screens/documents/DocumentManagementHome').then(m => ({ default: m.DocumentManagementHome })));
 const DocumentLibrary = lazy(() => import('./screens/admin/documents/DocumentLibrary').then(m => ({ default: m.DocumentLibrary })));
 const CreateDocument = lazy(() => import('./screens/admin/documents/CreateDocument').then(m => ({ default: m.CreateDocument })));
@@ -265,6 +266,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Suspense fallback={<RouteFallback />}><TaskDetailsScreen /></Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/tasks/:taskId/chat"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<RouteFallback />}><TaskChatScreen /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -566,6 +575,14 @@ function App() {
               element={
                 <AdminProtectedRoute>
                   <Suspense fallback={<RouteFallback />}><TaskDetailsScreen /></Suspense>
+                </AdminProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/tasks/:taskId/chat"
+              element={
+                <AdminProtectedRoute>
+                  <Suspense fallback={<RouteFallback />}><TaskChatScreen /></Suspense>
                 </AdminProtectedRoute>
               }
             />

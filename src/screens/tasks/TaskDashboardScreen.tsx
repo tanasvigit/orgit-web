@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useQueries, useQueryClient, useMutation } from 'react-query';
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { conversationService } from '../../services/conversationService';
 import { taskService } from '../../services/taskService';
+import { dashboardService } from '../../services/dashboardService';
 import { masterDataService, TaskServiceItem } from '../../services/masterDataService';
+import { entityListService } from '../../services/entityListService';
 import { waitForSocketConnection } from '../../services/socketService';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -14,34 +16,9 @@ import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
 import { taskBulkService } from '../../services/taskBulkService';
 import { isTaskDeleted } from '../../utils/taskUtils';
 import { formatChatListTimestamp, timestampToMs } from '../../utils/chatTime';
+import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
 
-/**
- * Derive task list status from task details (from getTask).
- * Mirrors Task Details page logic: "In Progress" = any assignee has accepted (has_accepted / accepted_at).
- */
-function getTaskStatusCategory(task: any): StatusFilter | null {
-  if (!task) return null;
-  const status = (task.status || '').toLowerCase().replace(/\s+/g, '_');
-  const due = task.due_date || task.dueDate;
-  const now = Date.now();
-
-  if (status === 'completed') return 'completed';
-  if (due && new Date(due).getTime() < now) return 'overdue';
-  if (due) {
-    const daysUntil = (new Date(due).getTime() - now) / 86400000;
-    if (daysUntil >= 0 && daysUntil <= 3) return 'duesoon';
-  }
-  // In Progress: task-level status OR any assignee has accepted (same as Task Details page)
-  if (status === 'inprogress' || status === 'in_progress') return 'inprogress';
-  const statusForUser = task.current_user_status || task.currentUserStatus || {};
-  if (statusForUser.has_accepted || statusForUser.accepted_at) return 'inprogress';
-  const assignees = Array.isArray(task.assignees) ? task.assignees : [];
-  const anyAccepted = assignees.some(
-    (a: any) => a.accepted_at || a.has_accepted
-  );
-  if (anyAccepted) return 'inprogress';
-  return 'todo';
-}
+type TaskDashboardStatus = TaskStatusCategory;
 
 const STATUS_LABELS: Record<Exclude<StatusFilter, 'all'>, string> = {
   todo: 'To Do',
@@ -49,6 +26,7 @@ const STATUS_LABELS: Record<Exclude<StatusFilter, 'all'>, string> = {
   duesoon: 'Due Soon',
   overdue: 'Overdue',
   completed: 'Completed',
+  scheduled: 'Scheduled',
 };
 const STATUS_ICONS: Record<Exclude<StatusFilter, 'all'>, string> = {
   todo: 'today',
@@ -56,6 +34,7 @@ const STATUS_ICONS: Record<Exclude<StatusFilter, 'all'>, string> = {
   duesoon: 'schedule',
   overdue: 'priority_high',
   completed: 'task_alt',
+  scheduled: 'event',
 };
 const STATUS_COLORS: Record<Exclude<StatusFilter, 'all'>, string> = {
   todo: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
@@ -63,13 +42,14 @@ const STATUS_COLORS: Record<Exclude<StatusFilter, 'all'>, string> = {
   duesoon: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
   overdue: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300',
   completed: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
+  scheduled: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300',
 };
 
-export type StatusFilter = 'all' | 'todo' | 'overdue' | 'duesoon' | 'inprogress' | 'completed';
+export type StatusFilter = 'all' | TaskDashboardStatus;
+type ViewFilter = 'all' | 'self' | 'assigned';
 
 export const TaskDashboardScreen: React.FC = () => {
   const navigate = useNavigate();
-  const location = useLocation();
   const { conversationId: selectedConversationId } = useParams<{ conversationId?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
@@ -77,6 +57,7 @@ export const TaskDashboardScreen: React.FC = () => {
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin';
   const isAdminOrSuperAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  const enableBulkUploadUI = false;
   const [searchQuery, setSearchQuery] = useState('');
   const [isDownloadingTaskTemplate, setIsDownloadingTaskTemplate] = useState(false);
   const [isBulkUploadingTasks, setIsBulkUploadingTasks] = useState(false);
@@ -93,6 +74,17 @@ export const TaskDashboardScreen: React.FC = () => {
   const [rejectConvId, setRejectConvId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const socketRef = React.useRef<any>(null);
+
+  // Track first successful fetch instead of fetch transition (prevents showing stale cache on first paint).
+  const [hasConversationsFetchedSinceMount, setHasConversationsFetchedSinceMount] = useState(false);
+  const [hasTasksFetchedSinceMount, setHasTasksFetchedSinceMount] = useState(false);
+
+  // Scheduled indicator must come from backend lifecycle fields (DB),
+  // not from client-side date comparisons.
+  const getTaskStatusForFilter = (task: any): TaskDashboardStatus | null => {
+    if (!task) return null;
+    return getTaskStatusCategoryFromTask(task);
+  };
 
   // Fetch all task services (recurring + one_time) for search suggestions
   const { data: taskServicesData } = useQuery(
@@ -114,55 +106,177 @@ export const TaskDashboardScreen: React.FC = () => {
   );
   const allTaskServices: TaskServiceItem[] = Array.isArray(taskServicesData) ? taskServicesData : [];
 
-  // Google-like suggestions: when search focused with empty query show all services; when typing show filtered
+  // Fetch client matrix so Task Groups search can also suggest client/entity names
+  const { data: clientMatrixData } = useQuery(
+    'client-service-matrix-for-task-dashboard',
+    async () => {
+      const res = await entityListService.matrix();
+      return res.data?.data || res.data || {};
+    },
+    { staleTime: 5 * 60 * 1000 }
+  );
+  const clientMatrixClients = (clientMatrixData as any)?.clients || [];
+
+  // Google-like suggestions: show both Services and Clients
+  // When focused with empty query show top items; when typing filter by text
   const suggestions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
+
+    const serviceItems =
+      allTaskServices.map((s) => ({
+        id: s.id,
+        title: s.title,
+        frequency: (s as any).frequency,
+        type: 'service' as const,
+      })) || [];
+
+    const clientItems =
+      clientMatrixClients.map((c: any) => ({
+        id: c.id,
+        title: c.name,
+        code: c.code,
+        type: 'client' as const,
+      })) || [];
+
+    let combined = [...serviceItems, ...clientItems];
+
     if (q) {
-      return allTaskServices.filter((s) => (s.title || '').toLowerCase().includes(q));
+      combined = combined.filter((item) => (item.title || '').toLowerCase().includes(q));
     }
-    return allTaskServices.slice(0, 20);
-  }, [searchQuery, allTaskServices]);
+
+    return combined.slice(0, 25);
+  }, [searchQuery, allTaskServices, clientMatrixClients]);
 
   // Status filter from URL (dashboard card navigation) or local state
   const statusFromUrl = searchParams.get('status');
+  const viewFromUrl = searchParams.get('view');
+
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
     const v = (statusFromUrl || '').toLowerCase();
-    if (v === 'todo' || v === 'overdue' || v === 'duesoon' || v === 'inprogress' || v === 'completed') return v;
+    if (v === 'todo' || v === 'overdue' || v === 'duesoon' || v === 'inprogress' || v === 'completed' || v === 'scheduled') return v as StatusFilter;
     return 'all';
   });
 
-  // Sync filter from URL when navigating from dashboard (e.g. /tasks?status=todo)
+  const [viewFilter, setViewFilter] = useState<ViewFilter>(() => {
+    const v = (viewFromUrl || '').toLowerCase();
+    if (v === 'self' || v === 'assigned') return v as ViewFilter;
+    return 'all';
+  });
+
+  // Sync filters from URL when navigating from dashboard (e.g. /tasks?view=self&status=inprogress)
   useEffect(() => {
-    const v = (searchParams.get('status') || '').toLowerCase();
-    if (v === 'todo' || v === 'overdue' || v === 'duesoon' || v === 'inprogress' || v === 'completed') {
-      setStatusFilter(v);
+    const statusParam = (searchParams.get('status') || '').toLowerCase();
+    const viewParam = (searchParams.get('view') || '').toLowerCase();
+
+    if (statusParam === 'todo' || statusParam === 'overdue' || statusParam === 'duesoon' || statusParam === 'inprogress' || statusParam === 'completed' || statusParam === 'scheduled') {
+      setStatusFilter(statusParam as StatusFilter);
     } else {
       setStatusFilter('all');
     }
+
+    if (viewParam === 'self' || viewParam === 'assigned') {
+      setViewFilter(viewParam as ViewFilter);
+    } else {
+      setViewFilter('all');
+    }
   }, [searchParams]);
 
-  // Fetch conversations (all conversations)
-  const { data: conversations = [], isLoading: isConversationsLoading } = useQuery(
+  // Dashboard data for aligning Task Management filters with dashboard metrics
+  const { data: dashboardData } = useQuery(
+    ['task-dashboard-data'],
+    () => dashboardService.getDashboard(3),
+    {
+      staleTime: 30000,
+    }
+  );
+
+  const dashboardTaskIdsForFilter = useMemo(() => {
+    if (!dashboardData?.data) return null;
+    if (viewFilter === 'all') return null;
+
+    const sectionKey = viewFilter === 'self' ? 'selfTasks' : 'assignedTasks';
+    const section = (dashboardData.data as any)[sectionKey];
+    if (!section) return null;
+
+    // Scheduled is backend-driven (task_assignees.status = scheduled) and isn't present
+    // in dashboard buckets; treat it as client-side filter only.
+    if (statusFilter === 'scheduled') return null;
+
+    const statusKeyMap: Record<Exclude<Exclude<StatusFilter, 'all'>, 'scheduled'>, 'todo' | 'overdue' | 'dueSoon' | 'inProgress' | 'completed'> = {
+      todo: 'todo',
+      overdue: 'overdue',
+      duesoon: 'dueSoon',
+      inprogress: 'inProgress',
+      completed: 'completed',
+    };
+
+    const statuses: Exclude<Exclude<StatusFilter, 'all'>, 'scheduled'>[] =
+      statusFilter === 'all'
+        ? ['todo', 'overdue', 'duesoon', 'inprogress', 'completed']
+        : [statusFilter as Exclude<Exclude<StatusFilter, 'all'>, 'scheduled'>];
+
+    const ids = new Set<string>();
+
+    Object.values(section).forEach((categoryGroup: any) => {
+      if (!categoryGroup) return;
+      statuses.forEach((s) => {
+        const bucketKey = statusKeyMap[s];
+        const bucket = categoryGroup[bucketKey];
+        if (Array.isArray(bucket)) {
+          bucket.forEach((t: any) => {
+            if (t?.id) ids.add(String(t.id));
+          });
+        }
+      });
+    });
+
+    return ids;
+  }, [dashboardData, statusFilter, viewFilter]);
+
+  // Fetch conversations (all conversations).
+  // refetchOnMount: "always" + staleTime: 0 so we never render stale cached data on mount; fresh fetch runs first.
+  const { data: conversations = [], isLoading: isConversationsLoading, isFetching: isConversationsFetching } = useQuery(
     'conversations',
     () => conversationService.getConversations(),
     {
       refetchInterval: 30000, // Refetch every 30 seconds
+      refetchOnMount: 'always',
+      staleTime: 0,
+      keepPreviousData: false,
     }
   );
 
-  // Fetch tasks directly (to show newly assigned tasks that might not have conversations yet)
-  const { data: directTasks = [], isLoading: isDirectTasksLoading } = useQuery(
+  // Fetch tasks directly (to show newly assigned tasks that might not have conversations yet).
+  // refetchOnMount + staleTime: 0 so Pending Tasks never show stale cache (e.g. completed tasks).
+  const { data: directTasks = [], isLoading: isDirectTasksLoading, isFetching: isDirectTasksFetching } = useQuery(
     'tasks',
     () => taskService.getTasks(),
     {
       refetchInterval: 30000, // Refetch every 30 seconds
+      refetchOnMount: 'always',
+      staleTime: 0,
     }
   );
 
+  // Set "fetched since mount" when loading has finished and we have data (so we never render stale cache first).
+  useEffect(() => {
+    if (!isConversationsLoading && conversations) {
+      setHasConversationsFetchedSinceMount(true);
+    }
+  }, [isConversationsLoading, conversations]);
+  useEffect(() => {
+    if (!isDirectTasksLoading && directTasks) {
+      setHasTasksFetchedSinceMount(true);
+    }
+  }, [isDirectTasksLoading, directTasks]);
+
   // Filter to only task groups
   const taskGroups = useMemo(() => {
+    // Prevent rendering cached conversations on first mount
+    if (!hasConversationsFetchedSinceMount) return [];
+
     return conversations.filter(conv => conv.isTaskGroup || conv.is_task_group);
-  }, [conversations]);
+  }, [conversations, hasConversationsFetchedSinceMount]);
 
   // Fetch conversation details for each task group to get taskId (from task details page)
   const detailsResults = useQueries(
@@ -197,7 +311,7 @@ export const TaskDashboardScreen: React.FC = () => {
       queryKey: ['task', taskId],
       queryFn: () => taskService.getTask(taskId),
       enabled: !!taskId,
-      retry: (failureCount, error: any) => {
+      retry: (failureCount: number, error: any) => {
         const status = error?.response?.status;
         if (status === 404) return false;
         return failureCount < 2;
@@ -205,11 +319,19 @@ export const TaskDashboardScreen: React.FC = () => {
     }))
   );
 
-  // Loading flags to control initial UI and prevent flicker
+  // Loading flags to control initial UI and prevent flicker.
+  // Require "fetched since mount" so we never render stale cache on first paint (React Query can return cache before refetch starts).
   const isTaskDetailsLoading = taskDetailsQueries.some((q) => q.isLoading);
+  const isTaskDetailsFetching = taskDetailsQueries.some((q) => q.isFetching);
   const isConversationDetailsLoading = detailsResults.some((q) => q.isLoading);
+  const isConversationDetailsFetching = detailsResults.some((q) => q.isFetching);
   const isTaskGroupsLoading =
-    isConversationsLoading || isConversationDetailsLoading || isTaskDetailsLoading;
+    !hasConversationsFetchedSinceMount ||
+    (isConversationsLoading || isConversationsFetching) ||
+    (isConversationDetailsLoading || isConversationDetailsFetching) ||
+    (isTaskDetailsLoading || isTaskDetailsFetching);
+  const isPendingTasksLoading =
+    !hasTasksFetchedSinceMount || isDirectTasksLoading || isDirectTasksFetching;
 
   // Map convId -> task (from task details). Use string keys so lookups work whether conv.id is number or string.
   const taskByConvId = useMemo(() => {
@@ -232,6 +354,7 @@ export const TaskDashboardScreen: React.FC = () => {
 
     // Get tasks without conversations (newly assigned tasks)
   const tasksWithoutConversations = useMemo(() => {
+    if (!hasTasksFetchedSinceMount) return [];
     if (!Array.isArray(directTasks)) return [];
     const currentUserId = user?.id || (user as any)?.userId;
     let filtered = directTasks.filter((task: any) => {
@@ -261,12 +384,19 @@ export const TaskDashboardScreen: React.FC = () => {
       });
     }
 
-    // Apply status filter
+    // Status filter: always use per-user lifecycle categorization (same as mobile),
+    // and when coming from a dashboard card, additionally constrain to that section's task IDs.
     if (statusFilter !== 'all') {
       filtered = filtered.filter((task: any) => {
-        const category = getTaskStatusCategory(task);
-        return category === statusFilter;
+        const category = getTaskStatusForFilter(task);
+        if (category !== statusFilter) return false;
+        if (dashboardTaskIdsForFilter && dashboardTaskIdsForFilter.size > 0) {
+          return !!(task?.id && dashboardTaskIdsForFilter.has(String(task.id)));
+        }
+        return true;
       });
+    } else if (dashboardTaskIdsForFilter && dashboardTaskIdsForFilter.size > 0) {
+      filtered = filtered.filter((task: any) => task?.id && dashboardTaskIdsForFilter.has(String(task.id)));
     }
 
     // Sort by created date (newest first)
@@ -275,25 +405,50 @@ export const TaskDashboardScreen: React.FC = () => {
       const bTime = timestampToMs(b.created_at || b.createdAt || 0);
       return bTime - aTime;
     });
-  }, [directTasks, tasksWithConversations, user, searchQuery, statusFilter]);
+  }, [directTasks, tasksWithConversations, user, searchQuery, statusFilter, hasTasksFetchedSinceMount]);
 
   // Task IDs that failed to load (e.g. 404 = deleted) — exclude those convs from list
   const failedTaskIds = useMemo(
     () => new Set(
-      uniqueTaskIds.filter((taskId, i) => taskDetailsQueries[i]?.isError === true)
+      uniqueTaskIds.filter((_, i) => taskDetailsQueries[i]?.isError === true)
     ),
     [uniqueTaskIds, taskDetailsQueries]
   );
 
   // Filter task groups by search and by status (using task details). Hide deleted tasks and convs whose task no longer exists (404).
+  // Guard: do not run until a fetch has completed since mount and all dependent queries are done; avoids stale cache on reload.
   const filteredTaskGroups = useMemo(() => {
-    let filtered = taskGroups.filter(conv => {
+    if (
+      !hasConversationsFetchedSinceMount ||
+      isConversationsLoading ||
+      isConversationsFetching ||
+      isConversationDetailsLoading ||
+      isConversationDetailsFetching ||
+      isTaskDetailsLoading ||
+      isTaskDetailsFetching
+    ) {
+      return [];
+    }
+      let filtered = taskGroups.filter(conv => {
       const convId = conv.id ?? conv.conversationId;
       const key = convId != null ? String(convId) : '';
       const taskId = key ? taskIdByConvId[key] : undefined;
       if (taskId && failedTaskIds.has(taskId)) return false;
       const task = key ? taskByConvId[key] : undefined;
-      return !task || !isTaskDeleted(task);
+      if (task && isTaskDeleted(task)) return false;
+
+      // Align with dashboard metric selection (Self / Assigned + status),
+      // but always respect per-user lifecycle status (same logic as for direct tasks).
+      if (dashboardTaskIdsForFilter && dashboardTaskIdsForFilter.size > 0) {
+        if (!(task?.id && dashboardTaskIdsForFilter.has(String(task.id)))) return false;
+        if (statusFilter !== 'all') {
+          const category = getTaskStatusForFilter(task);
+          return category === statusFilter;
+        }
+        return true;
+      }
+
+      return true;
     });
 
     // Apply search filter
@@ -309,15 +464,17 @@ export const TaskDashboardScreen: React.FC = () => {
       });
     }
 
-    // Apply status filter using task details
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(conv => {
-        const convId = conv.id ?? conv.conversationId;
-        const key = convId != null ? String(convId) : '';
-        const task = key ? taskByConvId[key] : undefined;
-        const category = getTaskStatusCategory(task);
-        return category === statusFilter;
-      });
+    // When not driven by a dashboard metric, apply local status categorization
+    if (!dashboardTaskIdsForFilter || dashboardTaskIdsForFilter.size === 0) {
+      if (statusFilter !== 'all') {
+        filtered = filtered.filter(conv => {
+          const convId = conv.id ?? conv.conversationId;
+          const key = convId != null ? String(convId) : '';
+          const task = key ? taskByConvId[key] : undefined;
+          const category = getTaskStatusForFilter(task);
+          return category === statusFilter;
+        });
+      }
     }
 
     // Sort: pinned first, then by last message time
@@ -331,7 +488,22 @@ export const TaskDashboardScreen: React.FC = () => {
       const bTime = new Date(b.lastMessageTime || b.last_message_time || 0).getTime();
       return bTime - aTime;
     });
-  }, [taskGroups, searchQuery, statusFilter, taskByConvId, taskIdByConvId, failedTaskIds]);
+  }, [
+    taskGroups,
+    searchQuery,
+    statusFilter,
+    taskByConvId,
+    taskIdByConvId,
+    failedTaskIds,
+    dashboardTaskIdsForFilter,
+    hasConversationsFetchedSinceMount,
+    isConversationsLoading,
+    isConversationsFetching,
+    isConversationDetailsLoading,
+    isConversationDetailsFetching,
+    isTaskDetailsLoading,
+    isTaskDetailsFetching,
+  ]);
 
   // Update conversation with new message (matching mobile pattern)
   const updateConversationWithNewMessage = (message: any) => {
@@ -517,11 +689,14 @@ export const TaskDashboardScreen: React.FC = () => {
 
   const setStatusFilterAndUrl = (filter: StatusFilter) => {
     setStatusFilter(filter);
-    if (filter === 'all') {
-      setSearchParams({});
-    } else {
-      setSearchParams({ status: filter });
+    const params: Record<string, string> = {};
+    if (filter !== 'all') {
+      params.status = filter;
     }
+    if (viewFilter !== 'all') {
+      params.view = viewFilter;
+    }
+    setSearchParams(params);
   };
 
   const handleDownloadTaskTemplate = async () => {
@@ -541,8 +716,21 @@ export const TaskDashboardScreen: React.FC = () => {
     {
       onSuccess: async (res) => {
         const data = res.data?.data;
+        // If backend returns validationErrors, surface them immediately (mapping/format issues).
+        if (data?.validationErrors && Array.isArray(data.validationErrors) && data.validationErrors.length > 0) {
+          data.validationErrors.slice(0, 8).forEach((e: any) => {
+            const msg = e?.message || 'Validation error';
+            toast.error(msg);
+          });
+          if (data.validationErrors.length > 8) {
+            toast.error(`… and ${data.validationErrors.length - 8} more validation error(s)`);
+          }
+        }
+
         if (!data?.uploadId) {
+          toast.error('Upload was rejected. Please fix the template errors and re-upload.');
           if (bulkTaskFileInputRef.current) bulkTaskFileInputRef.current.value = '';
+          setIsBulkUploadingTasks(false);
           return;
         }
         try {
@@ -551,7 +739,7 @@ export const TaskDashboardScreen: React.FC = () => {
             toast.success(`Processed ${status.processedCount} of ${status.totalRows} task(s).`);
           }
           if (status.failedCount > 0) {
-            toast.warning(`${status.failedCount} row(s) failed.`);
+            toast.info(`${status.failedCount} row(s) failed.`);
           }
           if (status.errors?.length) {
             status.errors.slice(0, 5).forEach((e: { rowIndex: number; message: string }) =>
@@ -572,9 +760,6 @@ export const TaskDashboardScreen: React.FC = () => {
       onError: (error: any) => {
         toast.error(error.response?.data?.error || error.message || 'Upload failed');
         setIsBulkUploadingTasks(false);
-      },
-      onSettled: (data, error) => {
-        if (error || !data?.data?.uploadId) setIsBulkUploadingTasks(false);
       },
     }
   );
@@ -698,11 +883,24 @@ export const TaskDashboardScreen: React.FC = () => {
                         : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800/50'
                     }`}
                   >
-                    <span className="material-icons-outlined text-[22px] text-gray-400 dark:text-gray-500 shrink-0">search</span>
-                    <span className="font-medium truncate">{item.title}</span>
-                    {item.frequency && (
-                      <span className="ml-auto text-xs text-gray-500 dark:text-gray-400 shrink-0">{item.frequency}</span>
-                    )}
+                    <span className="material-icons-outlined text-[22px] text-gray-400 dark:text-gray-500 shrink-0">
+                      {item.type === 'client' ? 'business' : 'assignment'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium truncate block">
+                        {item.title}
+                      </span>
+                      {item.type === 'client' && item.code && (
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate block">
+                          Client • {item.code}
+                        </span>
+                      )}
+                      {item.type === 'service' && item.frequency && (
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate block">
+                          Service • {item.frequency}
+                        </span>
+                      )}
+                    </div>
                   </button>
                 ))}
               </div>
@@ -716,46 +914,47 @@ export const TaskDashboardScreen: React.FC = () => {
             <span className="material-icons-outlined text-sm text-gray-500 dark:text-gray-400"></span>
             <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide"></span>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {([
-              { key: 'all', label: 'All', icon: 'apps', color: 'gray' },
-              { key: 'todo', label: 'To Do', icon: 'today', color: 'blue' },
-              { key: 'inprogress', label: 'In Progress', icon: 'pending_actions', color: 'purple' },
-              { key: 'duesoon', label: 'Due Soon', icon: 'schedule', color: 'orange' },
-              { key: 'overdue', label: 'Overdue', icon: 'priority_high', color: 'red' },
-              { key: 'completed', label: 'Completed', icon: 'check_circle', color: 'green' },
-            ] as const).map(({ key, label, icon, color }) => {
-              const isActive = statusFilter === key;
-              const colorClasses = {
-                gray: isActive ? 'bg-gray-600 text-white border-gray-600' : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700',
-                blue: isActive ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/30' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-                purple: isActive ? 'bg-purple-600 text-white border-purple-600 shadow-purple-500/30' : 'bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800',
-                orange: isActive ? 'bg-orange-600 text-white border-orange-600 shadow-orange-500/30' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800',
-                red: isActive ? 'bg-red-600 text-white border-red-600 shadow-red-500/30' : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800',
-                green: isActive ? 'bg-green-600 text-white border-green-600 shadow-green-500/30' : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800',
-              };
+          <div className="flex flex-nowrap gap-1 w-full overflow-x-auto pb-1 -mx-3 px-3">
+              {([
+                { key: 'all', label: 'All', color: 'gray' },
+                { key: 'todo', label: 'To Do', color: 'blue' },
+                { key: 'inprogress', label: 'In Progress', color: 'purple' },
+                { key: 'duesoon', label: 'Due Soon', color: 'orange' },
+                { key: 'overdue', label: 'Overdue', color: 'red' },
+                { key: 'completed', label: 'Completed', color: 'green' },
+                { key: 'scheduled', label: 'Scheduled', color: 'indigo' },
+              ] as const).map(({ key, label, color }) => {
+                const isActive = statusFilter === key;
+                const colorClasses = {
+                  gray: isActive ? 'bg-gray-600 text-white border-gray-600' : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700',
+                  blue: isActive ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/30' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                  indigo: isActive ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo-500/30' : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+                  purple: isActive ? 'bg-purple-600 text-white border-purple-600 shadow-purple-500/30' : 'bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+                  orange: isActive ? 'bg-orange-600 text-white border-orange-600 shadow-orange-500/30' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800',
+                  red: isActive ? 'bg-red-600 text-white border-red-600 shadow-red-500/30' : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800',
+                  green: isActive ? 'bg-green-600 text-white border-green-600 shadow-green-500/30' : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800',
+                };
 
-              return (
-                <button
-                  key={key}
-                  onClick={() => setStatusFilterAndUrl(key as StatusFilter)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-all duration-200 hover:scale-105 active:scale-95 ${
-                    isActive
-                      ? `${colorClasses[color]} shadow-lg`
-                      : `${colorClasses[color]} hover:shadow-md`
-                  }`}
-                >
-                  <span className="material-icons-outlined text-sm">{icon}</span>
-                  <span>{label}</span>
-                </button>
-              );
-            })}
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setStatusFilterAndUrl(key as StatusFilter)}
+                    className={`shrink-0 flex items-center px-2 py-1 rounded-full text-[9px] font-semibold border transition-all duration-200 hover:scale-105 active:scale-95 ${
+                      isActive
+                        ? `${colorClasses[color]} shadow-lg`
+                        : `${colorClasses[color]} hover:shadow-md`
+                    }`}
+                  >
+                    <span>{label}</span>
+                  </button>
+                );
+              })}
           </div>
         </div>
       </div>
 
       {/* Bulk Upload Tasks - Admin/Super Admin only */}
-      {isAdminOrSuperAdmin && (
+      {isAdminOrSuperAdmin && enableBulkUploadUI && (
         <div className="px-4 pb-3">
           <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 p-4">
             <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
@@ -840,61 +1039,8 @@ export const TaskDashboardScreen: React.FC = () => {
                 
                 const timeDisplay = lastMessageTime ? formatChatListTimestamp(lastMessageTime) : '';
                 const task = convId ? taskByConvId[String(convId)] : undefined;
-                const taskStatusCategory = getTaskStatusCategory(task);
+                const taskStatusCategory = getTaskStatusForFilter(task);
                 const isSelected = selectedConversationId === convId;
-
-                // Same flow as Create Task assignees (Pending Tasks): TODO + Accept/Reject for Add Member assignees
-                const currentUserId = user?.id || (user as any)?.userId;
-                const creatorId = task?.created_by ?? task?.creator_id;
-                const isCreator = !!creatorId && creatorId === currentUserId;
-                const currentUserStatus =
-                  task && (task.current_user_status || (task as any).currentUserStatus);
-                const hasAccepted = !!(currentUserStatus && currentUserStatus.has_accepted);
-                const hasRejected = !!(currentUserStatus && currentUserStatus.has_rejected);
-                // Only show Accept / Reject once we have real status from API
-                const canAccept = !!task && !!currentUserStatus && !isCreator && !hasAccepted && !hasRejected;
-                const canReject = !!task && !!currentUserStatus && !isCreator && !hasRejected && !hasAccepted;
-
-                const handleTaskGroupAccept = async (e: React.MouseEvent) => {
-                  e.stopPropagation();
-                  const taskId = task?.id || (convId ? taskIdByConvId[convId] : undefined);
-                  if (!taskId) return;
-                  try {
-                    await taskService.acceptTask(taskId);
-                    toast.success('Task accepted');
-                    queryClient.invalidateQueries('tasks');
-                    queryClient.invalidateQueries('conversations');
-                    queryClient.invalidateQueries(['task', taskId]);
-                    queryClient.invalidateQueries(['conversation-details', convId]);
-                    queryClient.invalidateQueries(['dashboard']);
-                    queryClient.invalidateQueries(['dashboard-statistics']);
-                    queryClient.invalidateQueries(['admin-dashboard']);
-                    queryClient.invalidateQueries(['admin-dashboard-statistics']);
-                    const dashboardPath = isAdmin ? '/admin' : '/dashboard';
-                    navigate(dashboardPath, {
-                      state: {
-                        animateTaskTransition: true,
-                        taskId,
-                        fromStatus: 'todo',
-                        toStatus: 'inprogress',
-                        taskSection: isCreator ? 'self' : 'assigned',
-                      },
-                    });
-                  } catch (error: any) {
-                    toast.error(error.response?.data?.error || 'Failed to accept task');
-                  }
-                };
-
-                const handleTaskGroupReject = (e: React.MouseEvent) => {
-                  e.stopPropagation();
-                  const taskId = task?.id || (convId ? taskIdByConvId[convId] : undefined);
-                  if (!taskId) return;
-                  setRejectTaskId(taskId);
-                  setRejectConvId(convId || null);
-                  setRejectTaskTitle(convName || 'Task');
-                  setRejectReason('');
-                  setShowRejectModal(true);
-                };
 
                 return (
                   <div
@@ -905,6 +1051,7 @@ export const TaskDashboardScreen: React.FC = () => {
                         : 'border-transparent hover:border-gray-200 dark:hover:border-gray-700'
                     }`}
                     onClick={() => {
+                      // Open chat inside Task Dashboard (right panel), do not redirect to Messages module
                       navigate(isAdmin ? `/admin/tasks/task-group/${convId}` : `/tasks/task-group/${convId}`);
                     }}
                   >
@@ -938,7 +1085,7 @@ export const TaskDashboardScreen: React.FC = () => {
                             <span className="text-xs text-gray-400 dark:text-gray-500">{timeDisplay}</span>
                           )}
                           {/* Task status indicator - top right of card (from task details) */}
-                          {taskStatusCategory && taskStatusCategory !== 'all' && (
+                          {taskStatusCategory && (
                             <span
                               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide mt-0.5 ${STATUS_COLORS[taskStatusCategory]}`}
                               title={STATUS_LABELS[taskStatusCategory]}
@@ -966,38 +1113,6 @@ export const TaskDashboardScreen: React.FC = () => {
                           <p className="text-xs text-gray-400 dark:text-gray-500 italic">No messages yet</p>
                         )}
                       </div>
-                      {/* Same flow as Create Task → Pending Tasks: TODO with Accept/Reject for Add Member assignees */}
-                      {(canAccept || canReject) && (
-                        <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
-                          {canAccept && (
-                            <button
-                              onClick={handleTaskGroupAccept}
-                              className="flex-1 px-3 py-1.5 bg-primary hover:bg-primary/90 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1"
-                            >
-                              <span className="material-icons-outlined text-sm">check</span>
-                              Accept
-                            </button>
-                          )}
-                          {canReject && (
-                            <button
-                              onClick={handleTaskGroupReject}
-                              className="flex-1 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1"
-                            >
-                              <span className="material-icons-outlined text-sm">close</span>
-                              Reject
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      {(hasAccepted || hasRejected) && (
-                        <div className="mt-2">
-                          <span className={`text-xs font-medium ${
-                            hasAccepted ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                          }`}>
-                            {hasAccepted ? '✓ Accepted' : '✗ Rejected'}
-                          </span>
-                        </div>
-                      )}
                     </div>
                   </div>
                 );
@@ -1006,144 +1121,74 @@ export const TaskDashboardScreen: React.FC = () => {
           </div>
         ) : null}
 
-        {/* Tasks Without Conversations (Newly Assigned) */}
-        {!isDirectTasksLoading && tasksWithoutConversations.length > 0 && (
-          <div>
-            <h3 className="flex items-center text-xs font-bold text-primary uppercase tracking-wider mb-3 px-2">
-              <span className="material-icons-round text-sm mr-1">assignment</span>
-              Pending Tasks ({tasksWithoutConversations.length})
-            </h3>
-            <div className="space-y-1">
-              {tasksWithoutConversations.map((task: any) => {
-                const taskId = task.id;
-                const taskTitle = task.title || 'Untitled Task';
-                const taskStatusCategory = getTaskStatusCategory(task);
-                const currentUserId = user?.id || (user as any)?.userId;
-                const creatorId = task.created_by || task.creator_id;
-                const isCreator = creatorId === currentUserId;
-                const currentUserStatus =
-                  task.current_user_status || (task as any).currentUserStatus || null;
-                const hasAccepted = !!(currentUserStatus && currentUserStatus.has_accepted);
-                const hasRejected = !!(currentUserStatus && currentUserStatus.has_rejected);
-                // Only show Accept / Reject once we have a status object from API
-                const canAccept =
-                  !!currentUserStatus && !isCreator && !hasAccepted && !hasRejected;
-                const canReject =
-                  !!currentUserStatus && !isCreator && !hasRejected && !hasAccepted;
-
-                // Handle accept
-                const handleAccept = async (e: React.MouseEvent) => {
-                  e.stopPropagation();
-                  try {
-                    await taskService.acceptTask(taskId);
-                    toast.success('Task accepted');
-                    queryClient.invalidateQueries('tasks');
-                    queryClient.invalidateQueries('conversations');
-                    queryClient.invalidateQueries(['task', taskId]);
-                    queryClient.invalidateQueries(['dashboard']);
-                    queryClient.invalidateQueries(['dashboard-statistics']);
-                    queryClient.invalidateQueries(['admin-dashboard']);
-                    queryClient.invalidateQueries(['admin-dashboard-statistics']);
-                    const dashboardPath = isAdmin ? '/admin' : '/dashboard';
-                    navigate(dashboardPath, {
-                      state: {
-                        animateTaskTransition: true,
-                        taskId,
-                        fromStatus: 'todo',
-                        toStatus: 'inprogress',
-                        taskSection: isCreator ? 'self' : 'assigned',
-                      },
-                    });
-                  } catch (error: any) {
-                    toast.error(error.response?.data?.error || 'Failed to accept task');
-                  }
-                };
-
-                // Handle reject — open styled modal instead of prompt
-                const handleReject = (e: React.MouseEvent) => {
-                  e.stopPropagation();
-                  setRejectTaskId(taskId);
-                  setRejectConvId(null);
-                  setRejectTaskTitle(taskTitle);
-                  setRejectReason('');
-                  setShowRejectModal(true);
-                };
-
-                return (
-                  <div
-                    key={taskId}
-                    className="group p-3 rounded-xl transition-all duration-200 border border-gray-200 dark:border-gray-700 hover:bg-white dark:hover:bg-surface-dark hover:shadow-md"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="flex-shrink-0">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 dark:from-amber-600 dark:to-amber-700 flex items-center justify-center shadow-sm">
-                          <span className="material-icons-round text-white text-2xl">
-                            assignment
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-start gap-2 mb-1">
-                          <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate flex-1 min-w-0">
-                            {taskTitle}
-                          </h4>
-                          {taskStatusCategory && taskStatusCategory !== 'all' && (
-                            <span
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${STATUS_COLORS[taskStatusCategory]}`}
-                            >
-                              <span className="material-icons-outlined" style={{ fontSize: '10px' }}>
-                                {STATUS_ICONS[taskStatusCategory]}
-                              </span>
-                              {STATUS_LABELS[taskStatusCategory]}
-                            </span>
-                          )}
-                        </div>
-                        {task.description && (
-                          <p className="text-xs text-gray-600 dark:text-gray-400 truncate mb-2">
-                            {task.description.length > 80 ? `${task.description.substring(0, 80)}...` : task.description}
-                          </p>
-                        )}
-                        {(canAccept || canReject) && (
-                          <div className="flex gap-2 mt-2">
-                            {canAccept && (
-                              <button
-                                onClick={handleAccept}
-                                className="flex-1 px-3 py-1.5 bg-primary hover:bg-primary/90 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1"
-                              >
-                                <span className="material-icons-outlined text-sm">check</span>
-                                Accept
-                              </button>
-                            )}
-                            {canReject && (
-                              <button
-                                onClick={handleReject}
-                                className="flex-1 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1"
-                              >
-                                <span className="material-icons-outlined text-sm">close</span>
-                                Reject
-                              </button>
-                            )}
-                          </div>
-                        )}
-                        {(hasAccepted || hasRejected) && (
-                          <div className="mt-2">
-                            <span className={`text-xs font-medium ${
-                              hasAccepted ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                            }`}>
-                              {hasAccepted ? '✓ Accepted' : '✗ Rejected'}
-                            </span>
-                          </div>
-                        )}
+        {/* Tasks that the current user is assigned to but which are not yet visible as task groups.
+            These are already filtered by status/search/dashboardTaskIdsForFilter above,
+            so they stay in sync with dashboard counts. Accept / Reject is handled from chat. */}
+        {!isPendingTasksLoading && tasksWithoutConversations.length > 0 && (
+          <div className="space-y-1">
+            {tasksWithoutConversations.map((task: any) => {
+              const taskId = task.id;
+              const taskTitle = task.title || 'Untitled Task';
+              const taskStatusCategory = getTaskStatusForFilter(task);
+              const taskConversationId = task.conversation_id || task.conversationId;
+              return (
+                <div
+                  key={taskId}
+                  className="group p-3 rounded-xl transition-all duration-200 border border-gray-200 dark:border-gray-700 hover:bg-white dark:hover:bg-surface-dark hover:shadow-md cursor-pointer"
+                  onClick={() => {
+                    if (taskConversationId) {
+                      // Open chat inside Task Dashboard (right panel)
+                      navigate(
+                        isAdmin
+                          ? `/admin/tasks/task-group/${taskConversationId}`
+                          : `/tasks/task-group/${taskConversationId}`
+                      );
+                    } else {
+                      // No conversation yet: open task details
+                      navigate(isAdmin ? `/admin/tasks/${taskId}` : `/tasks/${taskId}`);
+                    }
+                  }}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0">
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 dark:from-amber-600 dark:to-amber-700 flex items-center justify-center shadow-sm">
+                        <span className="material-icons-round text-white text-2xl">
+                          assignment
+                        </span>
                       </div>
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start gap-2 mb-1">
+                        <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate flex-1 min-w-0">
+                          {taskTitle}
+                        </h4>
+                        {taskStatusCategory && (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${STATUS_COLORS[taskStatusCategory]}`}
+                          >
+                            <span className="material-icons-outlined" style={{ fontSize: '10px' }}>
+                              {STATUS_ICONS[taskStatusCategory]}
+                            </span>
+                            {STATUS_LABELS[taskStatusCategory]}
+                          </span>
+                        )}
+                      </div>
+                      {task.description && (
+                        <p className="text-xs text-gray-600 dark:text-gray-400 truncate mb-2">
+                          {task.description.length > 80
+                            ? `${task.description.substring(0, 80)}...`
+                            : task.description}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
-        {!isTaskGroupsLoading && !isDirectTasksLoading && filteredTaskGroups.length === 0 && tasksWithoutConversations.length === 0 && (
+        {!isTaskGroupsLoading && !isPendingTasksLoading && filteredTaskGroups.length === 0 && tasksWithoutConversations.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 px-4">
             <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-4">
               <span className="material-icons-outlined text-4xl text-gray-400 dark:text-gray-600">

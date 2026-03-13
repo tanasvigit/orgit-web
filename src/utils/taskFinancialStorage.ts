@@ -1,6 +1,6 @@
 /**
  * Store task financial_value / finance_type in localStorage (API does not persist these).
- * Used so "Financial Report (Created by Me)" can show tasks created with financial data.
+ * Used so "Financial Report " can show tasks created with financial data.
  */
 const STORAGE_KEY = 'orgit_task_financial';
 

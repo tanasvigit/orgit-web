@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { format } from 'date-fns';
 import { Avatar } from '../shared';
+import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
 
 interface TaskGroupDetailsModalProps {
   visible: boolean;
@@ -172,17 +173,19 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
     );
   };
 
-  const getStatusColor = (status?: string) => {
-    switch (status?.toLowerCase()) {
+  const getStatusColorForCategory = (category: TaskStatusCategory | null | undefined) => {
+    switch (category) {
       case 'completed':
         return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
-      case 'in_progress':
+      case 'scheduled':
+        return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300';
       case 'inprogress':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
-      case 'pending':
+      case 'duesoon':
         return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300';
       case 'overdue':
         return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+      case 'todo':
       default:
         return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
     }
@@ -336,18 +339,38 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
                 </div>
               </div>
 
-              {/* Status - Optional but visible if available */}
+              {/* Status - Optional but visible if available; use unified dashboard-style categorization */}
               {task.status && (
                 <div className="flex items-center gap-4 flex-wrap pt-2">
                   <div>
                     <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Status</label>
+                    {(() => {
+                      const category = getTaskStatusCategoryFromTask(task) as TaskStatusCategory;
+                      const label = (() => {
+                        switch (category) {
+                          case 'todo':
+                            return 'TODO';
+                          case 'inprogress':
+                            return 'In Progress';
+                          case 'duesoon':
+                            return 'Due Soon';
+                          case 'overdue':
+                            return 'Overdue';
+                          case 'completed':
+                            return 'Completed';
+                          default:
+                            return (task.status || '').toString().replace('_', ' ').toUpperCase();
+                        }
+                      })();
+                      const chipClass = getStatusColorForCategory(category);
+                      return (
                     <span
-                      className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(
-                        task.status
-                      )}`}
-                    >
-                      {task.status.replace('_', ' ').toUpperCase()}
-                    </span>
+                        className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${chipClass}`}
+                      >
+                        {label}
+                      </span>
+                      );
+                    })()}
                   </div>
                 </div>
               )}

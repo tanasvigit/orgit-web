@@ -1,6 +1,6 @@
 import React from 'react';
 
-type StatusType = 'overdue' | 'duesoon' | 'inprogress' | 'completed';
+type StatusType = 'scheduled' | 'overdue' | 'duesoon' | 'inprogress' | 'completed';
 
 interface StatusBadgeProps {
   status: StatusType;
@@ -8,6 +8,11 @@ interface StatusBadgeProps {
 }
 
 const statusConfig: Record<StatusType, { bg: string; text: string; label: string }> = {
+  scheduled: {
+    bg: 'bg-indigo-500/10',
+    text: 'text-indigo-600 dark:text-indigo-300',
+    label: 'Scheduled',
+  },
   overdue: {
     bg: 'bg-status-overdue/10',
     text: 'text-status-overdue',

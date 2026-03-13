@@ -8,7 +8,9 @@ import { useToast } from '../../context/ToastContext';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { conversationService } from '../../services/conversationService';
+import { messageService } from '../../services/messageService';
 import { Avatar } from '../../components/shared';
+import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
 
 interface TaskDetailsScreenProps {
   /** When true, render only the task details content (no layout). Used when embedding in task group gate view. */
@@ -28,6 +30,7 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
   const [showRejectModal, setShowRejectModal] = useState(location.state?.showReject || false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [hasAcceptedLocally, setHasAcceptedLocally] = useState(false);
   const [verifyingUserId, setVerifyingUserId] = useState<string | null>(null);
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -82,20 +85,6 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     [rejectedStorageKey]
   );
 
-  const removeRejectedTaskId = React.useCallback(
-    (tid: string) => {
-      try {
-        const raw = localStorage.getItem(rejectedStorageKey);
-        const existing = raw ? (JSON.parse(raw) as string[]) : [];
-        const next = (existing || []).filter((id) => id !== tid);
-        localStorage.setItem(rejectedStorageKey, JSON.stringify(next));
-      } catch {
-        // ignore storage failures
-      }
-    },
-    [rejectedStorageKey]
-  );
-
   const removeTaskFromCachedLists = React.useCallback(
     (tid: string) => {
       // Our task list screen uses query keys ['tasks', 'one_time'] and ['tasks', 'recurring'].
@@ -110,75 +99,27 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     [queryClient]
   );
 
-  // Accept task mutation
-  const acceptTaskMutation = useMutation(
-    () => taskService.acceptTask(taskId!),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(['task', taskId]);
-        // Invalidate all task list queries (e.g. ['tasks', 'one_time'], ['tasks', 'recurring'])
-        queryClient.invalidateQueries('tasks');
-        queryClient.invalidateQueries(['dashboard']);
-        queryClient.invalidateQueries(['admin-dashboard']);
-        queryClient.invalidateQueries(['admin-dashboard-statistics']);
-        if (taskId) {
-          removeRejectedTaskId(taskId);
-        }
-        // Always redirect to dashboard with animation state
-        const dashboardPath = isAdmin ? '/admin' : '/dashboard';
-        navigate(dashboardPath, {
-          state: {
-            animateTaskTransition: true,
-            taskId: taskId,
-            fromStatus: 'todo',
-            toStatus: 'inprogress',
-            taskSection: isCreator ? 'self' : 'assigned',
-          },
-        });
-      }
-    }
-  );
-
-  // Reject task mutation
-  const rejectTaskMutation = useMutation(
-    (reason: string) => taskService.rejectTask(taskId!, reason),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(['task', taskId]);
-        queryClient.invalidateQueries(['tasks']);
-        queryClient.invalidateQueries(['dashboard']);
-        queryClient.invalidateQueries(['dashboard-statistics']);
-        if (taskId) {
-          // Persist + optimistically remove from lists (no backend changes needed)
-          addRejectedTaskId(taskId);
-          removeTaskFromCachedLists(taskId);
-        }
-        setShowRejectModal(false);
-        setRejectionReason('');
-        // Take user back to task list after rejecting
-        navigate(isAdmin ? '/admin/tasks' : '/tasks');
-      }
-    }
-  );
-
-  // Format date helper (matching mobile)
+  // Format date helper (date-only, ignore timezone to avoid off-by-one from UTC)
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Not set';
     try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString([], { 
-        month: 'short', 
-        day: 'numeric', 
+      // If we get full ISO, use only the YYYY-MM-DD part to avoid TZ shifts.
+      const iso = String(dateString);
+      const datePart = iso.includes('T') ? iso.split('T')[0] : iso;
+      const [y, m, d] = datePart.split(/[-/]/).map((v) => parseInt(v, 10));
+      if (!y || !m || !d) return 'Not set';
+      const date = new Date(y, m - 1, d);
+      if (isNaN(date.getTime())) return 'Not set';
+      return date.toLocaleDateString([], {
+        month: 'short',
+        day: 'numeric',
         year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
       });
     } catch {
       return 'Not set';
     }
   };
 
-  // Check if user can accept/reject
   const isAssigned = normalizedTask?.assignees?.some((a: any) => (a.id || a.user_id || a.userId) === (user?.id || (user as any)?.userId));
   const currentUserStatus = normalizedTask?.current_user_status;
   const hasAccepted = currentUserStatus?.has_accepted || false;
@@ -205,6 +146,90 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     !!taskOwnerId &&
     String(taskOwnerId) === String(currentUserId);
 
+  // Accept: persist via backend (so buttons stay hidden after refresh), then post "[Name] accepted the task." in chat.
+  const acceptTaskMutation = useMutation(
+    async () => {
+      if (!taskId) return;
+      // 1) Persist acceptance so buttons never show again (accepted_at in DB)
+      await taskService.acceptTask(taskId);
+      await queryClient.invalidateQueries(['task', taskId]);
+      const convId = normalizedTask?.conversation_id || normalizedTask?.conversationId;
+      if (convId) {
+        const userName = user?.name || (user as any)?.userName || 'User';
+        await messageService.sendMessage({
+          conversationId: convId,
+          conversation_id: convId,
+          content: `${userName} accepted the task.`,
+          messageType: 'text',
+        });
+      }
+    },
+    {
+      onSuccess: () => {
+        setHasAcceptedLocally(true);
+        queryClient.invalidateQueries('tasks');
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+      },
+      onError: (error: any) => {
+        const message =
+          error?.response?.data?.error ||
+          error?.message ||
+          'Failed to accept task';
+        toast.error(message);
+      },
+    }
+  );
+
+  const rejectTaskMutation = useMutation(
+    (reason: string) => taskService.rejectTask(taskId!, reason),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries('tasks');
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        if (taskId) {
+          addRejectedTaskId(taskId);
+          removeTaskFromCachedLists(taskId);
+        }
+        setShowRejectModal(false);
+        setRejectionReason('');
+        navigate(isAdmin ? '/admin/tasks' : '/tasks');
+      },
+    }
+  );
+
+  const canAccept = !isCreator && isAssigned && !hasAccepted && !hasRejected && !hasAcceptedLocally;
+  const canReject = !isCreator && isAssigned && !hasRejected && !hasAccepted && !hasAcceptedLocally;
+
+  const handleAccept = async () => {
+    try {
+      setProcessing(true);
+      await acceptTaskMutation.mutateAsync();
+      toast.success('You accepted the task.');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Failed to accept task');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!rejectionReason.trim()) {
+      toast.error('Please enter a reason for rejection');
+      return;
+    }
+    try {
+      setProcessing(true);
+      await rejectTaskMutation.mutateAsync(rejectionReason.trim());
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Failed to reject task');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   // Mirror mobile: creator can mark complete without accepting; entire task completes when creator marks complete.
   // After verify, task.status is 'completed' (so assignees see Completed) but creator still needs to mark complete — show button for creator.
   const canMarkComplete =
@@ -227,6 +252,12 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
 
   // EXACT mobile logic: getMemberStatusLabel shows "Completed" if completed_at exists
   const getMemberStatusLabel = (member: any) => {
+    const lane = normalizeLifecycleStatus(member?.assignee_status);
+    if (displayTask?.is_before_start_date === true || isBeforeStartDate(displayTask)) return 'Scheduled';
+    if (lane === 'scheduled') return 'Scheduled';
+    if (lane === 'completed') return 'Completed';
+    if (lane === 'inprogress' || lane === 'duesoon' || lane === 'overdue') return 'In Progress';
+    if (lane === 'todo') return 'TODO';
     if (member.completed_at || member.completion_status === 'completed' || member.status === 'completed') {
       return 'Completed';
     }
@@ -238,6 +269,12 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
 
   // EXACT mobile logic: getMemberStatusColor shows green if completed_at exists
   const getMemberStatusColor = (member: any) => {
+    const lane = normalizeLifecycleStatus(member?.assignee_status);
+    if (displayTask?.is_before_start_date === true || isBeforeStartDate(displayTask)) return '#6366F1';
+    if (lane === 'scheduled') return '#6366F1';
+    if (lane === 'completed') return '#2E7D32';
+    if (lane === 'inprogress' || lane === 'duesoon' || lane === 'overdue') return '#F57C00';
+    if (lane === 'todo') return '#9CA3AF';
     if (member.completed_at || member.completion_status === 'completed' || member.status === 'completed') {
       return '#2E7D32'; // Green for completed
     }
@@ -250,107 +287,8 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
   const isReportingMember =
     !!normalizedTask && normalizedTask.reporting_member_id === currentUserId;
 
-  // Per-viewer status for details page (mirror dashboard logic, with creator aggregation)
-  type ViewerStatus = 'pending' | 'in_progress' | 'pending_verification' | 'completed';
-
-  const getViewerStatusForCurrentUser = (): ViewerStatus => {
-    const statusForUser = normalizedTask?.current_user_status || (normalizedTask as any)?.currentUserStatus || {};
-    const assigneesArr = Array.isArray(normalizedTask?.assignees) ? normalizedTask!.assignees : [];
-
-    if (currentUserAssignee) {
-      const verified =
-        currentUserAssignee.verified_at ||
-        (currentUserAssignee.verifiedAt as any) ||
-        currentUserAssignee.is_verified;
-
-      const completed =
-        currentUserAssignee.completed_at ||
-        currentUserAssignee.completion_status === 'completed' ||
-        currentUserAssignee.status === 'completed';
-
-      const accepted =
-        currentUserAssignee.accepted_at ||
-        currentUserAssignee.has_accepted ||
-        statusForUser.has_accepted ||
-        statusForUser.accepted_at;
-
-      if (verified) return 'completed';
-      if (completed) return 'pending_verification';
-      if (accepted) return 'in_progress';
-      // Creator doesn't need to accept; show In Progress when any assignee has accepted (matches dashboard)
-      if (isCreator && assigneesArr.some((a: any) => a.accepted_at || a.has_accepted)) {
-        return 'in_progress';
-      }
-      return 'pending';
-    }
-
-    if (statusForUser.has_accepted) {
-      return 'in_progress';
-    }
-
-    if (isCreator) {
-      if (assigneesArr.length > 0) {
-        const anyVerified = assigneesArr.some(
-          (a: any) =>
-            a.verified_at ||
-            (a.verifiedAt as any) ||
-            a.is_verified
-        );
-        if (anyVerified) return 'completed';
-
-        const anyCompleted = assigneesArr.some(
-          (a: any) =>
-            a.completed_at ||
-            a.completion_status === 'completed' ||
-            a.status === 'completed'
-        );
-        if (anyCompleted) return 'pending_verification';
-
-        const anyAccepted = assigneesArr.some(
-          (a: any) =>
-            a.accepted_at ||
-            a.has_accepted
-        );
-        if (anyAccepted) return 'in_progress';
-      }
-      return 'pending';
-    }
-
-    return 'pending';
-  };
-
-  // Creator is always considered "in" the task; they never see Accept/Reject.
-  const canAccept = !isCreator && isAssigned && !hasAccepted && !hasRejected;
-  const canReject = !isCreator && isAssigned && !hasRejected && !hasAccepted;
-
-  // Handle accept
-  const handleAccept = async () => {
-    try {
-      setProcessing(true);
-      await acceptTaskMutation.mutateAsync();
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to accept task');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  // Handle reject
-  const handleReject = async () => {
-    if (!rejectionReason.trim()) {
-      toast.error('Please enter a reason for rejection');
-      return;
-    }
-
-    try {
-      setProcessing(true);
-      await rejectTaskMutation.mutateAsync(rejectionReason.trim());
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to reject task');
-    } finally {
-      setProcessing(false);
-    }
-  };
+  // Per-viewer status for details page is still used in some analytics,
+  // but it no longer drives Accept / Reject visibility here.
 
   // Mark current user's assignment as complete (creator: entire task completes; assignee: pending verification)
   const markCompleteMutation = useMutation(
@@ -359,25 +297,29 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
         throw new Error('Missing taskId or userId');
       }
       return taskService.markMemberComplete(taskId, currentUserId);
-    },
+    }
+  );
+
+  // "Mark as In Progress" mutation (must be declared before any early returns to keep hook order stable)
+  const markInProgressMutation = useMutation(
+    () => taskService.updateTaskStatus(taskId!, 'in_progress'),
     {
-      onSuccess: (data: any) => {
+      onSuccess: () => {
         queryClient.invalidateQueries(['task', taskId]);
-        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries('tasks');
         queryClient.invalidateQueries(['dashboard']);
         queryClient.invalidateQueries(['dashboard-statistics']);
         if (isAdmin) {
           queryClient.invalidateQueries(['admin-dashboard']);
           queryClient.invalidateQueries(['admin-dashboard-statistics']);
-          void queryClient.refetchQueries({ queryKey: ['admin-dashboard-statistics'] });
-          void queryClient.refetchQueries({ queryKey: ['admin-dashboard'] });
-        } else {
-          void queryClient.refetchQueries({ queryKey: ['dashboard-statistics'] });
-          void queryClient.refetchQueries({ queryKey: ['dashboard'] });
         }
-        const message = data?.taskCompleted
-          ? 'Task completed. The entire task has been marked as completed.'
-          : 'Your completion has been marked and sent for approval.';
+        toast.success('Task moved to In Progress.');
+      },
+      onError: (error: any) => {
+        const message =
+          error?.response?.data?.error ||
+          error?.message ||
+          'Failed to move task to In Progress';
         toast.error(message);
       },
     }
@@ -392,7 +334,38 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
       onConfirm: async () => {
         try {
           setProcessing(true);
-          await markCompleteMutation.mutateAsync();
+          const data: any = await markCompleteMutation.mutateAsync();
+
+          // If the current user is the creator, also attempt to move the task to completed.
+          // This mirrors the mobile flow where creator completion immediately completes the task.
+          if (isCreator) {
+            try {
+              await taskService.updateTaskStatus(taskId, 'completed');
+            } catch (statusError: any) {
+              // Log but do not block UX – backend already handles task completion in markMemberComplete.
+              // eslint-disable-next-line no-console
+              console.warn('Failed to update task status to completed after creator completion:', statusError);
+            }
+          }
+
+          // Invalidate task-related queries so dashboard and detail reflect the new state
+          queryClient.invalidateQueries(['task', taskId]);
+          queryClient.invalidateQueries('tasks');
+          queryClient.invalidateQueries(['dashboard']);
+          queryClient.invalidateQueries(['dashboard-statistics']);
+          if (isAdmin) {
+            queryClient.invalidateQueries(['admin-dashboard']);
+            queryClient.invalidateQueries(['admin-dashboard-statistics']);
+          }
+
+          const message = data?.taskCompleted
+            ? 'Task completed. The entire task has been marked as completed.'
+            : 'Your completion has been marked and sent for approval.';
+          toast.success(message);
+
+          // After marking complete, take the user back to the dashboard (same as mobile)
+          const dashboardPath = isAdmin ? '/admin' : '/dashboard';
+          navigate(dashboardPath);
         } catch (error: any) {
           const message =
             error?.response?.data?.error ||
@@ -555,21 +528,26 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     );
   };
 
-  // Add members mutation
+  // Add members mutation – use task assignee API so behavior matches mobile
   const addMembersMutation = useMutation(
     (memberIds: string[]) => {
-      const conversationId = normalizedTask?.conversation_id || normalizedTask?.conversationId;
-      if (!conversationId) {
-        throw new Error('Task does not have a conversation group');
+      if (!taskId) {
+        throw new Error('Missing taskId');
       }
-      return conversationService.addGroupMembers(conversationId, memberIds);
+      return taskService.addTaskAssignees(taskId, memberIds);
     },
     {
       onSuccess: () => {
-        queryClient.invalidateQueries(['task', taskId]);
-        queryClient.invalidateQueries(['conversation', normalizedTask?.conversation_id || normalizedTask?.conversationId]);
-        queryClient.invalidateQueries('conversations');
-        queryClient.invalidateQueries('dashboard');
+        if (taskId) {
+          queryClient.invalidateQueries(['task', taskId]);
+        }
+        queryClient.invalidateQueries('tasks');
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        if (isAdmin) {
+          queryClient.invalidateQueries(['admin-dashboard']);
+          queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        }
         setShowAddMembers(false);
         setSearchQuery('');
         setSelectedUserIds([]);
@@ -637,22 +615,101 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
 
   // Use normalizedTask if available, fallback to task; merge finance from API/localStorage
   const displayTask = mergeTaskWithFinancial(normalizedTask || task);
-  
-  const viewerStatus = getViewerStatusForCurrentUser();
-  const isOverdue = displayTask.due_date && new Date(displayTask.due_date) < new Date() && displayTask.status !== 'completed';
 
-  // Hero badge label: use viewer status, but override to Overdue when needed
-  const heroStatusLabel = (() => {
-    if (isOverdue && viewerStatus !== 'completed') {
-      return 'Overdue';
+  // Mobile parity: in task details, status shown to the viewer should match their lane
+  // (and match how member rows derive "TODO / In Progress / Completed").
+  const isBeforeStartDate = (t: any) => {
+    const rawStart = t?.start_date ?? t?.startDate;
+    if (!rawStart) return false;
+    try {
+      const start = new Date(rawStart);
+      return new Date() < start;
+    } catch {
+      return false;
     }
-    switch (viewerStatus) {
-      case 'pending':
+  };
+
+  const getDaysUntilDue = (t: any) => {
+    const due = t?.due_date ?? t?.dueDate;
+    if (!due) return null;
+    const dueDate = new Date(due);
+    if (isNaN(dueDate.getTime())) return null;
+    dueDate.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  const normalizeLifecycleStatus = (status: any): TaskStatusCategory | 'scheduled' | null => {
+    if (!status) return null;
+    const normalized = String(status).toLowerCase();
+    if (normalized === 'scheduled') return 'scheduled';
+    if (normalized === 'todo' || normalized === 'pending') return 'todo';
+    if (
+      normalized === 'inprogress' ||
+      normalized === 'in_progress' ||
+      normalized === 'pending_verification' ||
+      normalized === 'under_verification' ||
+      normalized === 'awaiting_creator_confirmation'
+    ) {
+      return 'inprogress';
+    }
+    if (normalized === 'completed' || normalized === 'verified' || normalized === 'completed_verified') return 'completed';
+    if (normalized === 'duesoon' || normalized === 'due_soon') return 'duesoon';
+    if (normalized === 'overdue') return 'overdue';
+    return null;
+  };
+
+  const getViewerStatusCategory = (t: any): TaskStatusCategory => {
+    if (!t) return 'todo';
+    // Prefer backend/DB scheduled flag when present
+    if (t?.is_before_start_date === true) return 'scheduled';
+    // Fallback for endpoints that don't include the flag
+    if (isBeforeStartDate(t)) return 'scheduled';
+
+    const cu = t?.current_user_status;
+    const cuAssigneeStatus = normalizeLifecycleStatus(cu?.assignee_status);
+    if (cuAssigneeStatus) return cuAssigneeStatus as TaskStatusCategory;
+
+    const me = Array.isArray(t?.assignees)
+      ? t.assignees.find((a: any) => {
+          const id = a?.id ?? a?.user_id ?? a?.userId;
+          return id != null && currentUserId != null && String(id) === String(currentUserId);
+        })
+      : null;
+    const meAssigneeStatus = normalizeLifecycleStatus(me?.assignee_status);
+    if (meAssigneeStatus) return meAssigneeStatus as TaskStatusCategory;
+
+    // Fall back to acceptance/completion fields (matches member row logic).
+    let base: TaskStatusCategory = 'todo';
+    const meCompleted = !!(me?.completed_at || me?.completion_status === 'completed' || me?.status === 'completed' || me?.verified_at);
+    if (meCompleted) base = 'completed';
+    else {
+      const accepted = !!(me?.accepted_at || me?.has_accepted || cu?.has_accepted);
+      base = accepted ? 'inprogress' : 'todo';
+    }
+
+    const daysUntilDue = getDaysUntilDue(t);
+    if (base !== 'completed' && (String(t?.status || '').toLowerCase() === 'overdue' || (daysUntilDue != null && daysUntilDue < 0))) return 'overdue';
+    if (base !== 'completed' && daysUntilDue != null && daysUntilDue >= 0 && daysUntilDue <= 3) return 'duesoon';
+    return base;
+  };
+
+  // Viewer-scoped status category (drives header badge, timeline and controls)
+  const globalStatus = getViewerStatusCategory(displayTask) as TaskStatusCategory;
+
+  const heroStatusLabel = (() => {
+    switch (globalStatus) {
+      case 'scheduled':
+        return 'Scheduled';
+      case 'todo':
         return 'TODO';
-      case 'in_progress':
+      case 'inprogress':
         return 'In Progress';
-      case 'pending_verification':
-        return 'Pending for Review';
+      case 'duesoon':
+        return 'Due Soon';
+      case 'overdue':
+        return 'Overdue';
       case 'completed':
         return 'Completed';
       default:
@@ -660,18 +717,18 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     }
   })();
 
-  // Hero status badge color (design: amber for Pending Approval, etc.)
   const getHeroBadgeClass = () => {
-    if (isOverdue && viewerStatus !== 'completed') {
-      return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400';
-    }
-    switch (viewerStatus) {
-      case 'pending':
+    switch (globalStatus) {
+      case 'scheduled':
+        return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300';
+      case 'todo':
         return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
-      case 'in_progress':
+      case 'inprogress':
         return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
-      case 'pending_verification':
+      case 'duesoon':
         return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+      case 'overdue':
+        return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400';
       case 'completed':
         return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
       default:
@@ -681,13 +738,21 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
 
   // Timeline current step for User Progress Analytics
   const getTimelineCurrentStep = (): string => {
-    if (viewerStatus === 'completed') return 'completed';
-    if (isOverdue) return 'overdue';
-    if (viewerStatus === 'in_progress' || viewerStatus === 'pending_verification') return 'in_progress';
-    if (viewerStatus === 'pending') return 'start';
+    if (globalStatus === 'completed') return 'completed';
+    if (globalStatus === 'overdue') return 'overdue';
+    if (globalStatus === 'inprogress') return 'in_progress';
+    if (globalStatus === 'todo') return 'start';
     return 'in_progress';
   };
   const timelineStep = getTimelineCurrentStep();
+
+  // Explicit "Mark as In Progress" action (mirrors mobile In Progress control).
+  // Only available while the task is still in TODO for the current user.
+  const canMarkInProgress =
+    !!taskId &&
+    isAssigned &&
+    !hasRejected &&
+    globalStatus === 'todo';
 
   const content = (
     <div className="p-0 font-task min-h-screen bg-background-light dark:bg-background-dark">
@@ -741,8 +806,8 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
                 </span>
               </div>
             )}
-            {/* Open group chat: only after Accept (TODO → Accept → In Progress). Without accepting, user cannot open chat. */}
-            {(isCreator || hasAccepted) && (displayTask.conversation_id || displayTask.conversationId) && (
+            {/* Open group chat: available when a task group conversation exists */}
+            {(displayTask.conversation_id || displayTask.conversationId) && (
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
@@ -751,6 +816,32 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
                 >
                   <span className="material-symbols-outlined text-lg">forum</span>
                   Open group chat
+                </button>
+              </div>
+            )}
+            {/* Mark as In Progress – explicit control to move from TODO → In Progress */}
+            {canMarkInProgress && (
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  disabled={markInProgressMutation.isLoading}
+                  onClick={() => {
+                    if (!taskId || markInProgressMutation.isLoading) return;
+                    markInProgressMutation.mutate();
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-task-primary text-white font-semibold text-sm hover:bg-task-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {markInProgressMutation.isLoading ? (
+                    <>
+                      <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                      <span>Moving to In Progress…</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-lg">play_arrow</span>
+                      <span>Mark as In Progress</span>
+                    </>
+                  )}
                 </button>
               </div>
             )}
@@ -1091,7 +1182,7 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
                       </p>
                     </div>
 
-                    {/* Verify button - preserve functionality */}
+                    {/* Verify / Reassign actions */}
                     <div className="flex flex-col items-end justify-center gap-2 shrink-0">
                       {memberCompleted && memberVerified && (
                         <div className="flex items-center justify-center">
@@ -1131,6 +1222,51 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
                             </span>
                           )}
                         </>
+                      )}
+                      {/* Reassign button (creator / reporting member only, member completed but not verified) */}
+                      {memberCompleted && !memberVerified && (isCreator || isReportingMember) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!taskId) return;
+                            toast.confirm(
+                              `Reassign this task back to ${assignee.name || 'this member'}? They will need to complete it again.`,
+                              {
+                                confirmLabel: 'Reassign',
+                                cancelLabel: 'Cancel',
+                                onConfirm: async () => {
+                                  try {
+                                    setProcessing(true);
+                                    await taskService.reassignMember(taskId, assigneeId);
+                                    queryClient.invalidateQueries(['task', taskId]);
+                                    queryClient.invalidateQueries('tasks');
+                                    queryClient.invalidateQueries(['dashboard']);
+                                    queryClient.invalidateQueries(['dashboard-statistics']);
+                                    if (isAdmin) {
+                                      queryClient.invalidateQueries(['admin-dashboard']);
+                                      queryClient.invalidateQueries(['admin-dashboard-statistics']);
+                                    }
+                                    toast.success('Member has been reassigned for this task.');
+                                  } catch (error: any) {
+                                    const message =
+                                      error?.response?.data?.error ||
+                                      error?.message ||
+                                      'Failed to reassign member';
+                                    toast.error(message);
+                                  } finally {
+                                    setProcessing(false);
+                                  }
+                                },
+                              }
+                            );
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-700 disabled:opacity-50"
+                        >
+                          <span className="material-symbols-outlined text-sm">
+                            replay
+                          </span>
+                          <span>Reassign</span>
+                        </button>
                       )}
                     </div>
                   </div>
@@ -1227,33 +1363,35 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
         <div className="max-w-5xl mx-auto px-4">
           <div className="bg-card-light dark:bg-card-dark rounded-2xl border border-slate-200 dark:border-slate-800 p-6 flex flex-col md:flex-row gap-4 items-center justify-between">
             <div className="flex flex-wrap gap-4 w-full md:w-auto justify-center md:justify-start">
-              {canReject && (
-                <button
-                  onClick={() => setShowRejectModal(true)}
-                  disabled={processing}
-                  className="px-6 py-3.5 rounded-xl border-2 border-rose-100 dark:border-rose-900/30 text-rose-500 font-bold hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  <span className="material-symbols-outlined text-lg">close</span>
-                  Reject
-                </button>
-              )}
               {canAccept && (
                 <button
+                  type="button"
                   onClick={handleAccept}
-                  disabled={processing}
-                  className="px-12 py-3.5 rounded-xl bg-task-primary hover:bg-task-primary/90 text-white font-bold transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                  disabled={processing || acceptTaskMutation.isLoading}
+                  className="px-12 py-3.5 bg-task-primary hover:opacity-90 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95 disabled:opacity-50"
                 >
-                  {processing ? (
+                  {processing && acceptTaskMutation.isLoading ? (
                     <>
                       <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                      <span>Processing...</span>
+                      <span>Accepting...</span>
                     </>
                   ) : (
                     <>
-                      <span className="material-symbols-outlined text-xl">check</span>
-                      <span>Accept Task</span>
+                      <span className="material-symbols-outlined text-xl">thumb_up</span>
+                      <span>Accept</span>
                     </>
                   )}
+                </button>
+              )}
+              {canReject && (
+                <button
+                  type="button"
+                  onClick={() => setShowRejectModal(true)}
+                  disabled={processing}
+                  className="px-12 py-3.5 border-2 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-bold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-xl">thumb_down</span>
+                  <span>Reject</span>
                 </button>
               )}
               {canMarkComplete && (
@@ -1300,42 +1438,34 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
         <span className="material-symbols-outlined text-2xl">add</span>
       </button>
 
-      {/* Reject Modal */}
+      {/* Reject modal */}
       {showRejectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowRejectModal(false)}>
-          <div 
-            className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-lg shadow-2xl p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Reject Task</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Please provide a reason for rejection
-            </p>
-            
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-labelledby="reject-modal-title">
+          <div className="bg-card-light dark:bg-card-dark rounded-2xl shadow-xl max-w-md w-full p-6">
+            <h2 id="reject-modal-title" className="text-lg font-bold text-slate-900 dark:text-white mb-2">Reject task</h2>
+            <p className="text-slate-600 dark:text-slate-400 mb-4">Please provide a reason for rejecting this task.</p>
             <textarea
               value={rejectionReason}
               onChange={(e) => setRejectionReason(e.target.value)}
-              placeholder="Enter reason for rejection (Required if rejecting)..."
-              rows={4}
-              className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none mb-4"
+              placeholder="Reason for rejection..."
+              rows={3}
+              className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-500 focus:ring-2 focus:ring-task-primary focus:border-transparent"
             />
-
-            <div className="flex gap-3">
+            <div className="flex gap-3 mt-4">
               <button
-                onClick={() => {
-                  setShowRejectModal(false);
-                  setRejectionReason('');
-                }}
-                className="flex-1 py-3 px-4 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                type="button"
+                onClick={() => { setShowRejectModal(false); setRejectionReason(''); }}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800/50"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleReject}
-                disabled={!rejectionReason.trim() || processing}
-                className="flex-1 py-3 px-4 rounded-lg bg-red-500 text-white font-semibold hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={processing || !rejectionReason.trim() || rejectTaskMutation.isLoading}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-medium disabled:opacity-50"
               >
-                {processing ? 'Processing...' : 'Reject'}
+                {rejectTaskMutation.isLoading ? 'Rejecting...' : 'Reject'}
               </button>
             </div>
           </div>

@@ -10,6 +10,7 @@ import { mergeTaskWithFinancial } from '../../utils/taskFinancialStorage';
 import { isTaskDeleted } from '../../utils/taskUtils';
 import { useTaskTransitionAnimation } from '../../hooks/useTaskTransitionAnimation';
 import { TaskTransitionAnimation } from '../../components/dashboard/TaskTransitionAnimation';
+import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
 
 export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -41,21 +42,6 @@ export const AdminDashboard: React.FC = () => {
         console.log('[Admin Dashboard Frontend] Received data:', data);
         console.log('[Admin Dashboard Frontend] Self tasks:', data?.data?.selfTasks);
         console.log('[Admin Dashboard Frontend] Assigned tasks:', data?.data?.assignedTasks);
-      }
-    }
-  );
-
-  const { data: statistics, refetch: refetchStatistics } = useQuery(
-    ['admin-dashboard-statistics'],
-    () => dashboardService.getStatistics(),
-    {
-      staleTime: 0, // Match mobile: always refetch on focus so counts stay in sync
-      refetchInterval: 30000,
-      refetchOnMount: 'always',
-      refetchOnWindowFocus: true,
-      onSuccess: (data) => {
-        console.log('[Admin Dashboard Statistics] Received data:', data);
-        console.log('[Admin Dashboard Statistics] Statistics:', data?.data);
       }
     }
   );
@@ -98,11 +84,9 @@ export const AdminDashboard: React.FC = () => {
   const currentUserId = user?.id || (user as any)?.userId;
 
   const refetchAdminDashboard = React.useCallback(() => {
-    queryClient.invalidateQueries(['admin-dashboard-statistics']);
     queryClient.invalidateQueries(['admin-dashboard']);
-    refetchStatistics();
     refetchDashboard();
-  }, [queryClient, refetchDashboard, refetchStatistics]);
+  }, [queryClient, refetchDashboard]);
 
   // Match mobile useFocusEffect: refresh dashboard whenever screen comes into focus.
   useEffect(() => {
@@ -193,7 +177,7 @@ export const AdminDashboard: React.FC = () => {
   }, [selfTasks, assignedTasks]);
 
   const flattenedSelfTasksForUser = useMemo(() => {
-    if (!selfTasks || !currentUserId) return [] as any[];
+    if (!selfTasks) return [] as any[];
     const buckets = ['todo', 'overdue', 'dueSoon', 'inProgress', 'completed'] as const;
     const all: any[] = [];
 
@@ -206,66 +190,79 @@ export const AdminDashboard: React.FC = () => {
         }
       });
     });
+    return all;
+  }, [selfTasks]);
 
-    return all.filter((task) => {
-      const assignees = Array.isArray(task?.assignees) ? task.assignees : [];
-      return assignees.some((a: any) => {
-        const assigneeId = a.id || a.user_id || a.userId;
-        return assigneeId === currentUserId;
+  const flattenedAssignedTasksForUser = useMemo(() => {
+    if (!assignedTasks) return [] as any[];
+    const buckets = ['todo', 'overdue', 'dueSoon', 'inProgress', 'completed'] as const;
+    const all: any[] = [];
+    Object.values(assignedTasks).forEach((group: any) => {
+      if (!group) return;
+      buckets.forEach((bucket) => {
+        const arr = group[bucket];
+        if (Array.isArray(arr)) {
+          all.push(...arr);
+        }
       });
     });
-  }, [selfTasks, currentUserId]);
+    return all;
+  }, [assignedTasks]);
+
+  const isBeforeStartDate = (task: any) => {
+    const rawStart = task?.start_date ?? task?.startDate;
+    if (!rawStart) return false;
+    try {
+      const start = new Date(rawStart);
+      return new Date() < start;
+    } catch {
+      return false;
+    }
+  };
 
   const selfUserStatusCounts = useMemo(
     () => {
-      const counts = { overdue: 0, duesoon: 0, inprogress: 0, completed: 0 };
+      const counts: Record<TaskStatusCategory, number> = {
+        todo: 0,
+        overdue: 0,
+        duesoon: 0,
+        inprogress: 0,
+        completed: 0,
+      };
       if (!flattenedSelfTasksForUser.length) return counts;
 
       flattenedSelfTasksForUser.forEach((task: any) => {
         const full = taskDetails[task.id];
         const merged = full ? { ...task, ...full } : task;
-        const taskStatus = (merged.status || '').toLowerCase();
-
-        if (taskStatus === 'completed') {
-          counts.completed += 1;
-          return;
-        }
-
-        const assignees = Array.isArray(merged?.assignees) ? merged.assignees : [];
-        const assignee = assignees.find((a: any) => {
-          const assigneeId = a.id || a.user_id || a.userId;
-          return assigneeId === currentUserId;
-        });
-
-        let bucket: 'completed' | 'inprogress' = 'inprogress';
-        if (assignee) {
-          const verified =
-            assignee.verified_at ||
-            (assignee.verifiedAt as any) ||
-            assignee.is_verified;
-          const completed =
-            assignee.completed_at ||
-            assignee.completion_status === 'completed' ||
-            assignee.status === 'completed';
-
-          if (verified) {
-            bucket = 'completed';
-          } else if (completed) {
-            bucket = 'inprogress';
-          }
-        }
-
-        if (bucket === 'completed') {
-          counts.completed += 1;
-        } else {
-          counts.inprogress += 1;
-        }
+        if (isBeforeStartDate(merged)) return;
+        const bucket = (getTaskStatusCategoryFromTask(merged) || 'todo') as TaskStatusCategory;
+        counts[bucket] = (counts[bucket] ?? 0) + 1;
       });
 
       return counts;
     },
-    [flattenedSelfTasksForUser, currentUserId, taskDetails]
+    [flattenedSelfTasksForUser, taskDetails]
   );
+
+  const assignedUserStatusCounts = useMemo(() => {
+    const counts: Record<TaskStatusCategory, number> = {
+      todo: 0,
+      overdue: 0,
+      duesoon: 0,
+      inprogress: 0,
+      completed: 0,
+    };
+    if (!flattenedAssignedTasksForUser.length) return counts;
+
+    flattenedAssignedTasksForUser.forEach((task: any) => {
+      const full = taskDetails[task.id];
+      const merged = full ? { ...task, ...full } : task;
+      if (isBeforeStartDate(merged)) return;
+      const bucket = (getTaskStatusCategoryFromTask(merged) || 'todo') as TaskStatusCategory;
+      counts[bucket] = (counts[bucket] ?? 0) + 1;
+    });
+    return counts;
+  }, [flattenedAssignedTasksForUser, taskDetails]);
 
   const selfUserStatusCountsFromDetails = useMemo(() => {
     const counts = { inprogress: 0, completed: 0 };
@@ -348,31 +345,23 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const getStatusCount = (status: 'todo' | 'overdue' | 'duesoon' | 'inprogress' | 'completed', view: 'self' | 'assigned') => {
-    const stats = statistics?.data ?? statistics;
-    if (!stats) return 0;
-    const prefix = view === 'self' ? 'selfTasks' : 'assignedTasks';
-    // Map status to correct key format matching backend response
-    const statusKeyMap: Record<string, string> = {
-      todo: 'Todo',
-      overdue: 'Overdue',
-      duesoon: 'DueSoon',
-      inprogress: 'InProgress',
-      completed: 'Completed',
-    };
-    const statusKey = statusKeyMap[status] || status.charAt(0).toUpperCase() + status.slice(1);
-    const key = `${prefix}${statusKey}`;
-    return (stats[key] ?? stats[key.toLowerCase()] ?? 0) as number;
+    // For Self Tasks, use per-user lifecycle buckets derived from getTaskStatusCategoryFromTask
+    // so each task appears in exactly one bucket (mobile-equivalent behavior).
+    if (view === 'self') {
+      return selfUserStatusCounts[status] ?? 0;
+    }
+
+    return assignedUserStatusCounts[status] ?? 0;
   };
 
   const getTotalCount = (view: 'self' | 'assigned') => {
-    const stats = statistics?.data ?? statistics;
-    if (!stats) return 0;
-    const prefix = view === 'self' ? 'selfTasks' : 'assignedTasks';
+    const counts = view === 'self' ? selfUserStatusCounts : assignedUserStatusCounts;
     return (
-      (stats[`${prefix}Overdue`] ?? 0) +
-      (stats[`${prefix}DueSoon`] ?? 0) +
-      (stats[`${prefix}InProgress`] ?? 0) +
-      (stats[`${prefix}Completed`] ?? 0)
+      (counts.todo ?? 0) +
+      (counts.overdue ?? 0) +
+      (counts.duesoon ?? 0) +
+      (counts.inprogress ?? 0) +
+      (counts.completed ?? 0)
     );
   };
 
@@ -382,21 +371,22 @@ export const AdminDashboard: React.FC = () => {
   ) => {
     if (tasks.length === 0) return null;
 
-    // Map backend status categories to frontend status values
-    const statusMap: Record<string, 'overdue' | 'duesoon' | 'inprogress' | 'completed'> = {
-      overdue: 'overdue',
-      dueSoon: 'duesoon',
-      inProgress: 'inprogress',
-      completed: 'completed',
-    };
-
-    const status = statusMap[statusCategory] || 'inprogress';
-
     return (
       <>
         {tasks.map((task) => {
           const full = taskDetails[task.id];
           const merged = mergeTaskWithFinancial(full ? { ...task, ...full, id: task.id || full.id } : task);
+          const derived = (getTaskStatusCategoryFromTask(merged) || 'todo') as TaskStatusCategory;
+          const cardStatus: 'scheduled' | 'overdue' | 'duesoon' | 'inprogress' | 'completed' =
+            derived === 'scheduled'
+              ? 'scheduled'
+              : derived === 'overdue'
+              ? 'overdue'
+              : derived === 'duesoon'
+              ? 'duesoon'
+              : derived === 'completed'
+              ? 'completed'
+              : 'inprogress';
           const assignees = Array.isArray(merged?.assignees) ? merged.assignees : [];
           const totalMembers = assignees.length;
           const verifiedCompleted = assignees.filter((a: any) => !!a?.verified_at).length;
@@ -417,11 +407,11 @@ export const AdminDashboard: React.FC = () => {
               id={task.id}
               title={merged.title}
               description={merged.description}
-              status={status}
+              status={cardStatus}
               dueDate={merged.due_date || merged.dueDate}
               category={merged.category}
               assignees={cardAssignees}
-              progress={status === 'inprogress' ? progress : undefined}
+              progress={cardStatus === 'inprogress' ? progress : undefined}
               finance={hasFinance && isCreator ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
               onClick={() => navigate(`/admin/tasks/${task.id}`)}
             />
@@ -451,7 +441,7 @@ export const AdminDashboard: React.FC = () => {
           {/* To-Do Card (Today’s recurring, not completed) */}
           <button
             type="button"
-            onClick={() => navigate('/admin/tasks?status=todo')}
+            onClick={() => navigate(`/admin/tasks?view=${viewType}&status=todo`)}
             className="relative bg-white dark:bg-slate-800/95 p-5 rounded-xl flex flex-col items-center text-center group cursor-pointer text-left w-full border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-blue-500 shadow-sm hover:shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
           >
             <div ref={toDoIconRef} className="mb-2.5 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
@@ -468,7 +458,7 @@ export const AdminDashboard: React.FC = () => {
           {/* In Progress Card - clickable */}
           <button
             type="button"
-            onClick={() => navigate('/admin/tasks?status=inprogress')}
+            onClick={() => navigate(`/admin/tasks?view=${viewType}&status=inprogress`)}
             className="relative bg-white dark:bg-slate-800/95 p-5 rounded-xl flex flex-col items-center text-center group cursor-pointer text-left border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-purple-500 shadow-sm hover:shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
           >
             <div ref={inProgressIconRef} className="mb-2.5 p-2.5 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400">
@@ -485,7 +475,7 @@ export const AdminDashboard: React.FC = () => {
           {/* Due Soon Card - clickable */}
           <button
             type="button"
-            onClick={() => navigate('/admin/tasks?status=duesoon')}
+            onClick={() => navigate(`/admin/tasks?view=${viewType}&status=duesoon`)}
             className="relative bg-white dark:bg-slate-800/95 p-5 rounded-xl flex flex-col items-center text-center group cursor-pointer text-left border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-amber-500 shadow-sm hover:shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
           >
             <div className="mb-2.5 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400">
@@ -502,7 +492,7 @@ export const AdminDashboard: React.FC = () => {
           {/* Overdue Card - clickable */}
           <button
             type="button"
-            onClick={() => navigate('/admin/tasks?status=overdue')}
+            onClick={() => navigate(`/admin/tasks?view=${viewType}&status=overdue`)}
             className="relative bg-white dark:bg-slate-800/95 p-5 rounded-xl flex flex-col items-center text-center group cursor-pointer text-left border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-red-500 shadow-sm hover:shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
           >
             <div className="mb-2.5 p-2.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400">
@@ -519,7 +509,7 @@ export const AdminDashboard: React.FC = () => {
           {/* Completed Card - clickable */}
           <button
             type="button"
-            onClick={() => navigate('/admin/tasks?status=completed')}
+            onClick={() => navigate(`/admin/tasks?view=${viewType}&status=completed`)}
             className="relative bg-white dark:bg-slate-800/95 p-5 rounded-xl flex flex-col items-center text-center group cursor-pointer text-left border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-emerald-500 shadow-sm hover:shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
           >
             <div className="mb-2.5 p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400">
@@ -627,7 +617,7 @@ export const AdminDashboard: React.FC = () => {
             </div>
           )}
 
-          {/* Financial Report (Created by Me) - from getCurrentTasks (self+assigned), merged finance from API/localStorage */}
+          {/* Financial Report  - from getCurrentTasks (self+assigned), merged finance from API/localStorage */}
           {(() => {
             const uid = user?.id || (user as any)?.userId;
             const financialTasks = getCurrentTasks.filter((t: any) => {
@@ -662,7 +652,7 @@ export const AdminDashboard: React.FC = () => {
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-1 h-8 bg-emerald-500 rounded-full"></div>
                   <h2 className="text-xl md:text-2xl font-semibold text-gray-900 dark:text-white">
-                    Financial Report (Created by Me)
+                    Financial Report 
                   </h2>
                 </div>
                 <div className="bg-white dark:bg-slate-800/95 rounded-xl border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-emerald-500 shadow-sm divide-y divide-gray-100 dark:divide-gray-700">

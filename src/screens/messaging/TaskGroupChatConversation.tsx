@@ -1388,6 +1388,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [acceptRejectProcessing, setAcceptRejectProcessing] = useState(false);
+  const [hasAcceptedLocally, setHasAcceptedLocally] = useState(false);
 
   // Get current user assignee (EXACT mobile logic) — must be before canAccept/canReject
   const currentUserAssignee = React.useMemo(() => {
@@ -1398,18 +1399,33 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     });
   }, [task?.assignees, currentUserId]);
 
-  // Accept / Reject (assignee who has not yet accepted)
-  const canAccept = !isTaskCreator() && !!currentUserAssignee && !(currentUserAssignee.accepted_at || currentUserAssignee.has_accepted);
+  // Accept / Reject (assignee who has not yet accepted); hide after local accept
+  const canAccept = !isTaskCreator() && !!currentUserAssignee && !(currentUserAssignee.accepted_at || currentUserAssignee.has_accepted) && !hasAcceptedLocally;
   const canReject = canAccept;
 
-  // Task flow: TODO → Accept → In Progress. Without accepting, show Task Details (with Accept/Reject) where chat would open; no redirect.
-  const canAccessChat = isTaskCreator() || (!!currentUserAssignee && !!(currentUserAssignee.accepted_at || currentUserAssignee.has_accepted));
+  // On web, task group chat should always be accessible. Accept is used only to send an acknowledgement message.
+  const canAccessChat = true;
 
+  // Accept: persist via backend (so buttons stay hidden after refresh), then post "[Name] accepted the task." in chat.
   const acceptTaskMutation = useMutation(
-    () => taskService.acceptTask(taskId!),
+    async () => {
+      if (!taskId) return;
+      // 1) Persist acceptance so buttons never show again (accepted_at in DB)
+      await taskService.acceptTask(taskId);
+      await queryClient.invalidateQueries(['task', taskId]);
+      if (conversationId) {
+        const userName = user?.name || (user as any)?.userName || 'User';
+        await messageService.sendMessage({
+          conversationId,
+          conversation_id: conversationId,
+          content: `${userName} accepted the task.`,
+          messageType: 'text',
+        });
+      }
+    },
     {
       onSuccess: () => {
-        queryClient.invalidateQueries(['task', taskId]);
+        setHasAcceptedLocally(true); // Hide buttons immediately
         queryClient.invalidateQueries(['tasks']);
         queryClient.invalidateQueries(['conversations']);
         queryClient.invalidateQueries(['dashboard']);
@@ -1418,16 +1434,6 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           queryClient.invalidateQueries(['admin-dashboard']);
           queryClient.invalidateQueries(['admin-dashboard-statistics']);
         }
-        const dashboardPath = isAdmin ? '/admin' : '/dashboard';
-        navigate(dashboardPath, {
-          state: {
-            animateTaskTransition: true,
-            taskId: taskId,
-            fromStatus: 'todo',
-            toStatus: 'inprogress',
-            taskSection: isTaskCreator() ? 'self' : 'assigned',
-          },
-        });
       },
       onError: (error: any) => {
         toast.error(error?.response?.data?.error || error?.message || 'Failed to accept task');
@@ -2133,23 +2139,61 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                       {assignee.name || 'Unknown'} marked as complete
                     </span>
                   </div>
-                  <button
-                    onClick={() => handleVerifyCompletion(assigneeId)}
-                    disabled={verifyingUserId === assigneeId}
-                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    {verifyingUserId === assigneeId ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                        <span>Verifying...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="material-symbols-outlined text-base">verified</span>
-                        <span>Verify</span>
-                      </>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleVerifyCompletion(assigneeId)}
+                      disabled={verifyingUserId === assigneeId}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                    >
+                      {verifyingUserId === assigneeId ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                          <span>Verifying...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="material-symbols-outlined text-base">verified</span>
+                          <span>Verify</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!taskId) return;
+                        toast.confirm(
+                          `Reassign this task back to ${assignee.name || 'this member'}? They will need to complete it again.`,
+                          {
+                            confirmLabel: 'Reassign',
+                            cancelLabel: 'Cancel',
+                            onConfirm: async () => {
+                              try {
+                                setAcceptRejectProcessing(true);
+                                await taskService.reassignMember(taskId, assigneeId);
+                                queryClient.invalidateQueries(['task', taskId]);
+                                queryClient.invalidateQueries(['tasks']);
+                                queryClient.invalidateQueries(['dashboard']);
+                                queryClient.invalidateQueries(['dashboard-statistics']);
+                                toast.success('Member has been reassigned for this task.');
+                              } catch (error: any) {
+                                const message =
+                                  error?.response?.data?.error ||
+                                  error?.message ||
+                                  'Failed to reassign member';
+                                toast.error(message);
+                              } finally {
+                                setAcceptRejectProcessing(false);
+                              }
+                            },
+                          }
+                        );
+                      }}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                    >
+                      <span className="material-symbols-outlined text-base">replay</span>
+                      <span>Reassign</span>
+                    </button>
+                  </div>
                 </div>
               );
             })}

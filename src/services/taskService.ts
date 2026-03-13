@@ -2,6 +2,12 @@ import api from './api';
 import { setTaskFinancial } from '../utils/taskFinancialStorage';
 import { Task, TaskType, TaskCategory, TaskFrequency } from '../../../shared/src/types';
 
+// Keep last successful tasks response in-memory so that
+// GET /tasks returning 304 or an empty payload does not wipe
+// the dashboard list. This mirrors the mobile "keep existing tasks"
+// behavior for cache-friendly responses.
+let lastTasksSnapshot: any[] | null = null;
+
 function ingestTaskFinancial(task: any) {
   if (!task?.id) return;
   const hasValue = task.financial_value != null;
@@ -49,10 +55,30 @@ export const taskService = {
     if (filters?.type) params.append('type', filters.type); // Mobile uses 'type'
 
     // Note: api baseURL already includes /api, so use /tasks not /api/tasks
-    const response = await api.get(`/tasks?${params.toString()}`);
+    const response = await api.get(`/tasks?${params.toString()}`, {
+      // Allow 304 to be treated as success so we can keep existing tasks
+      validateStatus: (status) => status >= 200 && status < 400,
+    });
+
+    // If backend returns 304 Not Modified, keep using the last successful snapshot.
+    if (response.status === 304) {
+      return lastTasksSnapshot || [];
+    }
+
     // Backend returns: { tasks: [...] } or { data: [...] }
-    const tasks = response.data.tasks || response.data.data || [];
-    if (Array.isArray(tasks)) tasks.forEach(ingestTaskFinancial);
+    const tasks = response.data?.tasks ?? response.data?.data ?? [];
+
+    // If response payload is empty / missing, also keep prior snapshot.
+    if (!tasks || (Array.isArray(tasks) && tasks.length === 0)) {
+      return lastTasksSnapshot || [];
+    }
+
+    if (Array.isArray(tasks)) {
+      tasks.forEach(ingestTaskFinancial);
+      // Update snapshot only on a non-empty successful payload.
+      lastTasksSnapshot = tasks;
+    }
+
     return tasks;
   },
 
@@ -149,6 +175,31 @@ export const taskService = {
    */
   verifyMemberCompletion: async (taskId: string, userId: string) => {
     const response = await api.post(`/tasks/${taskId}/members/${userId}/verify`);
+    return response.data;
+  },
+
+  /**
+   * Reassign a member's task back into TODO state.
+   * Mirrors the mobile implementation:
+   * POST /tasks/:taskId/members/:userId/reassign
+   */
+  reassignMember: async (taskId: string, userId: string) => {
+    const response = await api.post(`/tasks/${taskId}/members/${userId}/reassign`);
+    return response.data;
+  },
+
+  /**
+   * Add assignees to an existing task.
+   * Mirrors the mobile / backend implementation:
+   * POST /tasks/:taskId/assignees
+   *
+   * NOTE: This is separate from adding members to the conversation.
+   * New assignees will join the task group conversation only when they accept the task.
+   */
+  addTaskAssignees: async (taskId: string, assigneeIds: string[]) => {
+    const response = await api.post(`/tasks/${taskId}/assignees`, {
+      assignee_ids: assigneeIds,
+    });
     return response.data;
   },
 };

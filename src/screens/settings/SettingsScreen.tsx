@@ -119,11 +119,11 @@ export const SettingsScreen: React.FC = () => {
         }
         try {
           const status = await entityMasterBulkService.pollUntilDone(data.uploadId);
-          if (status.status === 'completed') {
-            toast.success('Settings bulk upload completed.');
-          } else {
-            toast.warning('Bulk upload finished with errors.');
-          }
+        if (status.status === 'completed') {
+          toast.success('Settings bulk upload completed.');
+        } else {
+          toast.info('Bulk upload finished with errors.');
+        }
           if (status.errors?.length) {
             status.errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
             if (status.errors.length > 5) toast.error(`… and ${status.errors.length - 5} more errors`);
@@ -156,60 +156,43 @@ export const SettingsScreen: React.FC = () => {
   };
 
   const getColorClasses = (color: string) => {
-    const colors: Record<string, { bg: string; iconBg: string; border: string; hover: string }> = {
+    // Used to theme just the icon/accent; list rows themselves stay minimal (no cards)
+    const colors: Record<string, { iconBg: string; iconRing: string }> = {
       blue: {
-        bg: 'bg-blue-50 dark:bg-blue-900/20',
         iconBg: 'bg-blue-500',
-        border: 'border-blue-200 dark:border-blue-800',
-        hover: 'hover:border-blue-300 dark:hover:border-blue-700'
+        iconRing: 'ring-blue-100 dark:ring-blue-900/40',
       },
       red: {
-        bg: 'bg-red-50 dark:bg-red-900/20',
         iconBg: 'bg-red-500',
-        border: 'border-red-200 dark:border-red-800',
-        hover: 'hover:border-red-300 dark:hover:border-red-700'
+        iconRing: 'ring-red-100 dark:ring-red-900/40',
       },
       purple: {
-        bg: 'bg-purple-50 dark:bg-purple-900/20',
         iconBg: 'bg-purple-500',
-        border: 'border-purple-200 dark:border-purple-800',
-        hover: 'hover:border-purple-300 dark:hover:border-purple-700'
+        iconRing: 'ring-purple-100 dark:ring-purple-900/40',
       },
       green: {
-        bg: 'bg-green-50 dark:bg-green-900/20',
         iconBg: 'bg-green-500',
-        border: 'border-green-200 dark:border-green-800',
-        hover: 'hover:border-green-300 dark:hover:border-green-700'
+        iconRing: 'ring-green-100 dark:ring-green-900/40',
       },
       orange: {
-        bg: 'bg-orange-50 dark:bg-orange-900/20',
         iconBg: 'bg-orange-500',
-        border: 'border-orange-200 dark:border-orange-800',
-        hover: 'hover:border-orange-300 dark:hover:border-orange-700'
+        iconRing: 'ring-orange-100 dark:ring-orange-900/40',
       },
       indigo: {
-        bg: 'bg-indigo-50 dark:bg-indigo-900/20',
         iconBg: 'bg-indigo-500',
-        border: 'border-indigo-200 dark:border-indigo-800',
-        hover: 'hover:border-indigo-300 dark:hover:border-indigo-700'
+        iconRing: 'ring-indigo-100 dark:ring-indigo-900/40',
       },
       teal: {
-        bg: 'bg-teal-50 dark:bg-teal-900/20',
         iconBg: 'bg-teal-500',
-        border: 'border-teal-200 dark:border-teal-800',
-        hover: 'hover:border-teal-300 dark:hover:border-teal-700'
+        iconRing: 'ring-teal-100 dark:ring-teal-900/40',
       },
       pink: {
-        bg: 'bg-pink-50 dark:bg-pink-900/20',
         iconBg: 'bg-pink-500',
-        border: 'border-pink-200 dark:border-pink-800',
-        hover: 'hover:border-pink-300 dark:hover:border-pink-700'
+        iconRing: 'ring-pink-100 dark:ring-pink-900/40',
       },
       cyan: {
-        bg: 'bg-cyan-50 dark:bg-cyan-900/20',
         iconBg: 'bg-cyan-500',
-        border: 'border-cyan-200 dark:border-cyan-800',
-        hover: 'hover:border-cyan-300 dark:hover:border-cyan-700'
+        iconRing: 'ring-cyan-100 dark:ring-cyan-900/40',
       },
     };
     return colors[color] || colors.blue;
@@ -229,22 +212,20 @@ export const SettingsScreen: React.FC = () => {
           console.log('Navigating to:', screen);
           navigate(screen);
         }}
-        className={`w-full flex items-start gap-4 p-5 ${colorClasses.bg} rounded-2xl text-left group transition-all duration-300 ease-out
-          border-2 ${colorClasses.border} ${colorClasses.hover}
-          shadow-md hover:shadow-xl hover:-translate-y-1 active:scale-[0.98]`}
+        className="w-full flex items-center gap-4 px-2 py-3 md:px-3 rounded-lg text-left group transition-colors duration-200 hover:bg-gray-100 dark:hover:bg-gray-800/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
       >
-        <div className={`w-12 h-12 ${colorClasses.iconBg} rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg group-hover:scale-110 transition-transform`}>
+        <div className={`w-10 h-10 ${colorClasses.iconBg} rounded-full flex items-center justify-center flex-shrink-0 shadow-sm ring-2 ${colorClasses.iconRing} group-hover:scale-105 transition-transform`}>
           <span className="material-icons-outlined text-white text-xl">{icon}</span>
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="font-bold text-gray-900 dark:text-white text-base mb-1.5 group-hover:text-primary dark:group-hover:text-primary/80 transition-colors">
+          <h3 className="font-semibold text-gray-900 dark:text-white text-sm md:text-base mb-0.5 group-hover:text-primary dark:group-hover:text-primary/80 transition-colors">
             {title}
           </h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed line-clamp-2">
+          <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400 leading-relaxed line-clamp-2">
             {subtitle}
           </p>
         </div>
-        <span className="material-icons-outlined text-gray-400 group-hover:text-primary dark:group-hover:text-primary/80 transition-colors flex-shrink-0">
+        <span className="material-icons-outlined text-gray-400 group-hover:text-primary dark:group-hover:text-primary/80 transition-colors flex-shrink-0 text-base md:text-lg">
           chevron_right
         </span>
       </button>
@@ -256,7 +237,7 @@ export const SettingsScreen: React.FC = () => {
     ? [...commonSettings, ...adminSettingsCards]
     : commonSettings;
 
-  const handleSettingSelect = (item: any, index: number) => {
+  const handleSettingSelect = (_item: any, index: number) => {
     const selectedItem = allSettingsItems[index];
     if (selectedItem) {
       navigate(selectedItem.screen);
@@ -323,9 +304,11 @@ export const SettingsScreen: React.FC = () => {
                 <div className="w-1 h-8 bg-gradient-to-b from-primary to-primary/60 rounded-full"></div>
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">General Settings</h2>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="divide-y divide-gray-100 dark:divide-gray-800 rounded-xl bg-white/60 dark:bg-slate-900/40 border border-gray-200 dark:border-gray-800">
                 {commonSettings.map((item, index) => (
-                  <SettingCard key={index} {...item} />
+                  <div key={index} className="first:border-t-0">
+                    <SettingCard {...item} />
+                  </div>
                 ))}
               </div>
             </div>
@@ -349,11 +332,11 @@ export const SettingsScreen: React.FC = () => {
                   <SettingCard key={index} {...item} />
                 ))}
                 onItemSelect={handleSettingSelect}
-                showGradients={true}
+                showGradients={false}
                 enableArrowNavigation={true}
                 displayScrollbar={true}
-                className="w-full bg-white dark:bg-slate-800/50 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700"
-                itemClassName="hover:scale-[1.01] transition-transform"
+                className="w-full rounded-xl bg-white/60 dark:bg-slate-900/40 border border-gray-200 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800"
+                itemClassName="transition-transform"
               />
             </div>
           )}

@@ -633,12 +633,14 @@ export const EntityList: React.FC = () => {
         )}
 
         {modal && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-6 w-full max-w-md mx-4 space-y-4">
-              <div className="text-lg font-bold text-slate-900 dark:text-white">
-                {modal.mode === 'add' ? 'Add Client' : 'Edit Client'}
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto">
+            <div className="bg-white dark:bg-slate-800 rounded-xl w-full max-w-md mx-auto flex flex-col max-h-[90vh] my-auto">
+              <div className="p-6 pb-2 flex-shrink-0">
+                <div className="text-lg font-bold text-slate-900 dark:text-white">
+                  {modal.mode === 'add' ? 'Add Client' : 'Edit Client'}
+                </div>
               </div>
-              <div className="space-y-3">
+              <div className="px-6 pb-4 flex-1 overflow-y-auto space-y-3 min-h-0">
                 <div>
                   <label className="block text-sm font-medium mb-1">Name *</label>
                   <input
@@ -737,7 +739,8 @@ export const EntityList: React.FC = () => {
                   </select>
                 </div>
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="p-6 pt-4 flex-shrink-0 border-t border-slate-100 dark:border-slate-700">
+                <div className="flex justify-end gap-2">
                 <button
                   className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700"
                   onClick={() => setModal(null)}
@@ -752,6 +755,7 @@ export const EntityList: React.FC = () => {
                 >
                   {saveMutation.isLoading ? 'Saving...' : 'Save'}
                 </button>
+                </div>
               </div>
             </div>
           </div>

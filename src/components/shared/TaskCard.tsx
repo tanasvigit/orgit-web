@@ -7,7 +7,7 @@ interface TaskCardProps {
   id: string;
   title: string;
   description?: string;
-  status: 'overdue' | 'duesoon' | 'inprogress' | 'completed';
+  status: 'scheduled' | 'overdue' | 'duesoon' | 'inprogress' | 'completed';
   dueDate?: string;
   category?: string;
   priority?: string;
@@ -32,6 +32,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 }) => {
   // Status color mapping with full Tailwind classes (required for build-time class detection)
   const statusColorClasses = {
+    scheduled: 'bg-indigo-500',
     overdue: 'bg-status-overdue',
     duesoon: 'bg-status-duesoon',
     inprogress: 'bg-status-inprogress',
@@ -39,6 +40,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   };
 
   const statusTextColorClasses = {
+    scheduled: 'text-indigo-600 dark:text-indigo-300',
     overdue: 'text-status-overdue',
     duesoon: 'text-status-duesoon',
     inprogress: 'text-status-inprogress',

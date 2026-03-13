@@ -67,7 +67,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [titleHighlightedIndex, setTitleHighlightedIndex] = useState(-1);
   const titleSuggestionsRef = useRef<HTMLDivElement>(null);
   const [recurrenceType, setRecurrenceType] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>('weekly');
-  const [autoEscalate, setAutoEscalate] = useState(false);
   const [createTaskLoading, setCreateTaskLoading] = useState(false);
   const [reportingMemberId, setReportingMemberId] = useState<string | null>(null);
   const { toast } = useToast();
@@ -77,8 +76,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const hasFormData = () => {
     // Check if title has been modified (not just initial value)
     const titleModified = title.trim() && title.trim() !== initialTitle;
-    // Check if description has been modified (not just initial value)
-    const descriptionModified = description.trim() && description.trim() !== initialDescription;
     // Check other fields
     const hasOtherData = 
       selectedAssignees.length > 0 ||
@@ -86,10 +83,9 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       isRecurring ||
       taskOwner !== 'self' ||
       taskOwnerUserId !== null ||
-      reportingMemberId !== null ||
-      autoEscalate;
+      reportingMemberId !== null;
     
-    return titleModified || descriptionModified || hasOtherData;
+    return titleModified || hasOtherData;
   };
 
   // Handle close with confirmation if data exists
@@ -184,9 +180,28 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   );
 
   const [selectedClientId, setSelectedClientId] = useState<string>('');
+  const [clientInput, setClientInput] = useState<string>('');
+  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+  const [clientHighlightedIndex, setClientHighlightedIndex] = useState(-1);
+  const clientSuggestionsRef = useRef<HTMLDivElement>(null);
 
   const clientMatrixServices = clientMatrixData?.services || [];
   const clientMatrixClients = clientMatrixData?.clients || [];
+
+  // Keep text input in sync with the selected client
+  React.useEffect(() => {
+    const selected = clientMatrixClients.find((c) => c.id === selectedClientId);
+    setClientInput(selected?.name || '');
+  }, [selectedClientId, clientMatrixClients]);
+
+  const clientSuggestions = useMemo(() => {
+    const q = clientInput.trim().toLowerCase();
+    if (!clientMatrixClients || clientMatrixClients.length === 0) return [];
+    if (!q) {
+      return clientMatrixClients.slice(0, 15);
+    }
+    return clientMatrixClients.filter((c) => (c.name || '').toLowerCase().includes(q)).slice(0, 15);
+  }, [clientInput, clientMatrixClients]);
 
   const titleServicePool = useMemo(() => {
     if (selectedClientId && clientMatrixClients.length > 0) {
@@ -235,14 +250,12 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     return allUsers;
   }, [allUsers, assigneeSearchQuery, currentOrgId]);
 
-  // Format date time helper
-  const formatDateTime = (date: Date) => {
+  // Format date (date only, no time)
+  const formatDate = (date: Date) => {
     return date.toLocaleDateString([], { 
       month: 'short', 
       day: 'numeric', 
       year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
     });
   };
 
@@ -277,7 +290,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     due30.setHours(9, 0, 0, 0);
     setDueDate(due30);
     setRecurrenceType('weekly');
-    setAutoEscalate(false);
     setReportingMemberId(null);
   };
 
@@ -330,7 +342,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         due_date: dueDate.toISOString(),
         recurrence_type: isRecurring ? recurrenceType : null,
         recurrence_interval: 1,
-        auto_escalate: autoEscalate,
         // Mobile stores documentId/complianceId in metadata (backend may ignore; kept for parity)
         metadata: {
           ...(documentId ? { documentId } : {}),
@@ -432,25 +443,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
-          {/* 0. Client Name (optional) */}
-          <div>
-            <label className="block text-sm sm:text-base font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Client Name
-            </label>
-            <select
-              value={selectedClientId}
-              onChange={(e) => setSelectedClientId(e.target.value)}
-              className="w-full px-4 py-3 sm:py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm sm:text-base text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[44px]"
-            >
-              <option value="">All clients</option>
-              {clientMatrixClients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
           {/* 1. Task Title - with service list suggestions (Google-like) */}
           <div className="relative" ref={titleSuggestionsRef}>
             <label className="block text-sm sm:text-base font-semibold text-gray-700 dark:text-gray-300 mb-2">
@@ -527,7 +519,94 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             )}
           </div>
 
-          {/* 2. Assigned To */}
+          {/* 2. Client Name */}
+          <div className="relative" ref={clientSuggestionsRef}>
+            <label className="block text-sm sm:text-base font-semibold text-gray-700 dark:text-gray-300 mb-2">
+              Client Name
+            </label>
+            <input
+              type="text"
+              value={clientInput}
+              onChange={(e) => {
+                const value = e.target.value;
+                setClientInput(value);
+                setShowClientSuggestions(true);
+                setClientHighlightedIndex(-1);
+                const match = clientMatrixClients.find(
+                  (c) => c.name?.toLowerCase() === value.trim().toLowerCase()
+                );
+                setSelectedClientId(match?.id || '');
+              }}
+              onFocus={() => setShowClientSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
+              onKeyDown={(e) => {
+                if (!showClientSuggestions || clientSuggestions.length === 0) {
+                  if (e.key === 'Escape') setShowClientSuggestions(false);
+                  return;
+                }
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setClientHighlightedIndex((i) =>
+                    i < clientSuggestions.length - 1 ? i + 1 : 0
+                  );
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setClientHighlightedIndex((i) =>
+                    i > 0 ? i - 1 : clientSuggestions.length - 1
+                  );
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const item =
+                    clientSuggestions[clientHighlightedIndex >= 0 ? clientHighlightedIndex : 0];
+                  if (item?.id) {
+                    setSelectedClientId(item.id);
+                    setClientInput(item.name || '');
+                    setShowClientSuggestions(false);
+                    setClientHighlightedIndex(-1);
+                  }
+                } else if (e.key === 'Escape') {
+                  setShowClientSuggestions(false);
+                  setClientHighlightedIndex(-1);
+                }
+              }}
+              placeholder="Type client name (optional)"
+              className="w-full px-4 py-3 sm:py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm sm:text-base text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[44px]"
+            />
+            {showClientSuggestions && clientSuggestions.length > 0 && (
+              <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg py-1">
+                {clientSuggestions.map((client, index) => (
+                  <button
+                    key={client.id}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setSelectedClientId(client.id);
+                      setClientInput(client.name || '');
+                      setShowClientSuggestions(false);
+                      setClientHighlightedIndex(-1);
+                    }}
+                    className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${
+                      index === clientHighlightedIndex
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                    }`}
+                  >
+                    <span className="material-icons-outlined text-lg text-gray-400 dark:text-gray-500 shrink-0">
+                      business
+                    </span>
+                    <span className="font-medium truncate">{client.name}</span>
+                    {client.code && (
+                      <span className="ml-auto text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                        {client.code}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 3. Assigned To */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
               Assigned To
@@ -592,108 +671,113 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             </div>
           )}
 
-          {/* 3. SCHEDULE */}
+          {/* 4. Recurrence */}
           <div>
-            <h3 className="text-sm font-bold uppercase text-gray-500 dark:text-gray-400 mb-4 tracking-wider">
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+              Recurrence
+            </label>
+            <div className="flex gap-3 mb-3">
+              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                <input
+                  type="radio"
+                  name="recurrence"
+                  value="one_time"
+                  checked={!isRecurring}
+                  onChange={() => setIsRecurring(false)}
+                  className="h-4 w-4 text-primary focus:ring-primary border-gray-300"
+                />
+                <span>One-time</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                <input
+                  type="radio"
+                  name="recurrence"
+                  value="recurring"
+                  checked={isRecurring}
+                  onChange={() => setIsRecurring(true)}
+                  className="h-4 w-4 text-primary focus:ring-primary border-gray-300"
+                />
+                <span>Recurring</span>
+              </label>
+            </div>
+
+            {/* Recurrence Options (only visible when Recurring is selected) */}
+            {isRecurring && (
+              <div className="animate-in fade-in slide-in-from-top-2 duration-200">
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  Recurrence Frequency
+                </label>
+                <div className="flex gap-2">
+                  {(['weekly', 'monthly', 'quarterly', 'yearly'] as const).map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => setRecurrenceType(type)}
+                      className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${
+                        recurrenceType === type
+                          ? 'bg-primary text-white shadow-sm'
+                          : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                      }`}
+                    >
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 5. SCHEDULE */}
+          <div>
+            <h3 className="text-sm font-bold uppercase text-gray-500 dark:text-gray-400 mb-3 tracking-wider">
               SCHEDULE
             </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Start Date */}
+              <div className="flex flex-col">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  Start Date
+                </label>
+                <button
+                  onClick={() => setShowStartPicker(true)}
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-left flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                >
+                  <span className="text-gray-700 dark:text-gray-300 text-sm">{formatDate(startDate)}</span>
+                  <span className="material-symbols-outlined text-gray-400 text-base">calendar_today</span>
+                </button>
+              </div>
 
-            {/* Start Date */}
-            <div className="mb-4">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Start Date
-              </label>
-              <button
-                onClick={() => setShowStartPicker(true)}
-                className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-left flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-              >
-                <span className="text-gray-700 dark:text-gray-300">{formatDateTime(startDate)}</span>
-                <span className="material-symbols-outlined text-gray-400">calendar_today</span>
-              </button>
-            </div>
+              {/* Target Date */}
+              <div className="flex flex-col">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  Target Date
+                </label>
+                <button
+                  onClick={() => setShowTargetPicker(true)}
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-left flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                >
+                  <span className="text-gray-700 dark:text-gray-300 text-sm">{formatDate(targetDate)}</span>
+                  <span className="material-symbols-outlined text-gray-400 text-base">calendar_today</span>
+                </button>
+              </div>
 
-            {/* Target Date */}
-            <div className="mb-4">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Target Date
-              </label>
-              <button
-                onClick={() => setShowTargetPicker(true)}
-                className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-left flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-              >
-                <span className="text-gray-700 dark:text-gray-300">{formatDateTime(targetDate)}</span>
-                <span className="material-symbols-outlined text-gray-400">calendar_today</span>
-              </button>
-            </div>
-
-            {/* Due Date */}
-            <div className="mb-4">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-base">event</span>
-                Due Date
-              </label>
-              <button
-                onClick={() => setShowDuePicker(true)}
-                className="w-full px-4 py-3 rounded-lg border-2 border-primary/50 dark:border-primary/50 bg-primary/5 dark:bg-primary/10 text-left flex items-center justify-between hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors"
-              >
-                <span className="text-gray-900 dark:text-white font-medium">{formatDateTime(dueDate)}</span>
-                <span className="material-symbols-outlined text-primary">calendar_today</span>
-              </button>
-            </div>
-          </div>
-
-          {/* 4. Recurrence Toggle */}
-          <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-            <div className="flex-1">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                Recurrence
-              </label>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                {isRecurring ? 'This is a recurring task' : 'This is a one-time task'}
-              </p>
-            </div>
-            <button
-              onClick={() => setIsRecurring(!isRecurring)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 ${
-                isRecurring ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
-              }`}
-              role="switch"
-              aria-checked={isRecurring}
-              aria-label={isRecurring ? 'Recurring task enabled' : 'One-time task (recurrence disabled)'}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  isRecurring ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Recurrence Options (only visible when toggle is enabled) */}
-          {isRecurring && (
-            <div className="animate-in fade-in slide-in-from-top-2 duration-200">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Recurrence Frequency
-              </label>
-              <div className="flex gap-2">
-                {(['weekly', 'monthly', 'quarterly', 'yearly'] as const).map((type) => (
-                  <button
-                    key={type}
-                    onClick={() => setRecurrenceType(type)}
-                    className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${
-                      recurrenceType === type
-                        ? 'bg-primary text-white shadow-sm'
-                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </button>
-                ))}
+              {/* Due Date */}
+              <div className="flex flex-col">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-primary text-sm">event</span>
+                  <span>Due Date</span>
+                </label>
+                <button
+                  onClick={() => setShowDuePicker(true)}
+                  className="w-full px-3 py-2.5 rounded-lg border-2 border-primary/50 dark:border-primary/50 bg-primary/5 dark:bg-primary/10 text-left flex items-center justify-between hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors"
+                >
+                  <span className="text-gray-900 dark:text-white font-medium text-sm">{formatDate(dueDate)}</span>
+                  <span className="material-symbols-outlined text-primary text-base">calendar_today</span>
+                </button>
               </div>
             </div>
-          )}
+          </div>
 
-          {/* 5. Task Owner */}
+          {/* 6. Task Owner */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
               Task Owner
@@ -762,7 +846,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             </div>
           )}
 
-          {/* 6. Financial Value (Optional) */}
+          {/* 7. Financial Value (Optional) */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
               Financial Value <span className="text-gray-400 font-normal">(Optional)</span>
@@ -800,50 +884,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
               </div>
             </div>
           )}
-
-          {/* 7. Description */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Description
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Add detailed instructions..."
-              rows={4}
-              readOnly={!!initialDescription}
-              className={`w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none transition-colors ${
-                initialDescription ? 'bg-gray-50 dark:bg-gray-700 cursor-not-allowed' : 'bg-white dark:bg-gray-700'
-              }`}
-            />
-          </div>
-
-          {/* 8. Auto Escalate */}
-          <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-            <div className="flex-1">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                Auto Escalate
-              </label>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Automatically escalate task if not completed on time
-              </p>
-            </div>
-            <button
-              onClick={() => setAutoEscalate(!autoEscalate)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 ${
-                autoEscalate ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
-              }`}
-              role="switch"
-              aria-checked={autoEscalate}
-              aria-label={autoEscalate ? 'Auto escalate enabled' : 'Auto escalate disabled'}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  autoEscalate ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
 
           {/* Create Button */}
           <button

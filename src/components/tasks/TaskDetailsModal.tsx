@@ -5,6 +5,7 @@ import { taskService } from '../../services/taskService';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { formatShortDate, formatTaskCreatedLabel } from '../../utils/chatTime';
+import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
 
 interface TaskDetailsModalProps {
   visible: boolean;
@@ -215,47 +216,45 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
     return formatted || 'Not set';
   };
 
-  const getStatusLabel = (status: string) => {
-    const labels: { [key: string]: string } = {
-      pending: 'TODO',
-      in_progress: 'In Progress',
-      completed: 'Completed',
-      rejected: 'Rejected',
-    };
-    return labels[status] || status;
-  };
+  const category = getTaskStatusCategoryFromTask(displayTask) as TaskStatusCategory;
 
-  const getStatusColor = (status: string) => {
-    const colors: { [key: string]: string } = {
-      pending: '#6B7280',
-      in_progress: '#F59E0B',
-      completed: '#10B981',
-      rejected: '#EF4444',
-    };
-    return colors[status] || '#6B7280';
-  };
+  const primaryStatusLabel: string = (() => {
+    switch (category) {
+      case 'scheduled':
+        return 'Scheduled';
+      case 'todo':
+        return 'TODO';
+      case 'inprogress':
+        return 'In Progress';
+      case 'duesoon':
+        return 'Due Soon';
+      case 'overdue':
+        return 'Overdue';
+      case 'completed':
+        return 'Completed';
+      default:
+        return 'TODO';
+    }
+  })();
 
-  const dueDate = displayTask.due_date ? new Date(displayTask.due_date) : null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const isOverdue = dueDate && dueDate < today && displayTask.status !== 'completed';
-  const rawStatus = (displayTask.status || '').toLowerCase();
-  const anyAssigneeAccepted = assignees.some(
-    (a: any) => a.accepted_at || a.has_accepted
-  );
-
-  let primaryStatusLabel: string = 'TODO';
-  if (rawStatus === 'completed') {
-    primaryStatusLabel = 'Completed';
-  } else if (isOverdue && rawStatus !== 'completed') {
-    primaryStatusLabel = 'Overdue';
-  } else if (rawStatus === 'in_progress' || (rawStatus === 'pending' && anyAssigneeAccepted)) {
-    primaryStatusLabel = 'In Progress';
-  }
-
-  const statusColor = getStatusColor(
-    primaryStatusLabel === 'In Progress' ? 'in_progress' : (displayTask.status || 'pending')
-  );
+  const statusColor: string = (() => {
+    switch (category) {
+      case 'scheduled':
+        return '#6366F1';
+      case 'todo':
+        return '#6B7280';
+      case 'inprogress':
+        return '#F59E0B';
+      case 'duesoon':
+        return '#F59E0B';
+      case 'overdue':
+        return '#EF4444';
+      case 'completed':
+        return '#10B981';
+      default:
+        return '#6B7280';
+    }
+  })();
 
   const content = (
     <div className="p-6 md:p-8">
