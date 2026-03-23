@@ -202,11 +202,11 @@
     <tr>
       <td style="width:50%; vertical-align:top;">
         <div class="header-wrap">
+          {{#if company_logo_data_uri}}
           <div class="logo">
-            {{#if company_logo_data_uri}}
               <img src="{{company_logo_data_uri}}" alt="Company Logo" />
-            {{/if}}
           </div>
+          {{/if}}
           <div>
             <h1 class="h-title">{{company_name}}</h1>
             <p class="h-meta strong">GSTIN {{company_gstin}}</p>

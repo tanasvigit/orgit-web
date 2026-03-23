@@ -253,15 +253,20 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
   // EXACT mobile logic: getMemberStatusLabel shows "Completed" if completed_at exists
   const getMemberStatusLabel = (member: any) => {
     const lane = normalizeLifecycleStatus(member?.assignee_status);
+    const daysUntilDue = getDaysUntilDue(displayTask);
     if (displayTask?.is_before_start_date === true || isBeforeStartDate(displayTask)) return 'Scheduled';
     if (lane === 'scheduled') return 'Scheduled';
     if (lane === 'completed') return 'Completed';
-    if (lane === 'inprogress' || lane === 'duesoon' || lane === 'overdue') return 'In Progress';
+    if (lane === 'overdue') return 'Overdue';
+    if (lane === 'duesoon') return 'Due Soon';
+    if (lane === 'inprogress') return 'In Progress';
     if (lane === 'todo') return 'TODO';
     if (member.completed_at || member.completion_status === 'completed' || member.status === 'completed') {
       return 'Completed';
     }
     if (member.accepted_at || member.has_accepted) {
+      if (daysUntilDue != null && daysUntilDue < 0) return 'Overdue';
+      if (daysUntilDue != null && daysUntilDue >= 0 && daysUntilDue <= 3) return 'Due Soon';
       return 'In Progress';
     }
     return 'TODO';
@@ -270,15 +275,20 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
   // EXACT mobile logic: getMemberStatusColor shows green if completed_at exists
   const getMemberStatusColor = (member: any) => {
     const lane = normalizeLifecycleStatus(member?.assignee_status);
+    const daysUntilDue = getDaysUntilDue(displayTask);
     if (displayTask?.is_before_start_date === true || isBeforeStartDate(displayTask)) return '#6366F1';
     if (lane === 'scheduled') return '#6366F1';
     if (lane === 'completed') return '#2E7D32';
-    if (lane === 'inprogress' || lane === 'duesoon' || lane === 'overdue') return '#F57C00';
+    if (lane === 'overdue') return '#DC2626';
+    if (lane === 'duesoon') return '#F59E0B';
+    if (lane === 'inprogress') return '#F57C00';
     if (lane === 'todo') return '#9CA3AF';
     if (member.completed_at || member.completion_status === 'completed' || member.status === 'completed') {
       return '#2E7D32'; // Green for completed
     }
     if (member.accepted_at || member.has_accepted) {
+      if (daysUntilDue != null && daysUntilDue < 0) return '#DC2626';
+      if (daysUntilDue != null && daysUntilDue >= 0 && daysUntilDue <= 3) return '#F59E0B';
       return '#F57C00'; // Orange for in progress
     }
     return '#9CA3AF'; // Gray for pending
@@ -697,6 +707,28 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
 
   // Viewer-scoped status category (drives header badge, timeline and controls)
   const globalStatus = getViewerStatusCategory(displayTask) as TaskStatusCategory;
+  React.useEffect(() => {
+    if (!displayTask?.id) return;
+    if (String(displayTask.id) !== '21b9036f-8eeb-4b7d-b12f-b09246705ef9') return;
+    console.log('[TaskStatusDebug][details][globalIndicator]', {
+      taskId: displayTask.id,
+      currentUserId,
+      currentUserAssigneeStatus: displayTask?.current_user_status?.assignee_status,
+      assignees: Array.isArray(displayTask?.assignees)
+        ? displayTask.assignees.map((a: any) => ({
+            id: a?.id || a?.user_id || a?.userId,
+            assignee_status: a?.assignee_status,
+            accepted_at: a?.accepted_at,
+            completed_at: a?.completed_at,
+            verified_at: a?.verified_at,
+          }))
+        : [],
+      status: displayTask?.status,
+      due_date: displayTask?.due_date,
+      is_before_start_date: displayTask?.is_before_start_date,
+      resolved: globalStatus,
+    });
+  }, [displayTask, currentUserId, globalStatus]);
 
   const heroStatusLabel = (() => {
     switch (globalStatus) {

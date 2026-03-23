@@ -83,7 +83,8 @@ export const TaskDashboardScreen: React.FC = () => {
   // not from client-side date comparisons.
   const getTaskStatusForFilter = (task: any): TaskDashboardStatus | null => {
     if (!task) return null;
-    return getTaskStatusCategoryFromTask(task);
+    const currentUserId = user?.id || (user as any)?.userId;
+    return getTaskStatusCategoryFromTask(task, 3, currentUserId);
   };
 
   // Fetch all task services (recurring + one_time) for search suggestions
@@ -190,7 +191,7 @@ export const TaskDashboardScreen: React.FC = () => {
     }
   );
 
-  const dashboardTaskIdsForFilter = useMemo(() => {
+  const dashboardTaskIdsForView = useMemo(() => {
     if (!dashboardData?.data) return null;
     if (viewFilter === 'all') return null;
 
@@ -198,30 +199,13 @@ export const TaskDashboardScreen: React.FC = () => {
     const section = (dashboardData.data as any)[sectionKey];
     if (!section) return null;
 
-    // Scheduled is backend-driven (task_assignees.status = scheduled) and isn't present
-    // in dashboard buckets; treat it as client-side filter only.
-    if (statusFilter === 'scheduled') return null;
-
-    const statusKeyMap: Record<Exclude<Exclude<StatusFilter, 'all'>, 'scheduled'>, 'todo' | 'overdue' | 'dueSoon' | 'inProgress' | 'completed'> = {
-      todo: 'todo',
-      overdue: 'overdue',
-      duesoon: 'dueSoon',
-      inprogress: 'inProgress',
-      completed: 'completed',
-    };
-
-    const statuses: Exclude<Exclude<StatusFilter, 'all'>, 'scheduled'>[] =
-      statusFilter === 'all'
-        ? ['todo', 'overdue', 'duesoon', 'inprogress', 'completed']
-        : [statusFilter as Exclude<Exclude<StatusFilter, 'all'>, 'scheduled'>];
-
     const ids = new Set<string>();
 
     Object.values(section).forEach((categoryGroup: any) => {
       if (!categoryGroup) return;
-      statuses.forEach((s) => {
-        const bucketKey = statusKeyMap[s];
-        const bucket = categoryGroup[bucketKey];
+      // Collect every task id from the selected view section, independent of status bucket.
+      // Status is applied later using getTaskStatusForFilter(task) so it matches Task Details.
+      Object.values(categoryGroup).forEach((bucket: any) => {
         if (Array.isArray(bucket)) {
           bucket.forEach((t: any) => {
             if (t?.id) ids.add(String(t.id));
@@ -231,7 +215,7 @@ export const TaskDashboardScreen: React.FC = () => {
     });
 
     return ids;
-  }, [dashboardData, statusFilter, viewFilter]);
+  }, [dashboardData, viewFilter]);
 
   // Fetch conversations (all conversations).
   // refetchOnMount: "always" + staleTime: 0 so we never render stale cached data on mount; fresh fetch runs first.
@@ -384,19 +368,19 @@ export const TaskDashboardScreen: React.FC = () => {
       });
     }
 
-    // Status filter: always use per-user lifecycle categorization (same as mobile),
-    // and when coming from a dashboard card, additionally constrain to that section's task IDs.
+    // Status filter: always use per-user lifecycle categorization (same as Task Details).
+    // If view filter is present (self/assigned), constrain by the selected section's task IDs.
     if (statusFilter !== 'all') {
       filtered = filtered.filter((task: any) => {
         const category = getTaskStatusForFilter(task);
         if (category !== statusFilter) return false;
-        if (dashboardTaskIdsForFilter && dashboardTaskIdsForFilter.size > 0) {
-          return !!(task?.id && dashboardTaskIdsForFilter.has(String(task.id)));
+        if (dashboardTaskIdsForView && dashboardTaskIdsForView.size > 0) {
+          return !!(task?.id && dashboardTaskIdsForView.has(String(task.id)));
         }
         return true;
       });
-    } else if (dashboardTaskIdsForFilter && dashboardTaskIdsForFilter.size > 0) {
-      filtered = filtered.filter((task: any) => task?.id && dashboardTaskIdsForFilter.has(String(task.id)));
+    } else if (dashboardTaskIdsForView && dashboardTaskIdsForView.size > 0) {
+      filtered = filtered.filter((task: any) => task?.id && dashboardTaskIdsForView.has(String(task.id)));
     }
 
     // Sort by created date (newest first)
@@ -439,8 +423,8 @@ export const TaskDashboardScreen: React.FC = () => {
 
       // Align with dashboard metric selection (Self / Assigned + status),
       // but always respect per-user lifecycle status (same logic as for direct tasks).
-      if (dashboardTaskIdsForFilter && dashboardTaskIdsForFilter.size > 0) {
-        if (!(task?.id && dashboardTaskIdsForFilter.has(String(task.id)))) return false;
+      if (dashboardTaskIdsForView && dashboardTaskIdsForView.size > 0) {
+        if (!(task?.id && dashboardTaskIdsForView.has(String(task.id)))) return false;
         if (statusFilter !== 'all') {
           const category = getTaskStatusForFilter(task);
           return category === statusFilter;
@@ -465,7 +449,7 @@ export const TaskDashboardScreen: React.FC = () => {
     }
 
     // When not driven by a dashboard metric, apply local status categorization
-    if (!dashboardTaskIdsForFilter || dashboardTaskIdsForFilter.size === 0) {
+    if (!dashboardTaskIdsForView || dashboardTaskIdsForView.size === 0) {
       if (statusFilter !== 'all') {
         filtered = filtered.filter(conv => {
           const convId = conv.id ?? conv.conversationId;
@@ -495,7 +479,7 @@ export const TaskDashboardScreen: React.FC = () => {
     taskByConvId,
     taskIdByConvId,
     failedTaskIds,
-    dashboardTaskIdsForFilter,
+    dashboardTaskIdsForView,
     hasConversationsFetchedSinceMount,
     isConversationsLoading,
     isConversationsFetching,
@@ -1122,7 +1106,7 @@ export const TaskDashboardScreen: React.FC = () => {
         ) : null}
 
         {/* Tasks that the current user is assigned to but which are not yet visible as task groups.
-            These are already filtered by status/search/dashboardTaskIdsForFilter above,
+            These are already filtered by status/search/dashboardTaskIdsForView above,
             so they stay in sync with dashboard counts. Accept / Reject is handled from chat. */}
         {!isPendingTasksLoading && tasksWithoutConversations.length > 0 && (
           <div className="space-y-1">

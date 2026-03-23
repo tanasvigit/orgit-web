@@ -143,7 +143,8 @@ export const AdminDashboard: React.FC = () => {
     return result.filter((t) => t && t.id && !isTaskDeleted(t));
   };
 
-  // Fetch full task details for a small set so assignees/progress stays accurate.
+  // Fetch full task details for all visible dashboard tasks so status buckets
+  // always match Task Details indicator logic (assignee-based lifecycle).
   useEffect(() => {
     const selfFlat = flattenTasksStructure(selfTasks);
     const assignedFlat = flattenTasksStructure(assignedTasks);
@@ -151,7 +152,6 @@ export const AdminDashboard: React.FC = () => {
     const uniqueIds: string[] = [];
     for (const t of allFlat) {
       if (t?.id && !uniqueIds.includes(t.id)) uniqueIds.push(t.id);
-      if (uniqueIds.length >= 5) break;
     }
 
     if (uniqueIds.length === 0) return;
@@ -235,7 +235,7 @@ export const AdminDashboard: React.FC = () => {
         const full = taskDetails[task.id];
         const merged = full ? { ...task, ...full } : task;
         if (isBeforeStartDate(merged)) return;
-        const bucket = (getTaskStatusCategoryFromTask(merged) || 'todo') as TaskStatusCategory;
+        const bucket = (getTaskStatusCategoryFromTask(merged, 3, currentUserId) || 'todo') as TaskStatusCategory;
         counts[bucket] = (counts[bucket] ?? 0) + 1;
       });
 
@@ -258,7 +258,7 @@ export const AdminDashboard: React.FC = () => {
       const full = taskDetails[task.id];
       const merged = full ? { ...task, ...full } : task;
       if (isBeforeStartDate(merged)) return;
-      const bucket = (getTaskStatusCategoryFromTask(merged) || 'todo') as TaskStatusCategory;
+      const bucket = (getTaskStatusCategoryFromTask(merged, 3, currentUserId) || 'todo') as TaskStatusCategory;
       counts[bucket] = (counts[bucket] ?? 0) + 1;
     });
     return counts;
@@ -376,7 +376,7 @@ export const AdminDashboard: React.FC = () => {
         {tasks.map((task) => {
           const full = taskDetails[task.id];
           const merged = mergeTaskWithFinancial(full ? { ...task, ...full, id: task.id || full.id } : task);
-          const derived = (getTaskStatusCategoryFromTask(merged) || 'todo') as TaskStatusCategory;
+          const derived = (getTaskStatusCategoryFromTask(merged, 3, currentUserId) || 'todo') as TaskStatusCategory;
           const cardStatus: 'scheduled' | 'overdue' | 'duesoon' | 'inprogress' | 'completed' =
             derived === 'scheduled'
               ? 'scheduled'

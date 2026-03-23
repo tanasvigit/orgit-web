@@ -180,13 +180,15 @@
   <!-- Header: Logo | FIRM NAME, Address L1 | L2, City – Pincode | Phone | Email | GSTIN (from Entity Master) -->
   <div class="top-header">
     <div class="logo-wrap">
+      {{#if company_logo_data_uri}}
       <div class="logo">
-        {{#if company_logo_data_uri}}
           <img src="{{company_logo_data_uri}}" alt="Logo" />
-        {{else}}{{#if company_logo_url}}
-          <img src="{{company_logo_url}}" alt="Logo" />
-        {{/if}}{{/if}}
       </div>
+      {{else}}{{#if company_logo_url}}
+      <div class="logo">
+          <img src="{{company_logo_url}}" alt="Logo" />
+      </div>
+      {{/if}}{{/if}}
       <div class="firm-info">
         <p class="company-name">{{company_name}}</p>
         <p class="company-meta company-meta-line">{{address_line1}}{{#if address_line2}} | {{address_line2}}{{/if}}</p>

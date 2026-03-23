@@ -41,6 +41,21 @@ function normalizeLifecycleStatus(status: any): TaskStatusCategory | null {
   return null;
 }
 
+function getCurrentUserAssignee(task: any, currentUserIdOverride?: string | null): any | null {
+  const currentUserStatus = (task as any)?.current_user_status;
+  const currentUserId =
+    (currentUserIdOverride || currentUserStatus?.user_id || currentUserStatus?.userId || (task as any)?.current_user_id || (task as any)?.currentUserId || null);
+  const assignees = Array.isArray((task as any)?.assignees) ? (task as any).assignees : [];
+  if (!assignees.length || !currentUserId) return null;
+
+  return (
+    assignees.find((a: any) => {
+      const assigneeId = a?.id || a?.user_id || a?.userId;
+      return assigneeId != null && String(assigneeId) === String(currentUserId);
+    }) || null
+  );
+}
+
 /**
  * Single source of truth for task-level status categorization on the web.
  *
@@ -53,9 +68,12 @@ function normalizeLifecycleStatus(status: any): TaskStatusCategory | null {
  */
 export function getTaskStatusCategoryFromTask(
   task: any,
-  dueSoonDays: number = 3
+  dueSoonDays: number = 3,
+  currentUserId?: string | null
 ): TaskStatusCategory | null {
   if (!task) return null;
+  const debugTaskId = '21b9036f-8eeb-4b7d-b12f-b09246705ef9';
+  const isDebugTask = String((task as any)?.id || '') === debugTaskId;
 
   // Backend/DB-driven scheduled indicator:
   // taskController adds is_before_start_date for list endpoints, and some endpoints also set assignee_status = 'scheduled'.
@@ -77,31 +95,46 @@ export function getTaskStatusCategoryFromTask(
     }
   }
 
-  // 1. Prefer per-user lifecycle status when available (mirrors mobile filters)
+  // 1. Match Task Details indicator priority:
+  // Prefer assignee_status (current user lane) and do not prioritize current_user_member_status.
   const userScoped =
-    normalizeLifecycleStatus((task as any).current_user_member_status) ||
-    normalizeLifecycleStatus(task.current_user_status?.assignee_status);
+    normalizeLifecycleStatus(task.current_user_status?.assignee_status) ||
+    normalizeLifecycleStatus(getCurrentUserAssignee(task, currentUserId)?.assignee_status);
 
   if (userScoped) {
+    if (isDebugTask) {
+      console.log('[TaskStatusDebug][shared][userScoped]', {
+        taskId: (task as any)?.id,
+        currentUserId,
+        currentUserAssigneeStatus: task.current_user_status?.assignee_status,
+        assigneeStatusFromMembers: getCurrentUserAssignee(task, currentUserId)?.assignee_status,
+        resolved: userScoped,
+      });
+    }
     return userScoped;
   }
 
-  // 2. Then consider global backend-computed task_status
-  const globalFromTaskStatus = normalizeLifecycleStatus(task.task_status);
-  if (globalFromTaskStatus) {
-    return globalFromTaskStatus;
+  // 1b. Per-user completion/acceptance fallback from task_assignees-style fields.
+  // This mirrors Task Details main indicator logic exactly.
+  const me = getCurrentUserAssignee(task, currentUserId);
+  const cu = task.current_user_status;
+  let base: TaskStatusCategory = 'todo';
+  const meCompleted = !!(
+    me?.completed_at ||
+    me?.completion_status === 'completed' ||
+    me?.status === 'completed' ||
+    me?.verified_at
+  );
+  if (meCompleted) {
+    base = 'completed';
+  } else {
+    const accepted = !!(me?.accepted_at || me?.has_accepted || cu?.has_accepted);
+    base = accepted ? 'inprogress' : 'todo';
   }
 
-  // 3. Legacy fallback: derive from task.status and due dates
+  // 2. Date/status override (same precedence as Task Details).
   const rawStatus = String(task.status || '').toLowerCase();
   const due = task.due_date || task.dueDate;
-
-  // completed takes absolute precedence
-  if (rawStatus === 'completed') {
-    return 'completed';
-  }
-
-  // Date-based buckets (overdue / due soon)
   if (due) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -111,21 +144,44 @@ export function getTaskStatusCategoryFromTask(
       const diffDays = Math.ceil(
         (dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
       );
-      if (diffDays < 0) {
+      if (base !== 'completed' && (rawStatus === 'overdue' || diffDays < 0)) {
+        if (isDebugTask) {
+          console.log('[TaskStatusDebug][shared][overdueOverride]', {
+            taskId: (task as any)?.id,
+            currentUserId,
+            base,
+            rawStatus,
+            diffDays,
+            resolved: 'overdue',
+          });
+        }
         return 'overdue';
       }
-      if (diffDays >= 0 && diffDays <= dueSoonDays) {
+      if (base !== 'completed' && diffDays >= 0 && diffDays <= dueSoonDays) {
+        if (isDebugTask) {
+          console.log('[TaskStatusDebug][shared][dueSoonOverride]', {
+            taskId: (task as any)?.id,
+            currentUserId,
+            base,
+            rawStatus,
+            diffDays,
+            resolved: 'duesoon',
+          });
+        }
         return 'duesoon';
       }
     }
   }
-
-  // In progress: only when backend / task.status explicitly says so
-  if (rawStatus === 'in_progress' || rawStatus === 'inprogress') {
-    return 'inprogress';
+  if (isDebugTask) {
+    console.log('[TaskStatusDebug][shared][base]', {
+      taskId: (task as any)?.id,
+      currentUserId,
+      base,
+      rawStatus,
+      currentUserAssigneeStatus: task.current_user_status?.assignee_status,
+      assigneeStatusFromMembers: getCurrentUserAssignee(task, currentUserId)?.assignee_status,
+    });
   }
-
-  // Fallback = To Do
-  return 'todo';
+  return base;
 }
 

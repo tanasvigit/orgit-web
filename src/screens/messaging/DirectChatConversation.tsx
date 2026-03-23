@@ -1569,27 +1569,45 @@ export const DirectChatConversation: React.FC = () => {
   const currentUserId = user?.id || user?.userId;
   const otherMembers = conversationData?.otherMembers || conversationData?.other_members || [];
   
+  // Detect self-chat scenarios:
+  // - URL format direct_<userId> where userId matches current user
+  // - Direct conversation whose only member in otherMembers is the current user
+  const isSelfConversation = !!currentUserId && (
+    (conversationId?.startsWith('direct_') && conversationId.replace('direct_', '') === currentUserId) ||
+    (
+      !(conversationData?.is_group || conversationData?.is_task_group) &&
+      otherMembers.length > 0 &&
+      otherMembers.every((m: any) => {
+        const memberId = m.id || m.user_id || m.userId;
+        return memberId === currentUserId;
+      })
+    )
+  );
+  
   // Find the other user (not the current user) - check all possible ID fields
   const otherUser = otherMembers.find((m: any) => {
     const memberId = m.id || m.user_id || m.userId;
     return memberId && memberId !== currentUserId;
   });
   
-  // Get the other user's name - never use current user's name
+  // Get the other user's name - never use current user's name for real 1:1 chats
   const otherUserName = otherUser?.name || otherUser?.user_name || '';
   const currentUserName = user?.name || '';
   
   // Determine conversation name
-  // For direct chats: use other user's name, but never use current user's name
+  // For direct chats: use other user's name, but handle explicit self-chat gracefully
   // For groups/task groups: use conversation name
   let conversationName = '';
   if (conversationData?.is_group || conversationData?.is_task_group) {
     conversationName = conversationData?.name || 'Group Chat';
   } else {
     // For direct chats, prioritize other user's name
-    // If conversationData.name exists but matches current user, ignore it
     const conversationDataName = conversationData?.name || '';
-    if (conversationDataName && conversationDataName !== currentUserName && otherUserName) {
+
+    if (isSelfConversation) {
+      // Explicit self-chat: show a friendly self label instead of "Unknown User"
+      conversationName = currentUserName || 'You';
+    } else if (conversationDataName && conversationDataName !== currentUserName && otherUserName) {
       // Use conversation name if it's not the current user's name and we have other user's name
       conversationName = conversationDataName;
     } else if (otherUserName && otherUserName !== currentUserName) {
@@ -1598,6 +1616,9 @@ export const DirectChatConversation: React.FC = () => {
     } else if (conversationDataName && conversationDataName !== currentUserName) {
       // Fallback to conversation name if it's not current user's name
       conversationName = conversationDataName;
+    } else if (isSelfConversation) {
+      // Safety fallback for self-chat when we couldn't resolve a display name
+      conversationName = 'You';
     } else {
       conversationName = 'Unknown User';
     }
