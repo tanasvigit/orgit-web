@@ -7,6 +7,8 @@ interface TaskTransitionAnimationProps {
   targetRef: RefObject<HTMLElement>;
   taskId?: string;
   section?: 'self' | 'assigned';
+  fromStatus?: 'todo' | 'inprogress';
+  toStatus?: 'inprogress' | 'completed';
   onComplete: () => void;
 }
 
@@ -15,6 +17,8 @@ export const TaskTransitionAnimation: React.FC<TaskTransitionAnimationProps> = (
   targetRef,
   taskId,
   section = 'self',
+  fromStatus = 'todo',
+  toStatus = 'inprogress',
   onComplete,
 }) => {
   const [positions, setPositions] = useState<{ source: { x: number; y: number }; target: { x: number; y: number } } | null>(null);
@@ -30,10 +34,11 @@ export const TaskTransitionAnimation: React.FC<TaskTransitionAnimationProps> = (
   const boxShadow = useTransform(shadowOpacity, (opacity) =>
     `0 ${4 * opacity}px ${12 * opacity}px rgba(0, 0, 0, ${0.3 * opacity})`
   );
-  const backgroundColor = useTransform(progress, [0, 1], [
-    'rgb(239, 246, 255)', // blue-50
-    'rgb(243, 232, 255)', // purple-50
-  ]);
+  const palette =
+    toStatus === 'completed'
+      ? { from: 'rgb(243, 232, 255)', to: 'rgb(236, 253, 245)', icon: 'task_alt' } // purple-50 -> emerald-50
+      : { from: 'rgb(239, 246, 255)', to: 'rgb(243, 232, 255)', icon: 'pending_actions' }; // blue-50 -> purple-50
+  const backgroundColor = useTransform(progress, [0, 1], [palette.from, palette.to]);
 
   useEffect(() => {
     // Wait for refs to be available and calculate positions
@@ -152,12 +157,12 @@ export const TaskTransitionAnimation: React.FC<TaskTransitionAnimationProps> = (
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
-      {/* Animated icon - shows target icon (pending_actions) */}
+      {/* Animated icon - shows target icon */}
       <motion.div
-        className="mb-2.5 p-2.5 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400"
+        className="mb-2.5 p-2.5 rounded-lg text-purple-600 dark:text-purple-400"
         style={{ backgroundColor }}
       >
-        <span className="material-symbols-outlined text-xl">pending_actions</span>
+        <span className="material-symbols-outlined text-xl">{palette.icon}</span>
       </motion.div>
     </motion.div>,
     portalRoot

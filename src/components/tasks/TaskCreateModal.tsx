@@ -332,6 +332,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       const taskData: any = {
         title: title.trim(),
         description: taskDescription,
+        client_name: clientInput.trim() || null,
         task_type: isRecurring ? 'recurring' : 'one_time',
         task_owner: taskOwner,
         financial_value: Number.isFinite(parsedFinancialValue as number) ? parsedFinancialValue : null,
@@ -349,6 +350,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
           ...(taskOwner === 'contacts' && taskOwnerUserId ? { taskOwnerUserId } : {}),
         },
       };
+
+      if (selectedClientId) {
+        taskData.client_entity_id = selectedClientId;
+      }
 
       // When task owner is another member, send creator_id so API sets them as owner and task is hidden from requester
       if (taskOwner === 'contacts' && taskOwnerUserId) {

@@ -271,6 +271,11 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
               </span>
             </div>
             <h2 className="text-2xl md:text-3xl font-bold leading-tight text-gray-900 dark:text-white mb-4">{displayTask.title}</h2>
+            {displayTask.client_name && (
+              <p className="text-gray-600 dark:text-gray-300 mb-3 text-sm font-medium">
+                Client: {displayTask.client_name}
+              </p>
+            )}
             <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
                 <span className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-lg text-gray-400">calendar_today</span>

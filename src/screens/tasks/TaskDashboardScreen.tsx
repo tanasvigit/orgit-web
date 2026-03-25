@@ -363,8 +363,9 @@ export const TaskDashboardScreen: React.FC = () => {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter((task: any) => {
         const titleMatch = task.title?.toLowerCase().includes(query);
+        const clientMatch = task.client_name?.toLowerCase().includes(query);
         const descMatch = task.description?.toLowerCase().includes(query);
-        return titleMatch || descMatch;
+        return titleMatch || clientMatch || descMatch;
       });
     }
 
@@ -444,7 +445,12 @@ export const TaskDashboardScreen: React.FC = () => {
         const memberMatch = conv.otherMembers?.some(member =>
           member.name?.toLowerCase().includes(query)
         );
-        return nameMatch || lastMessageMatch || memberMatch;
+        const convId = conv.id ?? conv.conversationId;
+        const key = convId != null ? String(convId) : '';
+        const task = key ? taskByConvId[key] : undefined;
+        const taskTitleMatch = task?.title?.toLowerCase().includes(query);
+        const taskClientMatch = task?.client_name?.toLowerCase().includes(query);
+        return nameMatch || lastMessageMatch || memberMatch || taskTitleMatch || taskClientMatch;
       });
     }
 
@@ -1082,6 +1088,11 @@ export const TaskDashboardScreen: React.FC = () => {
                           )}
                         </div>
                       </div>
+                      {task?.client_name && (
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate mb-1">
+                          Client: {task.client_name}
+                        </p>
+                      )}
                       <div className="flex items-center gap-1.5">
                         {lastMessage && (
                           <>
@@ -1157,6 +1168,11 @@ export const TaskDashboardScreen: React.FC = () => {
                           </span>
                         )}
                       </div>
+                      {task.client_name && (
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate mb-1">
+                          Client: {task.client_name}
+                        </p>
+                      )}
                       {task.description && (
                         <p className="text-xs text-gray-600 dark:text-gray-400 truncate mb-2">
                           {task.description.length > 80

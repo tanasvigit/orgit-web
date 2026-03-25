@@ -1534,6 +1534,19 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             ? 'Task completed. The entire task has been marked as completed.'
             : 'Your completion has been marked and sent for approval.';
         toast.success(message);
+
+        // Navigate back to dashboard and animate In Progress → Completed
+        // (Web expects the card to move to Completed immediately for the viewer once they mark complete.)
+        const dashboardPath = user?.role === 'admin' ? '/admin' : '/dashboard';
+        navigate(dashboardPath, {
+          state: {
+            animateTaskTransition: true,
+            taskId,
+            fromStatus: 'inprogress',
+            toStatus: 'completed',
+            taskSection: 'self',
+          },
+        });
       },
       onError: (error: any) => {
         toast.error(

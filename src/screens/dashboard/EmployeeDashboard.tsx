@@ -26,9 +26,11 @@ export const EmployeeDashboard: React.FC = () => {
   // Refs for task transition animation (Self Tasks section)
   const selfTasksToDoIconRef = useRef<HTMLDivElement>(null);
   const selfTasksInProgressIconRef = useRef<HTMLDivElement>(null);
+  const selfTasksCompletedIconRef = useRef<HTMLDivElement>(null);
   // Refs for task transition animation (Assigned Tasks section)
   const assignedTasksToDoIconRef = useRef<HTMLDivElement>(null);
   const assignedTasksInProgressIconRef = useRef<HTMLDivElement>(null);
+  const assignedTasksCompletedIconRef = useRef<HTMLDivElement>(null);
 
   const { data: dashboardData, isLoading, refetch: refetchDashboard } = useQuery(
     ['dashboard'],
@@ -49,37 +51,59 @@ export const EmployeeDashboard: React.FC = () => {
   const selfTasks = dashboardData?.data?.selfTasks;
   const assignedTasks = dashboardData?.data?.assignedTasks;
 
-  // Animation hook and section detection (after queries so we can use isLoading)
-  const { shouldAnimate, taskId, clearAnimationState } = useTaskTransitionAnimation();
-  const [animationSection, setAnimationSection] = useState<'self' | 'assigned' | null>(null);
+  // Animation hook (driven by navigation state from Task Details)
+  const { shouldAnimate, taskId, fromStatus, toStatus, taskSection, clearAnimationState } = useTaskTransitionAnimation();
+  const [isAnimationReady, setIsAnimationReady] = useState(false);
 
+  // Wait until the relevant icon refs exist before showing animation.
+  // (Ref assignment does not trigger a re-render by itself.)
   useEffect(() => {
     if (!shouldAnimate) {
-      setAnimationSection(null);
+      setIsAnimationReady(false);
       return;
     }
-    // Always animate in Self Tasks section (To Do → In Progress)
-    const checkRefs = () => {
-      if (selfTasksToDoIconRef.current && selfTasksInProgressIconRef.current) {
-        setAnimationSection('self');
-        return true;
-      }
-      return false;
-    };
-    if (checkRefs()) return;
-    const delays = [50, 150, 350, 600];
+
+    const section = taskSection || 'self';
+    const from = (fromStatus || 'todo') as 'todo' | 'inprogress';
+    const to = (toStatus || 'inprogress') as 'inprogress' | 'completed';
+    const refs =
+      section === 'assigned'
+        ? {
+            todo: assignedTasksToDoIconRef,
+            inprogress: assignedTasksInProgressIconRef,
+            completed: assignedTasksCompletedIconRef,
+          }
+        : {
+            todo: selfTasksToDoIconRef,
+            inprogress: selfTasksInProgressIconRef,
+            completed: selfTasksCompletedIconRef,
+          };
+
+    const sourceRef = refs[from];
+    const targetRef = refs[to];
+
+    const check = () => !!sourceRef.current && !!targetRef.current;
+
+    if (check()) {
+      setIsAnimationReady(true);
+      return;
+    }
+
+    setIsAnimationReady(false);
+    const delays = [0, 50, 150, 350, 600, 900];
     const timers: ReturnType<typeof setTimeout>[] = [];
     delays.forEach((ms) => {
       timers.push(
         setTimeout(() => {
-          if (checkRefs()) {
+          if (check()) {
+            setIsAnimationReady(true);
             timers.forEach(clearTimeout);
           }
         }, ms)
       );
     });
     return () => timers.forEach(clearTimeout);
-  }, [shouldAnimate, isLoading]);
+  }, [shouldAnimate, taskSection, fromStatus, toStatus, isLoading]);
 
   const currentUserId = user?.id || (user as any)?.userId;
 
@@ -435,7 +459,8 @@ export const EmployeeDashboard: React.FC = () => {
     viewType: 'self' | 'assigned',
     title: string,
     toDoIconRef?: React.RefObject<HTMLDivElement>,
-    inProgressIconRef?: React.RefObject<HTMLDivElement>
+    inProgressIconRef?: React.RefObject<HTMLDivElement>,
+    completedIconRef?: React.RefObject<HTMLDivElement>
   ) => {
     return (
       <div className="space-y-6">
@@ -536,7 +561,7 @@ export const EmployeeDashboard: React.FC = () => {
               shadow-sm hover:shadow-md
               transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
           >
-            <div className="mb-2.5 p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400">
+            <div ref={completedIconRef} className="mb-2.5 p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400">
               <span className="material-symbols-outlined text-xl">task_alt</span>
             </div>
             <span className="text-2xl font-semibold text-gray-900 dark:text-white mb-1">
@@ -571,10 +596,10 @@ export const EmployeeDashboard: React.FC = () => {
         {/* Tasks List */}
         <div className="space-y-10 md:space-y-12">
           {/* Self Tasks Row */}
-          {renderTaskRow(selfTasks, 'self', 'Self Tasks', selfTasksToDoIconRef, selfTasksInProgressIconRef)}
+          {renderTaskRow(selfTasks, 'self', 'Self Tasks', selfTasksToDoIconRef, selfTasksInProgressIconRef, selfTasksCompletedIconRef)}
           
           {/* Assigned Tasks Row */}
-          {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks', assignedTasksToDoIconRef, assignedTasksInProgressIconRef)}
+          {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks', assignedTasksToDoIconRef, assignedTasksInProgressIconRef, assignedTasksCompletedIconRef)}
 
           {/* Document Management Section - Combined for both self and assigned */}
           {isLoading ? (
@@ -877,17 +902,40 @@ export const EmployeeDashboard: React.FC = () => {
       </div>
 
       {/* Task Transition Animation */}
-      {shouldAnimate && animationSection === 'self' && (
-        <TaskTransitionAnimation
-          sourceRef={selfTasksToDoIconRef}
-          targetRef={selfTasksInProgressIconRef}
-          taskId={taskId}
-          section="self"
-          onComplete={() => {
-            clearAnimationState();
-            refetchDashboardData();
-          }}
-        />
+      {shouldAnimate && isAnimationReady && (
+        (() => {
+          const section = taskSection || 'self';
+          const from = (fromStatus || 'todo') as any;
+          const to = (toStatus || 'inprogress') as any;
+          const refs =
+            section === 'assigned'
+              ? {
+                  todo: assignedTasksToDoIconRef,
+                  inprogress: assignedTasksInProgressIconRef,
+                  completed: assignedTasksCompletedIconRef,
+                }
+              : {
+                  todo: selfTasksToDoIconRef,
+                  inprogress: selfTasksInProgressIconRef,
+                  completed: selfTasksCompletedIconRef,
+                };
+          const sourceRef = refs[from === 'inprogress' ? 'inprogress' : 'todo'];
+          const targetRef = refs[to === 'completed' ? 'completed' : 'inprogress'];
+          return (
+            <TaskTransitionAnimation
+              sourceRef={sourceRef}
+              targetRef={targetRef}
+              taskId={taskId}
+              section={section}
+              fromStatus={from}
+              toStatus={to}
+              onComplete={() => {
+                clearAnimationState();
+                refetchDashboardData();
+              }}
+            />
+          );
+        })()
       )}
     </EmployeeLayout>
   );
