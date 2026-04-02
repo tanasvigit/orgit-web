@@ -113,7 +113,7 @@ export const Designations: React.FC = () => {
     <div className="flex-1 flex flex-col bg-background-light dark:bg-background-dark">
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-text-main-light dark:text-text-main-dark">Designations</h1>
+          <h1 className="text-xl md:text-2xl font-bold text-text-main-light dark:text-text-main-dark">Designations</h1>
           <button
             onClick={() => openEditModal(null)}
             className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors flex items-center gap-2"

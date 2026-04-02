@@ -769,15 +769,15 @@ export const TaskDashboardScreen: React.FC = () => {
 
   // Task group list content (left sidebar)
   const taskGroupListContent = (
-    <div className="flex flex-col h-full bg-background-light dark:bg-background-dark">
+    <div className="flex flex-col h-full min-h-0 bg-background-light dark:bg-background-dark">
       {/* Header with Filters */}
-      <div className="p-4 pb-3 border-b border-border-light dark:border-border-dark bg-white dark:bg-surface-dark/50 backdrop-blur-sm sticky top-0 z-10">
+      <div className="p-3 pb-2 border-b border-border-light dark:border-border-dark bg-white dark:bg-surface-dark/50 backdrop-blur-sm sticky top-0 z-10">
         {/* Header with Title and Create Button */}
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Task Groups</h1>
+        <div className="flex items-center justify-between mb-2.5">
+          <h1 className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">Task Groups</h1>
           <button
             onClick={() => setShowTaskCreateModal(true)}
-            className="w-10 h-10 bg-primary hover:bg-primary/90 text-white rounded-xl flex items-center justify-center shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all duration-200 hover:scale-105 active:scale-95"
+            className="w-9 h-9 bg-primary hover:bg-primary/90 text-white rounded-lg flex items-center justify-center shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all duration-200 hover:scale-105 active:scale-95"
             title="Create Task"
             aria-label="Create Task"
           >
@@ -787,7 +787,7 @@ export const TaskDashboardScreen: React.FC = () => {
         
         {/* Google-style Search Box: input + suggestions in one container */}
         <div
-          className={`relative mb-4 rounded-2xl border bg-white dark:bg-surface-dark overflow-hidden transition-all duration-200 z-10 ${
+          className={`relative mb-2.5 rounded-xl border bg-white dark:bg-surface-dark overflow-hidden transition-all duration-200 z-10 ${
             showSuggestions && suggestions.length > 0
               ? 'border-primary/40 shadow-lg shadow-primary/5 dark:shadow-primary/10'
               : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-md'
@@ -800,7 +800,7 @@ export const TaskDashboardScreen: React.FC = () => {
             </span>
             <input
               ref={searchInputRef}
-              className="w-full pl-12 pr-12 py-3.5 bg-transparent border-0 text-base text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-0 focus:outline-none"
+              className="w-full pl-11 pr-10 py-2 bg-transparent border-0 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-0 focus:outline-none"
               placeholder="Search tasks (e.g. G, GS for GSTR 1, GSTR 9…)"
               type="text"
               value={searchQuery}
@@ -986,11 +986,11 @@ export const TaskDashboardScreen: React.FC = () => {
       )}
 
       {/* Task Groups List */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-6">
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 space-y-3">
         {/* Loading state to avoid flicker / incorrect default actions */}
         {isTaskGroupsLoading && (
           <div>
-            <h3 className="flex items-center text-xs font-bold text-primary uppercase tracking-wider mb-3 px-2">
+            <h3 className="flex items-center text-[11px] font-bold text-primary uppercase tracking-wider mb-2 px-1">
               <span className="material-icons-round text-sm mr-1">groups</span>
               Task Groups
             </h3>
@@ -1013,7 +1013,7 @@ export const TaskDashboardScreen: React.FC = () => {
 
         {!isTaskGroupsLoading && filteredTaskGroups.length > 0 ? (
           <div>
-            <h3 className="flex items-center text-xs font-bold text-primary uppercase tracking-wider mb-3 px-2">
+            <h3 className="flex items-center text-[11px] font-bold text-primary uppercase tracking-wider mb-2 px-1">
               <span className="material-icons-round text-sm mr-1">groups</span>
               Task Groups ({filteredTaskGroups.length})
             </h3>
@@ -1035,7 +1035,7 @@ export const TaskDashboardScreen: React.FC = () => {
                 return (
                   <div
                     key={convId}
-                    className={`group p-3 rounded-xl transition-all duration-200 cursor-pointer flex items-center gap-3 hover:bg-white dark:hover:bg-surface-dark hover:shadow-md hover:scale-[1.02] active:scale-[0.98] border ${
+                    className={`group min-h-[72px] p-1.5 rounded-lg transition-all duration-200 cursor-pointer flex items-center gap-2 hover:bg-white dark:hover:bg-surface-dark hover:shadow-md hover:scale-[1.02] active:scale-[0.98] border ${
                       isSelected
                         ? 'bg-primary/10 dark:bg-primary/20 border-primary shadow-md'
                         : 'border-transparent hover:border-gray-200 dark:hover:border-gray-700'
@@ -1049,11 +1049,11 @@ export const TaskDashboardScreen: React.FC = () => {
                       {convPhoto ? (
                         <img
                           alt={convName}
-                          className="w-12 h-12 rounded-xl object-cover border-2 border-white dark:border-gray-700 shadow-sm group-hover:shadow-md transition-shadow"
+                          className="w-9 h-9 rounded-lg object-cover border-2 border-white dark:border-gray-700 shadow-sm group-hover:shadow-md transition-shadow"
                           src={convPhoto}
                         />
                       ) : (
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow">
+                        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow">
                           <span className="material-icons-round text-white text-2xl">
                             groups
                           </span>
@@ -1065,14 +1065,14 @@ export const TaskDashboardScreen: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-start gap-2 mb-1">
-                        <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate group-hover:text-primary dark:group-hover:text-primary/80 transition-colors flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 flex flex-col justify-between gap-0.5">
+                      <div className="flex justify-between items-start gap-2">
+                        <h4 className="text-xs font-bold text-gray-900 dark:text-white truncate group-hover:text-primary dark:group-hover:text-primary/80 transition-colors flex-1 min-w-0">
                           {convName}
                         </h4>
                         <div className="flex flex-col items-end flex-shrink-0">
                           {timeDisplay && (
-                            <span className="text-xs text-gray-400 dark:text-gray-500">{timeDisplay}</span>
+                            <span className="text-[9px] text-gray-400 dark:text-gray-500">{timeDisplay}</span>
                           )}
                           {/* Task status indicator - top right of card (from task details) */}
                           {taskStatusCategory && (
@@ -1089,23 +1089,23 @@ export const TaskDashboardScreen: React.FC = () => {
                         </div>
                       </div>
                       {task?.client_name && (
-                        <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate mb-1">
-                          Client: {task.client_name}
+                        <p className="text-[9px] leading-3 text-gray-500 dark:text-gray-400 truncate">
+                          Client: <span className="font-bold text-gray-700 dark:text-gray-200">{task.client_name}</span>
                         </p>
                       )}
                       <div className="flex items-center gap-1.5">
                         {lastMessage && (
                           <>
-                            <span className="material-icons-outlined text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">
+                            <span className="material-icons-outlined text-[11px] text-gray-400 dark:text-gray-500 flex-shrink-0">
                               {lastMessage.message_type === 'image' ? 'image' : lastMessage.message_type === 'file' ? 'attach_file' : 'chat_bubble'}
                             </span>
-                            <p className="text-xs text-gray-600 dark:text-gray-400 truncate flex-1">
+                            <p className="text-[10px] text-gray-600 dark:text-gray-400 truncate flex-1">
                               {lastMessageContent.length > 50 ? `${lastMessageContent.substring(0, 50)}...` : lastMessageContent}
                             </p>
                           </>
                         )}
                         {!lastMessage && (
-                          <p className="text-xs text-gray-400 dark:text-gray-500 italic">No messages yet</p>
+                          <p className="text-[10px] text-gray-400 dark:text-gray-500 italic">No messages yet</p>
                         )}
                       </div>
                     </div>
@@ -1129,7 +1129,7 @@ export const TaskDashboardScreen: React.FC = () => {
               return (
                 <div
                   key={taskId}
-                  className="group p-3 rounded-xl transition-all duration-200 border border-gray-200 dark:border-gray-700 hover:bg-white dark:hover:bg-surface-dark hover:shadow-md cursor-pointer"
+                  className="group min-h-[72px] p-1.5 rounded-lg transition-all duration-200 border border-gray-200 dark:border-gray-700 hover:bg-white dark:hover:bg-surface-dark hover:shadow-md cursor-pointer"
                   onClick={() => {
                     if (taskConversationId) {
                       // Open chat inside Task Dashboard (right panel)
@@ -1146,15 +1146,15 @@ export const TaskDashboardScreen: React.FC = () => {
                 >
                   <div className="flex items-start gap-3">
                     <div className="flex-shrink-0">
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 dark:from-amber-600 dark:to-amber-700 flex items-center justify-center shadow-sm">
+                      <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-500 to-amber-600 dark:from-amber-600 dark:to-amber-700 flex items-center justify-center shadow-sm">
                         <span className="material-icons-round text-white text-2xl">
                           assignment
                         </span>
                       </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-start gap-2 mb-1">
-                        <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 flex flex-col justify-between gap-0.5">
+                      <div className="flex justify-between items-start gap-2">
+                        <h4 className="text-xs font-bold text-gray-900 dark:text-white truncate flex-1 min-w-0">
                           {taskTitle}
                         </h4>
                         {taskStatusCategory && (
@@ -1169,12 +1169,12 @@ export const TaskDashboardScreen: React.FC = () => {
                         )}
                       </div>
                       {task.client_name && (
-                        <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate mb-1">
-                          Client: {task.client_name}
+                        <p className="text-[9px] leading-3 text-gray-500 dark:text-gray-400 truncate">
+                          Client: <span className="font-bold text-gray-700 dark:text-gray-200">{task.client_name}</span>
                         </p>
                       )}
                       {task.description && (
-                        <p className="text-xs text-gray-600 dark:text-gray-400 truncate mb-2">
+                        <p className="text-[10px] leading-3 text-gray-600 dark:text-gray-400 truncate">
                           {task.description.length > 80
                             ? `${task.description.substring(0, 80)}...`
                             : task.description}
@@ -1275,11 +1275,11 @@ export const TaskDashboardScreen: React.FC = () => {
   if (isAdmin) {
     return (
       <AdminLayout hideSearch>
-        <div className="flex h-full">
-          <div className="w-80 md:w-96 bg-background-light dark:bg-background-dark flex flex-col border-r border-border-light dark:border-border-dark relative">
+        <div className="flex h-[100dvh] overflow-hidden">
+          <div className="w-[340px] bg-background-light dark:bg-background-dark flex flex-col min-h-0 border-r border-border-light dark:border-border-dark relative">
             {taskGroupListContent}
               </div>
-          <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden">
+          <div className="flex-1 flex flex-col min-h-0 bg-surface-light dark:bg-surface-dark relative overflow-hidden">
             {mainContent}
                 </div>
               </div>
@@ -1365,11 +1365,11 @@ export const TaskDashboardScreen: React.FC = () => {
 
   return (
     <EmployeeLayout hideSearch>
-      <div className="flex h-full">
-        <div className="w-80 md:w-96 bg-background-light dark:bg-background-dark flex flex-col border-r border-border-light dark:border-border-dark relative">
+      <div className="flex h-[100dvh] overflow-hidden">
+        <div className="w-[340px] bg-background-light dark:bg-background-dark flex flex-col min-h-0 border-r border-border-light dark:border-border-dark relative">
           {taskGroupListContent}
               </div>
-        <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 bg-surface-light dark:bg-surface-dark relative overflow-hidden">
           {mainContent}
         </div>
       </div>

@@ -243,7 +243,7 @@ export const EmployeeList: React.FC = () => {
         </button>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h2 className="text-2xl md:text-3xl font-bold text-text-main tracking-tight">Employees</h2>
+            <h2 className="text-xl md:text-2xl font-bold text-text-main tracking-tight">Employees</h2>
             <p className="text-text-muted mt-2 text-sm md:text-base">
               Manage employees in your organization{filteredEmployees.length > 0 && ` (${filteredEmployees.length} total)`}
             </p>

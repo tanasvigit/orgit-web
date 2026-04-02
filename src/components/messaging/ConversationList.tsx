@@ -129,7 +129,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
       {!hideHeader && !hideSearchAndFilters && (
         <div className="p-6 pb-2">
           <div className="mb-6">
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Messages</h1>
+            <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">Messages</h1>
           </div>
           <div className="relative mb-6 flex items-center gap-2">
             <div className="relative flex-1">
@@ -137,7 +137,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                 <span className="material-icons-outlined text-xl">search</span>
               </span>
               <input
-                className="w-full pl-10 pr-4 py-3 rounded-xl border-none bg-white dark:bg-surface-dark shadow-sm focus:ring-2 focus:ring-primary text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-200"
+                className="w-full pl-10 pr-4 py-2 rounded-xl border-none bg-white dark:bg-surface-dark shadow-sm focus:ring-2 focus:ring-primary text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-200"
                 placeholder="Search chats or tasks..."
                 type="text"
                 value={searchQuery}
@@ -232,7 +232,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                 return (
                   <div
                     key={convId}
-                    className={`p-3 rounded-2xl transition cursor-pointer flex items-center gap-3 ${
+                    className={`min-h-[76px] p-2 rounded-xl transition cursor-pointer flex items-center gap-2.5 ${
                       isActive
                         ? 'bg-primary/10 dark:bg-primary/20'
                         : 'hover:bg-white dark:hover:bg-surface-dark hover:shadow-sm'
@@ -249,12 +249,12 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                       {convPhoto ? (
                         <img
                           alt={convName}
-                          className="w-12 h-12 rounded-full object-cover border-2 border-white dark:border-gray-700"
+                          className="w-10 h-10 rounded-full object-cover border-2 border-white dark:border-gray-700"
                           src={convPhoto}
                         />
                       ) : (
-                        <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
-                          <span className="material-icons-round text-blue-600 dark:text-blue-400 text-2xl">
+                        <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
+                          <span className="material-icons-round text-blue-600 dark:text-blue-400 text-xl">
                             {isGroup || isTaskGroup ? 'groups' : 'person'}
                           </span>
                         </div>
@@ -264,18 +264,18 @@ export const ConversationList: React.FC<ConversationListProps> = ({
                         const otherMemberId = otherMember?.id ?? otherMember?.user_id ?? otherMember?.userId;
                         const isOnline = Boolean(otherMemberId && (onlineUserIds ?? []).includes(otherMemberId));
                         return isOnline ? (
-                          <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-700 rounded-full"></span>
+                          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white dark:border-gray-700 rounded-full"></span>
                         ) : null;
                       })()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-baseline">
-                        <h4 className="text-sm font-bold text-gray-900 dark:text-white">{convName}</h4>
-                        <span className="text-xs text-gray-400">{timeDisplay}</span>
+                        <h4 className="text-[13px] font-bold text-gray-900 dark:text-white truncate">{convName}</h4>
+                        <span className="text-[10px] text-gray-400">{timeDisplay}</span>
                       </div>
-                      <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300">
+                      <div className="flex items-center gap-1 text-[11px] text-gray-600 dark:text-gray-300">
                         {lastMessage.includes('done_all') && (
-                          <span className="material-icons-round text-[14px] text-primary">done_all</span>
+                          <span className="material-icons-round text-[12px] text-primary">done_all</span>
                         )}
                         <p className="truncate">{lastMessage}</p>
                       </div>

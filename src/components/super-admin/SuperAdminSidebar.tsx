@@ -165,6 +165,11 @@ export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRe
         className={`hidden md:flex bg-super-admin-surface-light dark:bg-super-admin-surface-dark border-r border-super-admin-border-light dark:border-super-admin-border-dark flex-shrink-0 flex flex-col transition-all duration-300 z-20 overflow-visible ${
           isCollapsed ? 'w-20' : 'w-72'
         }`}
+        onClick={(event) => {
+          const target = event.target as HTMLElement;
+          if (target.closest('a,button,input,textarea,select,label,[role="button"]')) return;
+          handleToggle();
+        }}
       >
         {sidebarContent}
       </aside>

@@ -246,18 +246,18 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
   const sidebarContent = (
     <>
       {/* Desktop Header */}
-      <div className={`hidden md:block p-6 pb-4 shrink-0 border-b border-border-light dark:border-border-dark relative ${isCollapsed ? 'px-4' : ''}`}>
+      <div className={`hidden md:block p-6 pb-4 shrink-0 border-b border-border-light dark:border-border-dark relative max-[1366px]:p-3 max-[1366px]:pb-1 ${isCollapsed ? 'px-4 max-[1366px]:px-2.5' : ''}`}>
         <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center' : ''}`}>
           <div className="relative shrink-0">
-            <div className="w-12 h-12 rounded-full bg-secondary dark:bg-primary/20 flex items-center justify-center text-primary dark:text-primary-dark">
+            <div className="w-12 h-12 rounded-full bg-secondary dark:bg-primary/20 flex items-center justify-center text-primary dark:text-primary-dark max-[1366px]:w-10 max-[1366px]:h-10">
               {user?.profilePhotoUrl ? (
                 <img
                   alt="User Avatar"
-                  className="w-10 h-10 rounded-full border-2 border-white dark:border-gray-700 object-cover"
+                  className="w-10 h-10 rounded-full border-2 border-white dark:border-gray-700 object-cover max-[1366px]:w-8 max-[1366px]:h-8"
                   src={user.profilePhotoUrl}
                 />
               ) : (
-                <span className="text-primary text-xl font-bold">
+                <span className="text-primary text-xl font-bold max-[1366px]:text-lg">
                   {user?.name?.charAt(0).toUpperCase() || 'U'}
                 </span>
               )}
@@ -266,17 +266,17 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
           </div>
           {!isCollapsed && (
             <div className="flex flex-col min-w-0">
-              <h1 className="text-slate-900 dark:text-white text-lg font-extrabold tracking-tight leading-none truncate">
+              <h1 className="text-slate-900 dark:text-white text-lg font-extrabold tracking-tight leading-none truncate max-[1366px]:text-base">
                 ORGIT
               </h1>
-              <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium">Employee Portal</span>
+              <span className="text-[10px] text-slate-500 dark:text-gray-400 font-medium max-[1366px]:text-[9px]">Employee Portal</span>
             </div>
           )}
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-1">
+      <nav className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-1 max-[1366px]:py-2 max-[1366px]:gap-0">
         {navItems.map((item) => {
           const active = isActive(item.path);
           return (
@@ -289,7 +289,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
                   setIsMobileOpen(false);
                 }
               }}
-              className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group min-h-[44px] ${
+              className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
                 isCollapsed ? 'justify-center' : ''
               } ${
                 active
@@ -298,11 +298,11 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
               }`}
               title={isCollapsed ? item.label : ''}
             >
-              <span className={`material-icons-outlined text-2xl shrink-0 ${active ? '' : 'group-hover:text-primary'}`}>
+              <span className={`material-icons-outlined text-2xl shrink-0 max-[1366px]:text-xl ${active ? '' : 'group-hover:text-primary'}`}>
                 {item.icon}
               </span>
               {!isCollapsed && (
-                <span className="font-medium text-sm whitespace-nowrap">{item.label}</span>
+                <span className="font-medium text-sm whitespace-nowrap max-[1366px]:text-xs">{item.label}</span>
               )}
             </Link>
           );
@@ -311,7 +311,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
         {/* Settings: icon + label navigate to Settings page; chevron toggles dropdown */}
         <div className="relative">
           <div
-            className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group min-h-[44px] ${
+            className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
               isCollapsed ? 'justify-center' : ''
             } ${
               isSettingsActive
@@ -330,11 +330,11 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
               }`}
               title={isCollapsed ? 'Settings' : ''}
             >
-              <span className={`material-icons-outlined text-2xl shrink-0 ${isSettingsActive ? '' : 'group-hover:text-primary'}`}>
+              <span className={`material-icons-outlined text-2xl shrink-0 max-[1366px]:text-xl ${isSettingsActive ? '' : 'group-hover:text-primary'}`}>
                 settings
               </span>
               {!isCollapsed && (
-                <span className="font-medium text-sm whitespace-nowrap flex-1">Settings</span>
+                <span className="font-medium text-sm whitespace-nowrap flex-1 max-[1366px]:text-xs">Settings</span>
               )}
             </button>
             {!isCollapsed && (
@@ -383,7 +383,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
       </nav>
 
       {/* Bottom Actions */}
-      <div className={`shrink-0 p-4 border-t border-border-light dark:border-border-dark space-y-2 ${isCollapsed ? 'px-2' : ''}`}>
+      <div className={`shrink-0 p-4 border-t border-border-light dark:border-border-dark space-y-2 max-[1366px]:p-2 max-[1366px]:space-y-0.5 ${isCollapsed ? 'px-2 max-[1366px]:px-1.5' : ''}`}>
         <button
           onClick={() => {
             navigate('/profile');
@@ -391,7 +391,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
               setIsMobileOpen(false);
             }
           }}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors min-h-[44px] ${
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
             isCollapsed ? 'justify-center' : ''
           } ${
             location.pathname === '/profile'
@@ -400,8 +400,8 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
           }`}
           title={isCollapsed ? 'Profile' : ''}
         >
-          <span className="material-icons-outlined text-2xl shrink-0">person</span>
-          {!isCollapsed && <span className="font-medium text-sm">Profile</span>}
+          <span className="material-icons-outlined text-2xl shrink-0 max-[1366px]:text-xl">person</span>
+          {!isCollapsed && <span className="font-medium text-sm max-[1366px]:text-xs">Profile</span>}
         </button>
         <button
           onClick={() => {
@@ -411,13 +411,13 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
               setIsMobileOpen(false);
             }
           }}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors min-h-[44px] ${
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
             isCollapsed ? 'justify-center' : ''
           } text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20`}
           title={isCollapsed ? 'Logout' : ''}
         >
-          <span className="material-icons-outlined text-2xl shrink-0">logout</span>
-          {!isCollapsed && <span className="font-medium text-sm">Logout</span>}
+          <span className="material-icons-outlined text-2xl shrink-0 max-[1366px]:text-xl">logout</span>
+          {!isCollapsed && <span className="font-medium text-sm max-[1366px]:text-xs">Logout</span>}
         </button>
       </div>
     </>
@@ -436,8 +436,13 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
       {/* Desktop Sidebar */}
       <aside
         className={`hidden md:flex flex-col bg-surface-light dark:bg-surface-dark border-r border-border-light dark:border-border-dark shadow-sm z-20 transition-all duration-300 ${
-          isCollapsed ? 'w-20' : 'w-64'
+          isCollapsed ? 'w-[70px]' : 'w-[240px]'
         }`}
+        onClick={(event) => {
+          const target = event.target as HTMLElement;
+          if (target.closest('a,button,input,textarea,select,label,[role="button"]')) return;
+          handleToggle();
+        }}
       >
         {sidebarContent}
       </aside>

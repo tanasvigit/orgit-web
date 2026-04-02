@@ -273,7 +273,7 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
             <h2 className="text-2xl md:text-3xl font-bold leading-tight text-gray-900 dark:text-white mb-4">{displayTask.title}</h2>
             {displayTask.client_name && (
               <p className="text-gray-600 dark:text-gray-300 mb-3 text-sm font-medium">
-                Client: {displayTask.client_name}
+                Client: <span className="font-bold text-gray-900 dark:text-white">{displayTask.client_name}</span>
               </p>
             )}
             <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">

@@ -862,7 +862,7 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
               <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">{displayTask.title}</h2>
               {displayTask.client_name && (
                 <p className="text-slate-600 dark:text-slate-300 mt-2 text-sm font-medium">
-                  Client: {displayTask.client_name}
+                  Client: <span className="font-bold text-slate-900 dark:text-white">{displayTask.client_name}</span>
                 </p>
               )}
               <p className="text-slate-500 dark:text-slate-400 mt-2 text-sm flex items-center gap-4">

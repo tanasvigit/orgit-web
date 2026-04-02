@@ -39,7 +39,15 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   documentId,
   documentAttachment,
 }) => {
-  const [isRecurring, setIsRecurring] = useState(false); // Toggle for recurrence (default: disabled = one_time)
+  const sectionQuestionClass =
+    'mb-2 rounded-xl border border-[#E5E7EB] bg-[#F3F4F6] px-3 py-2 text-[13px] font-medium text-[#1F2937]';
+  const inputClass =
+    'w-full rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 text-sm text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-primary/40';
+  const segmentedInactiveClass =
+    'bg-[#F9FAFB] border border-[#E5E7EB] text-[#6B7280] hover:bg-[#F3F4F6]';
+  const segmentedActiveClass = 'bg-primary border border-primary text-white';
+  const bubbleRightClass = 'w-full sm:w-[92%] self-end rounded-2xl bg-[#F8F5FF] border border-[#E7D9FF] px-3 py-3';
+  const [isRecurring, setIsRecurring] = useState<boolean | null>(null); // null until user selects task type
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [taskOwner, setTaskOwner] = useState<'self' | 'contacts'>('self');
@@ -66,11 +74,71 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [showTitleSuggestions, setShowTitleSuggestions] = useState(false);
   const [titleHighlightedIndex, setTitleHighlightedIndex] = useState(-1);
   const titleSuggestionsRef = useRef<HTMLDivElement>(null);
-  const [recurrenceType, setRecurrenceType] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>('weekly');
+  const [recurrenceType, setRecurrenceType] = useState<'weekly' | 'monthly' | 'quarterly' | 'annually'>('weekly');
+  const [taskRolloutType, setTaskRolloutType] = useState<'cycle_start' | 'start_date'>('cycle_start');
+  const [useScheduleDates, setUseScheduleDates] = useState(true);
+  const [autoEscalate, setAutoEscalate] = useState(false);
   const [createTaskLoading, setCreateTaskLoading] = useState(false);
   const [reportingMemberId, setReportingMemberId] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<
+    'title' | 'client' | 'assignees' | 'recurrence' | 'rollout' | 'schedule' | 'owner' | 'escalation' | 'finance'
+  >('title');
   const { toast } = useToast();
   const { user } = useAuth();
+
+  const canOpenClient = activeSection === 'client';
+  const canOpenAssignees = activeSection === 'assignees';
+  const canOpenRecurrence = activeSection === 'recurrence';
+  const canOpenRollout = activeSection === 'rollout';
+  const canOpenSchedule = activeSection === 'schedule';
+  const canOpenOwner = activeSection === 'owner';
+  const canOpenEscalation = activeSection === 'escalation';
+  const canOpenFinance = activeSection === 'finance';
+
+  const renderQuestionToggle = (
+    id: 'title' | 'client' | 'assignees' | 'recurrence' | 'rollout' | 'schedule' | 'owner' | 'escalation' | 'finance',
+    text: string,
+    _enabled: boolean
+  ) => (
+    <div className={`${sectionQuestionClass} inline-flex w-fit max-w-[85%] self-start`} data-step={id}>
+      {text}
+    </div>
+  );
+
+  const renderReplyBubble = (text: string, onEdit: () => void) => (
+    <div className={bubbleRightClass}>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-[#1F2937]">{text}</p>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="shrink-0 rounded-md border border-[#E7D9FF] bg-white px-2 py-1 text-xs font-semibold text-primary"
+        >
+          Edit
+        </button>
+      </div>
+    </div>
+  );
+
+  const goToNextSection = (
+    current: 'title' | 'client' | 'assignees' | 'recurrence' | 'rollout' | 'schedule' | 'owner' | 'escalation' | 'finance'
+  ) => {
+    if (current === 'title') return setActiveSection('client');
+    if (current === 'client') return setActiveSection('assignees');
+    if (current === 'assignees') return setActiveSection('recurrence');
+    if (current === 'recurrence') return setActiveSection(isRecurring === true ? 'rollout' : 'schedule');
+    if (current === 'rollout') return setActiveSection('schedule');
+    if (current === 'schedule') return setActiveSection('owner');
+    if (current === 'owner') return setActiveSection('escalation');
+    if (current === 'escalation') return setActiveSection('finance');
+  };
+  const sectionOrder: Array<
+    'title' | 'client' | 'assignees' | 'recurrence' | 'rollout' | 'schedule' | 'owner' | 'escalation' | 'finance'
+  > = ['title', 'client', 'assignees', 'recurrence', 'rollout', 'schedule', 'owner', 'escalation', 'finance'];
+  const shouldShowReply = (
+    section: 'title' | 'client' | 'assignees' | 'recurrence' | 'rollout' | 'schedule' | 'owner' | 'escalation' | 'finance'
+  ) => sectionOrder.indexOf(section) < sectionOrder.indexOf(activeSection);
+
 
   // Check if form has any data entered by user
   const hasFormData = () => {
@@ -80,7 +148,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     const hasOtherData = 
       selectedAssignees.length > 0 ||
       financialValue.trim().length > 0 ||
-      isRecurring ||
+      isRecurring !== null ||
+      !useScheduleDates ||
+      taskRolloutType !== 'cycle_start' ||
+      autoEscalate ||
       taskOwner !== 'self' ||
       taskOwnerUserId !== null ||
       reportingMemberId !== null;
@@ -111,6 +182,8 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   // Initialize form with initial values when modal opens (all dates default to 9:00 AM)
   useEffect(() => {
     if (visible) {
+      // Always start with a fresh form on each open.
+      resetForm();
       setTitle(initialTitle);
       setDescription(initialDescription);
       if (initialDueDate) {
@@ -127,6 +200,27 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       }
     }
   }, [visible, initialTitle, initialDescription, initialDueDate]);
+
+  useEffect(() => {
+    if (visible && title.trim() && activeSection === 'title') {
+      setActiveSection('client');
+    }
+  }, [visible, title, activeSection]);
+
+  useEffect(() => {
+    if (!visible) {
+      resetForm();
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (isRecurring !== true && activeSection === 'rollout') {
+      setActiveSection('schedule');
+    }
+    if (!useScheduleDates && activeSection === 'assignees') {
+      setActiveSection('owner');
+    }
+  }, [isRecurring, useScheduleDates, activeSection]);
 
   // When creating from Document Management, fetch document instance so title/description can be filled and edited
   const { data: fetchedDocument } = useQuery(
@@ -185,7 +279,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [clientHighlightedIndex, setClientHighlightedIndex] = useState(-1);
   const clientSuggestionsRef = useRef<HTMLDivElement>(null);
 
-  const clientMatrixServices = clientMatrixData?.services || [];
   const clientMatrixClients = clientMatrixData?.clients || [];
 
   // Keep text input in sync with the selected client
@@ -273,7 +366,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
 
   // Reset form (all dates default to 9:00 AM)
   const resetForm = () => {
-    setIsRecurring(false);
+    setIsRecurring(null);
     setTitle('');
     setDescription('');
     setTaskOwner('self');
@@ -290,7 +383,11 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     due30.setHours(9, 0, 0, 0);
     setDueDate(due30);
     setRecurrenceType('weekly');
+    setTaskRolloutType('cycle_start');
+    setUseScheduleDates(true);
+    setAutoEscalate(false);
     setReportingMemberId(null);
+    setActiveSection('title');
   };
 
   // Handle create task
@@ -300,8 +397,20 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       return;
     }
 
-    if (!dueDate) {
+    if (useScheduleDates && !dueDate) {
       toast.error('Please select a due date');
+      return;
+    }
+    if (isRecurring === null) {
+      toast.error('Please select what type of task this is');
+      return;
+    }
+    if (!useScheduleDates && !(taskOwner === 'self' && selectedAssignees.length === 0)) {
+      toast.error('No-dates mode is allowed only for creator-only tasks without assignees');
+      return;
+    }
+    if (isRecurring === true && !useScheduleDates && taskRolloutType !== 'cycle_start') {
+      toast.error('For recurring tasks without dates, rollout type must be Cycle Start');
       return;
     }
 
@@ -333,16 +442,24 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         title: title.trim(),
         description: taskDescription,
         client_name: clientInput.trim() || null,
-        task_type: isRecurring ? 'recurring' : 'one_time',
+        task_type: isRecurring === true ? 'recurring' : 'one_time',
         task_owner: taskOwner,
         financial_value: Number.isFinite(parsedFinancialValue as number) ? parsedFinancialValue : null,
         finance_type: financialValue.trim().length > 0 ? financeType : null,
-        assignee_ids: fallbackAssignees.map((a) => a.id),
-        start_date: startDate.toISOString(),
-        target_date: targetDate.toISOString(),
-        due_date: dueDate.toISOString(),
-        recurrence_type: isRecurring ? recurrenceType : null,
+        assignee_ids: useScheduleDates ? fallbackAssignees.map((a) => a.id) : [],
+        start_date: useScheduleDates ? startDate.toISOString() : null,
+        target_date: useScheduleDates ? targetDate.toISOString() : null,
+        due_date: useScheduleDates ? dueDate.toISOString() : null,
+        recurrence_type: isRecurring === true ? recurrenceType : null,
         recurrence_interval: 1,
+        task_rollout_type: isRecurring === true ? taskRolloutType : undefined,
+        auto_escalate: autoEscalate,
+        recurrence_day_of_month:
+          isRecurring === true && recurrenceType === 'monthly'
+            ? Number(targetDate?.getDate?.() || new Date().getDate())
+            : undefined,
+        specific_weekday:
+          isRecurring === true && recurrenceType === 'weekly' ? Number(targetDate?.getDay?.() ?? 1) : undefined,
         // Mobile stores documentId/complianceId in metadata (backend may ignore; kept for parity)
         metadata: {
           ...(documentId ? { documentId } : {}),
@@ -426,12 +543,25 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     }
   };
 
+  const titleReply = title.trim() || 'Not answered';
+  const clientReply = clientInput.trim() || 'Skipped';
+  const assigneesReply = selectedAssignees.length > 0 ? `${selectedAssignees.length} selected` : 'Skipped';
+  const recurrenceReply =
+    isRecurring === true ? `Recurring (${recurrenceType})` : isRecurring === false ? 'One-time' : 'Not selected';
+  const rolloutReply = taskRolloutType === 'cycle_start' ? 'Cycle Start' : 'Start Date';
+  const scheduleReply = useScheduleDates
+    ? `Start ${startDate.toLocaleDateString()}, Target ${targetDate.toLocaleDateString()}, Due ${dueDate.toLocaleDateString()}`
+    : 'No Dates';
+  const ownerReply = taskOwner === 'self' ? 'Self' : taskOwnerUserId ? 'Contact selected' : 'Contacts';
+  const escalationReply = autoEscalate ? 'Yes' : 'No';
+  const financeReply = financialValue.trim() ? `${financialValue} (${financeType})` : 'Skipped';
+
   if (!visible) return null;
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={handleClose}>
-      <div 
-        className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl mx-auto"
+      <div
+        className="w-full max-w-2xl max-h-[90vh] mx-auto flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -447,207 +577,246 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
+        <div className="flex flex-1 flex-col space-y-4 overflow-y-auto bg-[#F9FAFB] p-4 sm:space-y-5 sm:p-6">
+          <div className="w-full sm:w-[92%] self-start text-[13px] font-semibold text-[#6B7280]">
+            Hi! I will help you create a task. Please answer one field at a time.
+          </div>
+
           {/* 1. Task Title - with service list suggestions (Google-like) */}
-          <div className="relative" ref={titleSuggestionsRef}>
-            <label className="block text-sm sm:text-base font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Task Title
-            </label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => {
-                setTitle(e.target.value);
-                setShowTitleSuggestions(true);
-                setTitleHighlightedIndex(-1);
-              }}
-              onFocus={() => !initialTitle && setShowTitleSuggestions(true)}
-              onBlur={() => setTimeout(() => setShowTitleSuggestions(false), 200)}
-              onKeyDown={(e) => {
-                if (!showTitleSuggestions || titleSuggestions.length === 0) {
-                  if (e.key === 'Escape') setShowTitleSuggestions(false);
-                  return;
-                }
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  setTitleHighlightedIndex((i) => (i < titleSuggestions.length - 1 ? i + 1 : 0));
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  setTitleHighlightedIndex((i) => (i > 0 ? i - 1 : titleSuggestions.length - 1));
-                } else if (e.key === 'Enter') {
-                  e.preventDefault();
-                  const item = titleSuggestions[titleHighlightedIndex >= 0 ? titleHighlightedIndex : 0];
-                  if (item?.title) {
-                    setTitle(item.title);
-                    setShowTitleSuggestions(false);
+          <div className="flex flex-col gap-2">
+            {renderQuestionToggle('title', 'What is the name of the task?', true)}
+            {activeSection === 'title' && (
+              <div className={`relative ${bubbleRightClass}`} ref={titleSuggestionsRef}>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    setShowTitleSuggestions(true);
                     setTitleHighlightedIndex(-1);
-                  }
-                } else if (e.key === 'Escape') {
-                  setShowTitleSuggestions(false);
-                  setTitleHighlightedIndex(-1);
-                }
-              }}
-              placeholder="Type or select from service list (e.g. GSTR 1, GSTR 9…)"
-              readOnly={!!initialTitle}
-              className={`w-full px-4 py-3 sm:py-2.5 rounded-lg border text-sm sm:text-base text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-colors min-h-[44px] ${
-                showTitleSuggestions && titleSuggestions.length > 0
-                  ? 'border-primary/40 shadow-md'
-                  : 'border-gray-300 dark:border-gray-600'
-              } ${initialTitle ? 'bg-gray-50 dark:bg-gray-700 cursor-not-allowed' : 'bg-white dark:bg-gray-700'}`}
-            />
-            {!initialTitle && showTitleSuggestions && titleSuggestions.length > 0 && (
-              <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg py-1">
-                {titleSuggestions.map((item, index) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      setTitle(item.title || '');
+                    if (e.target.value.trim()) {
+                      setActiveSection('client');
+                    }
+                  }}
+                  onFocus={() => !initialTitle && setShowTitleSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowTitleSuggestions(false), 200)}
+                  onKeyDown={(e) => {
+                    if (!showTitleSuggestions || titleSuggestions.length === 0) {
+                      if (e.key === 'Escape') setShowTitleSuggestions(false);
+                      return;
+                    }
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setTitleHighlightedIndex((i) => (i < titleSuggestions.length - 1 ? i + 1 : 0));
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setTitleHighlightedIndex((i) => (i > 0 ? i - 1 : titleSuggestions.length - 1));
+                    } else if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const item = titleSuggestions[titleHighlightedIndex >= 0 ? titleHighlightedIndex : 0];
+                      if (item?.title) {
+                        setTitle(item.title);
+                        setShowTitleSuggestions(false);
+                        setTitleHighlightedIndex(-1);
+                      }
+                    } else if (e.key === 'Escape') {
                       setShowTitleSuggestions(false);
                       setTitleHighlightedIndex(-1);
-                    }}
-                    className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${
-                      index === titleHighlightedIndex
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                    }`}
-                  >
-                    <span className="material-icons-outlined text-lg text-gray-400 dark:text-gray-500 shrink-0">assignment</span>
-                    <span className="font-medium truncate">{item.title}</span>
-                    {item.frequency && (
-                      <span className="ml-auto text-xs text-gray-500 dark:text-gray-400 shrink-0">{item.frequency}</span>
-                    )}
-                  </button>
-                ))}
+                    } else if (e.key === 'Enter' && title.trim()) {
+                      goToNextSection('title');
+                    }
+                  }}
+                  placeholder="Type or select from service list (e.g. GSTR 1, GSTR 9…)"
+                  readOnly={!!initialTitle}
+                  className={`${inputClass} min-h-[44px] transition-colors ${
+                    showTitleSuggestions && titleSuggestions.length > 0
+                      ? 'border-primary/40 shadow-md'
+                      : ''
+                  } ${initialTitle ? 'cursor-not-allowed bg-gray-100' : ''}`}
+                />
+                {!initialTitle && showTitleSuggestions && titleSuggestions.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg py-1">
+                    {titleSuggestions.map((item, index) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setTitle(item.title || '');
+                          setShowTitleSuggestions(false);
+                          setTitleHighlightedIndex(-1);
+                        }}
+                        className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${
+                          index === titleHighlightedIndex
+                            ? 'bg-primary/10 text-primary'
+                            : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                        }`}
+                      >
+                        <span className="material-icons-outlined text-lg text-gray-400 dark:text-gray-500 shrink-0">assignment</span>
+                        <span className="font-medium truncate">{item.title}</span>
+                        {item.frequency && (
+                          <span className="ml-auto text-xs text-gray-500 dark:text-gray-400 shrink-0">{item.frequency}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
+            {shouldShowReply('title') && renderReplyBubble(titleReply, () => setActiveSection('title'))}
           </div>
 
           {/* 2. Client Name */}
-          <div className="relative" ref={clientSuggestionsRef}>
-            <label className="block text-sm sm:text-base font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Client Name
-            </label>
-            <input
-              type="text"
-              value={clientInput}
-              onChange={(e) => {
-                const value = e.target.value;
-                setClientInput(value);
-                setShowClientSuggestions(true);
-                setClientHighlightedIndex(-1);
-                const match = clientMatrixClients.find(
-                  (c) => c.name?.toLowerCase() === value.trim().toLowerCase()
-                );
-                setSelectedClientId(match?.id || '');
-              }}
-              onFocus={() => setShowClientSuggestions(true)}
-              onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
-              onKeyDown={(e) => {
-                if (!showClientSuggestions || clientSuggestions.length === 0) {
-                  if (e.key === 'Escape') setShowClientSuggestions(false);
-                  return;
-                }
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  setClientHighlightedIndex((i) =>
-                    i < clientSuggestions.length - 1 ? i + 1 : 0
-                  );
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  setClientHighlightedIndex((i) =>
-                    i > 0 ? i - 1 : clientSuggestions.length - 1
-                  );
-                } else if (e.key === 'Enter') {
-                  e.preventDefault();
-                  const item =
-                    clientSuggestions[clientHighlightedIndex >= 0 ? clientHighlightedIndex : 0];
-                  if (item?.id) {
-                    setSelectedClientId(item.id);
-                    setClientInput(item.name || '');
-                    setShowClientSuggestions(false);
+          <div className="flex flex-col gap-2">
+            {renderQuestionToggle('client', 'Which client is this task for?', canOpenClient)}
+            {activeSection === 'client' && canOpenClient && (
+              <div className={`relative ${bubbleRightClass}`} ref={clientSuggestionsRef}>
+                <input
+                  type="text"
+                  value={clientInput}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setClientInput(value);
+                    setShowClientSuggestions(true);
                     setClientHighlightedIndex(-1);
-                  }
-                } else if (e.key === 'Escape') {
-                  setShowClientSuggestions(false);
-                  setClientHighlightedIndex(-1);
-                }
-              }}
-              placeholder="Type client name (optional)"
-              className="w-full px-4 py-3 sm:py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm sm:text-base text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[44px]"
-            />
-            {showClientSuggestions && clientSuggestions.length > 0 && (
-              <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg py-1">
-                {clientSuggestions.map((client, index) => (
-                  <button
-                    key={client.id}
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      setSelectedClientId(client.id);
-                      setClientInput(client.name || '');
+                    const match = clientMatrixClients.find(
+                      (c) => c.name?.toLowerCase() === value.trim().toLowerCase()
+                    );
+                    setSelectedClientId(match?.id || '');
+                  }}
+                  onFocus={() => setShowClientSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
+                  onKeyDown={(e) => {
+                    if (!showClientSuggestions || clientSuggestions.length === 0) {
+                      if (e.key === 'Escape') setShowClientSuggestions(false);
+                      return;
+                    }
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setClientHighlightedIndex((i) =>
+                        i < clientSuggestions.length - 1 ? i + 1 : 0
+                      );
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setClientHighlightedIndex((i) =>
+                        i > 0 ? i - 1 : clientSuggestions.length - 1
+                      );
+                    } else if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const item =
+                        clientSuggestions[clientHighlightedIndex >= 0 ? clientHighlightedIndex : 0];
+                      if (item?.id) {
+                        setSelectedClientId(item.id);
+                        setClientInput(item.name || '');
+                        setShowClientSuggestions(false);
+                        setClientHighlightedIndex(-1);
+                      goToNextSection('client');
+                      }
+                    } else if (e.key === 'Escape') {
                       setShowClientSuggestions(false);
                       setClientHighlightedIndex(-1);
-                    }}
-                    className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${
-                      index === clientHighlightedIndex
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                    }`}
+                    }
+                  }}
+                  placeholder="Type client name (optional)"
+                  className={`${inputClass} min-h-[44px]`}
+                />
+                {showClientSuggestions && clientSuggestions.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg py-1">
+                    {clientSuggestions.map((client, index) => (
+                      <button
+                        key={client.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setSelectedClientId(client.id);
+                          setClientInput(client.name || '');
+                          setShowClientSuggestions(false);
+                          setClientHighlightedIndex(-1);
+                          goToNextSection('client');
+                        }}
+                        className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${
+                          index === clientHighlightedIndex
+                            ? 'bg-primary/10 text-primary'
+                            : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                        }`}
+                      >
+                        <span className="material-icons-outlined text-lg text-gray-400 dark:text-gray-500 shrink-0">
+                          business
+                        </span>
+                        <span className="font-medium truncate">{client.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => goToNextSection('client')}
+                    className="rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-[#6B7280]"
                   >
-                    <span className="material-icons-outlined text-lg text-gray-400 dark:text-gray-500 shrink-0">
-                      business
-                    </span>
-                    <span className="font-medium truncate">{client.name}</span>
-                    {client.code && (
-                      <span className="ml-auto text-xs text-gray-500 dark:text-gray-400 shrink-0">
-                        {client.code}
-                      </span>
-                    )}
+                    Skip
                   </button>
-                ))}
+                </div>
               </div>
             )}
+            {shouldShowReply('client') && renderReplyBubble(clientReply, () => setActiveSection('client'))}
           </div>
 
           {/* 3. Assigned To */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Assigned To
-            </label>
-            <button
-              onClick={() => setShowAssigneeModal(true)}
-              className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-left flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-lg">people</span>
-                <span className="text-gray-700 dark:text-gray-300">
-                  {selectedAssignees.length > 0
-                    ? `${selectedAssignees.length} selected`
-                    : 'Select employee or team'}
-                </span>
+          {useScheduleDates && (
+            <div className="flex flex-col gap-2">
+              {renderQuestionToggle('assignees', 'Who should this task be assigned to?', canOpenAssignees)}
+              {activeSection === 'assignees' && canOpenAssignees && (
+              <div className={bubbleRightClass}>
+                <button
+                  onClick={() => setShowAssigneeModal(true)}
+                  className="flex w-full items-center justify-between rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 text-left transition-colors hover:bg-[#F3F4F6]"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-lg">people</span>
+                    <span className="text-[#1F2937]">
+                      {selectedAssignees.length > 0
+                        ? `${selectedAssignees.length} selected`
+                        : 'Select employee or team'}
+                    </span>
+                  </div>
+                  <span className="material-symbols-outlined text-gray-400">expand_more</span>
+                </button>
               </div>
-              <span className="material-symbols-outlined text-gray-400">expand_more</span>
-            </button>
-          </div>
+              )}
+              {shouldShowReply('assignees') && renderReplyBubble(assigneesReply, () => setActiveSection('assignees'))}
+            </div>
+          )}
 
           {/* Reporting Member Selection - Only show after assignees are selected */}
-          {selectedAssignees.length > 0 && (
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Reporting Member (Optional)
-              </label>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+          {useScheduleDates && activeSection === 'assignees' && selectedAssignees.length > 0 && (
+            <div className={bubbleRightClass}>
+              <div className={sectionQuestionClass}>Who should be the reporting member? (optional)</div>
+              <p className="mb-3 text-xs text-[#6B7280]">
                 Select a member who will verify other members' task completions. If not selected, verification requests will go to the task creator.
               </p>
+              <div className="mb-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReportingMemberId(null);
+                    goToNextSection('assignees');
+                  }}
+                  className="rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-[#6B7280]"
+                >
+                  Skip
+                </button>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 {selectedAssignees.map((assignee) => {
                   const isSelected = reportingMemberId === assignee.id;
                   return (
                     <button
                       key={assignee.id}
-                      onClick={() => setReportingMemberId(isSelected ? null : assignee.id)}
+                      onClick={() => {
+                        setReportingMemberId(isSelected ? null : assignee.id);
+                        goToNextSection('assignees');
+                      }}
                       className={`flex items-center gap-2 p-3 rounded-lg border-2 transition-colors ${
                         isSelected
                           ? 'bg-primary/10 border-primary dark:bg-primary/20'
@@ -677,18 +846,21 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
           )}
 
           {/* 4. Recurrence */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Recurrence
-            </label>
-            <div className="flex gap-3 mb-3">
+          <div className="flex flex-col gap-2">
+            {renderQuestionToggle('recurrence', 'What type of task is this?', canOpenRecurrence)}
+            {activeSection === 'recurrence' && canOpenRecurrence && (
+              <div className={bubbleRightClass}>
+              <div className="flex gap-3 mb-3">
               <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
                 <input
                   type="radio"
                   name="recurrence"
                   value="one_time"
-                  checked={!isRecurring}
-                  onChange={() => setIsRecurring(false)}
+                  checked={isRecurring === false}
+                  onChange={() => {
+                    setIsRecurring(false);
+                    goToNextSection('recurrence');
+                  }}
                   className="h-4 w-4 text-primary focus:ring-primary border-gray-300"
                 />
                 <span>One-time</span>
@@ -698,22 +870,28 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                   type="radio"
                   name="recurrence"
                   value="recurring"
-                  checked={isRecurring}
-                  onChange={() => setIsRecurring(true)}
+                  checked={isRecurring === true}
+                  onChange={() => {
+                    setIsRecurring(true);
+                    goToNextSection('recurrence');
+                  }}
                   className="h-4 w-4 text-primary focus:ring-primary border-gray-300"
                 />
                 <span>Recurring</span>
               </label>
-            </div>
+              </div>
+              </div>
+            )}
+            {shouldShowReply('recurrence') && renderReplyBubble(recurrenceReply, () => setActiveSection('recurrence'))}
 
             {/* Recurrence Options (only visible when Recurring is selected) */}
-            {isRecurring && (
+            {activeSection === 'recurrence' && isRecurring === true && (
               <div className="animate-in fade-in slide-in-from-top-2 duration-200">
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                   Recurrence Frequency
                 </label>
                 <div className="flex gap-2">
-                  {(['weekly', 'monthly', 'quarterly', 'yearly'] as const).map((type) => (
+                  {(['weekly', 'monthly', 'quarterly', 'annually'] as const).map((type) => (
                     <button
                       key={type}
                       onClick={() => setRecurrenceType(type)}
@@ -731,12 +909,77 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             )}
           </div>
 
-          {/* 5. SCHEDULE */}
-          <div>
-            <h3 className="text-sm font-bold uppercase text-gray-500 dark:text-gray-400 mb-3 tracking-wider">
-              SCHEDULE
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* 5. Rollout Type (recurring only) */}
+          {isRecurring === true && (
+            <div className="flex flex-col gap-2">
+              {renderQuestionToggle('rollout', 'How should this task be rolled out?', canOpenRollout)}
+              {activeSection === 'rollout' && canOpenRollout && (
+                <div className={bubbleRightClass}>
+                  <div className="flex gap-2">
+                    {[{ key: 'cycle_start', label: 'Cycle Start' }, { key: 'start_date', label: 'Start Date' }].map((item) => (
+                      <button
+                        key={item.key}
+                        onClick={() => {
+                          setTaskRolloutType(item.key as 'cycle_start' | 'start_date');
+                          goToNextSection('rollout');
+                        }}
+                        className={`flex-1 rounded-xl py-2.5 px-4 font-medium transition-colors ${
+                          taskRolloutType === item.key
+                            ? segmentedActiveClass
+                            : segmentedInactiveClass
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {shouldShowReply('rollout') && renderReplyBubble(rolloutReply, () => setActiveSection('rollout'))}
+            </div>
+          )}
+
+          {/* 6. SCHEDULE */}
+          <div className="flex flex-col gap-2">
+            {renderQuestionToggle('schedule', 'What are the start, target, and due dates?', canOpenSchedule)}
+            {activeSection === 'schedule' && canOpenSchedule && (
+              <div className={bubbleRightClass}>
+              <div className="mb-3 flex gap-2">
+                <button
+                  onClick={() => setUseScheduleDates(true)}
+                  className={`flex-1 rounded-xl py-2.5 px-4 font-medium transition-colors ${
+                    useScheduleDates ? segmentedActiveClass : segmentedInactiveClass
+                  }`}
+                >
+                  With Dates
+                </button>
+                <button
+                  onClick={() => {
+                    // Mobile parity: selecting no-dates enforces creator-only mode.
+                    setUseScheduleDates(false);
+                    setSelectedAssignees([]);
+                    setReportingMemberId(null);
+                    setTaskOwner('self');
+                    setTaskOwnerUserId(null);
+                    if (isRecurring === true) {
+                      setTaskRolloutType('cycle_start');
+                    }
+                  }}
+                  className={`flex-1 rounded-xl py-2.5 px-4 font-medium transition-colors ${
+                    !useScheduleDates ? segmentedActiveClass : segmentedInactiveClass
+                  }`}
+                >
+                  No Dates
+                </button>
+              </div>
+              {!useScheduleDates && (
+                <p className="mb-2 text-xs text-[#6B7280]">
+                  No-dates mode is creator-only. Assignees are cleared and owner is set to self.
+                  {isRecurring === true ? ' For recurring tasks, choose Cycle Start rollout.' : ''}
+                </p>
+              )}
+              {useScheduleDates && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {/* Start Date */}
               <div className="flex flex-col">
                 <label className="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
@@ -779,40 +1022,50 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                   <span className="material-symbols-outlined text-primary text-base">calendar_today</span>
                 </button>
               </div>
-            </div>
+              </div>
+              )}
+              </div>
+            )}
+            {shouldShowReply('schedule') && renderReplyBubble(scheduleReply, () => setActiveSection('schedule'))}
           </div>
 
-          {/* 6. Task Owner */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Task Owner
-            </label>
-            <div className="flex gap-2">
+          {/* 7. Task Owner */}
+          <div className="flex flex-col gap-2">
+            {renderQuestionToggle('owner', 'Who is the task owner?', canOpenOwner)}
+            {activeSection === 'owner' && canOpenOwner && (
+              <div className={bubbleRightClass}>
+              <div className="flex gap-2">
               {(['self', 'contacts'] as const).map((owner) => (
                 <button
                   key={owner}
                   onClick={() => {
+                    if (!useScheduleDates && owner === 'contacts') return;
                     setTaskOwner(owner);
                     if (owner !== 'contacts') setTaskOwnerUserId(null);
+                    if (owner === 'self') goToNextSection('owner');
                   }}
-                  className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${
+                  className={`flex-1 rounded-xl py-2.5 px-4 font-medium transition-colors ${
                     taskOwner === owner
-                      ? 'bg-primary text-white shadow-sm'
-                      : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-                  }`}
+                      ? segmentedActiveClass
+                      : segmentedInactiveClass
+                  } ${!useScheduleDates && owner === 'contacts' ? 'cursor-not-allowed opacity-50' : ''}`}
                 >
                   {owner === 'self' ? 'Self' : 'Contacts'}
                 </button>
               ))}
-            </div>
+              </div>
+              {!useScheduleDates && (
+                <p className="mt-2 text-xs text-[#6B7280]">Contacts owner is disabled in no-dates mode.</p>
+              )}
+              </div>
+            )}
+            {shouldShowReply('owner') && renderReplyBubble(ownerReply, () => setActiveSection('owner'))}
           </div>
 
           {/* Task Owner Member (only when task owner = contacts) */}
-          {taskOwner === 'contacts' && selectedAssignees.length > 0 && (
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Task Owner Member
-              </label>
+          {activeSection === 'owner' && taskOwner === 'contacts' && selectedAssignees.length > 0 && (
+            <div className={bubbleRightClass}>
+              <div className={sectionQuestionClass}>Select task owner contact</div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
                 Choose which selected member should be considered the owner.
               </p>
@@ -822,7 +1075,11 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                   return (
                     <button
                       key={assignee.id}
-                      onClick={() => setTaskOwnerUserId(isSelected ? null : assignee.id)}
+                      onClick={() => {
+                        const next = isSelected ? null : assignee.id;
+                        setTaskOwnerUserId(next);
+                        if (next) goToNextSection('owner');
+                      }}
                       className={`flex items-center gap-2 p-3 rounded-lg border-2 transition-colors ${
                         isSelected
                           ? 'bg-primary/10 border-primary dark:bg-primary/20'
@@ -851,24 +1108,73 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
             </div>
           )}
 
-          {/* 7. Financial Value (Optional) */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Financial Value <span className="text-gray-400 font-normal">(Optional)</span>
-            </label>
-            <input
+          {/* 8. Auto Escalate */}
+          <div className="flex flex-col gap-2">
+            {renderQuestionToggle('escalation', 'Enable auto escalation?', canOpenEscalation)}
+            {activeSection === 'escalation' && canOpenEscalation && (
+              <div className={bubbleRightClass}>
+                <div className="mb-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => goToNextSection('escalation')}
+                    className="rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-[#6B7280]"
+                  >
+                    Skip
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  {[{ key: 'yes', label: 'Yes' }, { key: 'no', label: 'No' }].map((item) => (
+                    <button
+                      key={item.key}
+                      onClick={() => {
+                        setAutoEscalate(item.key === 'yes');
+                        goToNextSection('escalation');
+                      }}
+                      className={`flex-1 rounded-xl py-2.5 px-4 font-medium transition-colors ${
+                        (autoEscalate && item.key === 'yes') || (!autoEscalate && item.key === 'no')
+                          ? segmentedActiveClass
+                          : segmentedInactiveClass
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {shouldShowReply('escalation') && renderReplyBubble(escalationReply, () => setActiveSection('escalation'))}
+          </div>
+
+          {/* 9. Financial Value (Optional) */}
+          <div className="flex flex-col gap-2">
+            {renderQuestionToggle('finance', 'Do you want to add a financial value? (optional)', canOpenFinance)}
+            {activeSection === 'finance' && canOpenFinance && (
+              <div className={bubbleRightClass}>
+              <input
               type="text"
               inputMode="decimal"
               value={financialValue}
               onChange={(e) => setFinancialValue(e.target.value)}
               placeholder="Enter amount"
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white dark:bg-gray-700 transition-colors"
+              className={inputClass}
             />
+              <div className="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setFinancialValue('')}
+                  className="rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-semibold text-[#6B7280]"
+                >
+                  Skip
+                </button>
+              </div>
+              </div>
+            )}
+            {shouldShowReply('finance') && renderReplyBubble(financeReply, () => setActiveSection('finance'))}
           </div>
 
           {/* Finance Type (only show if financial value entered) */}
-          {financialValue.trim().length > 0 && (
-            <div className="animate-in fade-in slide-in-from-top-2 duration-200">
+          {activeSection === 'finance' && financialValue.trim().length > 0 && (
+            <div className={`${bubbleRightClass} animate-in fade-in slide-in-from-top-2 duration-200`}>
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 Type of Finance
               </label>
@@ -877,10 +1183,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                   <button
                     key={type}
                     onClick={() => setFinanceType(type)}
-                    className={`flex-1 py-2.5 px-4 rounded-lg font-medium transition-colors ${
+                  className={`flex-1 rounded-xl py-2.5 px-4 font-medium transition-colors ${
                       financeType === type
-                        ? 'bg-primary text-white shadow-sm'
-                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                      ? segmentedActiveClass
+                      : segmentedInactiveClass
                     }`}
                   >
                     {type.charAt(0).toUpperCase() + type.slice(1)}
@@ -978,7 +1284,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                   Cancel
                 </button>
                 <button
-                  onClick={() => setShowAssigneeModal(false)}
+                  onClick={() => {
+                    setShowAssigneeModal(false);
+                    goToNextSection('assignees');
+                  }}
                   className="flex-1 px-4 py-3 bg-primary text-white text-sm sm:text-base rounded-lg hover:bg-primary/90 transition-colors font-semibold flex items-center justify-center gap-2 min-h-[44px]"
                 >
                   <span className="material-symbols-outlined text-sm">check</span>

@@ -404,7 +404,7 @@ export const DocumentViewer: React.FC = () => {
               <span className="material-symbols-outlined">arrow_back</span>
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">{currentInstance.title}</h1>
+              <h1 className="text-xl md:text-2xl font-bold text-slate-900">{currentInstance.title}</h1>
               <div className="flex items-center gap-3 mt-1">
                 {!isLocal && (
                   <>
