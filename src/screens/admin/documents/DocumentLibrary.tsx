@@ -99,7 +99,7 @@ export const DocumentLibrary: React.FC = () => {
         {/* Page Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-1.5">
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-1.5">
               Document Management
             </h1>
             <p className="text-gray-500 dark:text-gray-400 text-sm">

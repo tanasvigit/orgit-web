@@ -26,9 +26,11 @@ export const AdminDashboard: React.FC = () => {
   // Refs for task transition animation (Self Tasks section)
   const selfTasksToDoIconRef = useRef<HTMLDivElement>(null);
   const selfTasksInProgressIconRef = useRef<HTMLDivElement>(null);
+  const selfTasksCompletedIconRef = useRef<HTMLDivElement>(null);
   // Refs for task transition animation (Assigned Tasks section)
   const assignedTasksToDoIconRef = useRef<HTMLDivElement>(null);
   const assignedTasksInProgressIconRef = useRef<HTMLDivElement>(null);
+  const assignedTasksCompletedIconRef = useRef<HTMLDivElement>(null);
 
   const { data: dashboardData, isLoading, refetch: refetchDashboard } = useQuery(
     ['admin-dashboard'],
@@ -49,37 +51,57 @@ export const AdminDashboard: React.FC = () => {
   const selfTasks = dashboardData?.data?.selfTasks;
   const assignedTasks = dashboardData?.data?.assignedTasks;
 
-  // Animation hook and section detection (after queries so we can use isLoading)
-  const { shouldAnimate, taskId, clearAnimationState } = useTaskTransitionAnimation();
-  const [animationSection, setAnimationSection] = useState<'self' | 'assigned' | null>(null);
+  // Animation hook (driven by navigation state from Task Details)
+  const { shouldAnimate, taskId, fromStatus, toStatus, taskSection, clearAnimationState } = useTaskTransitionAnimation();
+  const [isAnimationReady, setIsAnimationReady] = useState(false);
 
+  // Wait until relevant icon refs exist before showing animation.
   useEffect(() => {
     if (!shouldAnimate) {
-      setAnimationSection(null);
+      setIsAnimationReady(false);
       return;
     }
-    // Always animate in Self Tasks section (To Do → In Progress)
-    const checkRefs = () => {
-      if (selfTasksToDoIconRef.current && selfTasksInProgressIconRef.current) {
-        setAnimationSection('self');
-        return true;
-      }
-      return false;
-    };
-    if (checkRefs()) return;
-    const delays = [50, 150, 350, 600];
+
+    const section = taskSection || 'self';
+    const from = (fromStatus || 'todo') as 'todo' | 'inprogress';
+    const to = (toStatus || 'inprogress') as 'inprogress' | 'completed';
+    const refs =
+      section === 'assigned'
+        ? {
+            todo: assignedTasksToDoIconRef,
+            inprogress: assignedTasksInProgressIconRef,
+            completed: assignedTasksCompletedIconRef,
+          }
+        : {
+            todo: selfTasksToDoIconRef,
+            inprogress: selfTasksInProgressIconRef,
+            completed: selfTasksCompletedIconRef,
+          };
+
+    const sourceRef = refs[from];
+    const targetRef = refs[to];
+    const check = () => !!sourceRef.current && !!targetRef.current;
+
+    if (check()) {
+      setIsAnimationReady(true);
+      return;
+    }
+
+    setIsAnimationReady(false);
+    const delays = [0, 50, 150, 350, 600, 900];
     const timers: ReturnType<typeof setTimeout>[] = [];
     delays.forEach((ms) => {
       timers.push(
         setTimeout(() => {
-          if (checkRefs()) {
+          if (check()) {
+            setIsAnimationReady(true);
             timers.forEach(clearTimeout);
           }
         }, ms)
       );
     });
     return () => timers.forEach(clearTimeout);
-  }, [shouldAnimate, isLoading]);
+  }, [shouldAnimate, taskSection, fromStatus, toStatus, isLoading]);
 
   const currentUserId = user?.id || (user as any)?.userId;
 
@@ -406,6 +428,7 @@ export const AdminDashboard: React.FC = () => {
               key={task.id}
               id={task.id}
               title={merged.title}
+              clientName={merged.client_name || merged.clientName}
               description={merged.description}
               status={cardStatus}
               dueDate={merged.due_date || merged.dueDate}
@@ -426,31 +449,32 @@ export const AdminDashboard: React.FC = () => {
     viewType: 'self' | 'assigned',
     title: string,
     toDoIconRef?: React.RefObject<HTMLDivElement>,
-    inProgressIconRef?: React.RefObject<HTMLDivElement>
+    inProgressIconRef?: React.RefObject<HTMLDivElement>,
+    completedIconRef?: React.RefObject<HTMLDivElement>
   ) => {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center gap-3 mb-5">
+      <div className="space-y-4 max-[1366px]:space-y-3">
+        <div className="mb-4 flex items-center gap-3 max-[1366px]:mb-2.5">
           <div className="w-1 h-8 bg-primary rounded-full"></div>
-          <h2 className="text-xl md:text-2xl font-semibold text-gray-900 dark:text-white">{title}</h2>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white md:text-2xl max-[1366px]:text-lg">{title}</h2>
           <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
         </div>
 
         {/* Statistics Cards for this section */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-8">
+        <div className="mb-6 grid grid-cols-2 gap-3 min-[1366px]:grid-cols-5 min-[1366px]:gap-3 max-[1366px]:gap-2.5 max-[1366px]:mb-4">
           {/* To-Do Card (Today’s recurring, not completed) */}
           <button
             type="button"
             onClick={() => navigate(`/admin/tasks?view=${viewType}&status=todo`)}
-            className="relative bg-white dark:bg-slate-800/95 p-5 rounded-xl flex flex-col items-center text-center group cursor-pointer text-left w-full border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-blue-500 shadow-sm hover:shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
+            className="relative mx-auto flex w-full max-w-[220px] flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-blue-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:max-w-[200px] max-[1366px]:p-2.5"
           >
-            <div ref={toDoIconRef} className="mb-2.5 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
-              <span className="material-symbols-outlined text-xl">today</span>
+            <div ref={toDoIconRef} className="mb-2 flex size-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 max-[1366px]:size-[30px]">
+              <span className="material-symbols-outlined text-[18px] max-[1366px]:text-base">today</span>
             </div>
-            <span className="text-2xl font-semibold text-gray-900 dark:text-white mb-1">
+            <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
               {getStatusCount('todo', viewType) + getToDoTasks(viewType).length}
             </span>
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+            <span className="text-xs font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
               TO DO
             </span>
           </button>
@@ -459,15 +483,15 @@ export const AdminDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate(`/admin/tasks?view=${viewType}&status=inprogress`)}
-            className="relative bg-white dark:bg-slate-800/95 p-5 rounded-xl flex flex-col items-center text-center group cursor-pointer text-left border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-purple-500 shadow-sm hover:shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
+            className="relative mx-auto flex w-full max-w-[220px] flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-purple-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:max-w-[200px] max-[1366px]:p-2.5"
           >
-            <div ref={inProgressIconRef} className="mb-2.5 p-2.5 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400">
-              <span className="material-symbols-outlined text-xl">pending_actions</span>
+            <div ref={inProgressIconRef} className="mb-2 flex size-8 items-center justify-center rounded-lg bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400 max-[1366px]:size-[30px]">
+              <span className="material-symbols-outlined text-[18px] max-[1366px]:text-base">pending_actions</span>
             </div>
-            <span className="text-2xl font-semibold text-gray-900 dark:text-white mb-1">
+            <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
               {getStatusCount('inprogress', viewType)}
             </span>
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+            <span className="text-xs font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
               In Progress
             </span>
           </button>
@@ -476,15 +500,15 @@ export const AdminDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate(`/admin/tasks?view=${viewType}&status=duesoon`)}
-            className="relative bg-white dark:bg-slate-800/95 p-5 rounded-xl flex flex-col items-center text-center group cursor-pointer text-left border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-amber-500 shadow-sm hover:shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
+            className="relative mx-auto flex w-full max-w-[220px] flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-amber-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:max-w-[200px] max-[1366px]:p-2.5"
           >
-            <div className="mb-2.5 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400">
-              <span className="material-symbols-outlined text-xl">hourglass_top</span>
+            <div className="mb-2 flex size-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400 max-[1366px]:size-[30px]">
+              <span className="material-symbols-outlined text-[18px] max-[1366px]:text-base">hourglass_top</span>
             </div>
-            <span className="text-2xl font-semibold text-gray-900 dark:text-white mb-1">
+            <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
               {getStatusCount('duesoon', viewType)}
             </span>
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+            <span className="text-xs font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
               Due Soon
             </span>
           </button>
@@ -493,15 +517,15 @@ export const AdminDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate(`/admin/tasks?view=${viewType}&status=overdue`)}
-            className="relative bg-white dark:bg-slate-800/95 p-5 rounded-xl flex flex-col items-center text-center group cursor-pointer text-left border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-red-500 shadow-sm hover:shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
+            className="relative mx-auto flex w-full max-w-[220px] flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-red-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:max-w-[200px] max-[1366px]:p-2.5"
           >
-            <div className="mb-2.5 p-2.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400">
-              <span className="material-symbols-outlined text-xl">priority_high</span>
+            <div className="mb-2 flex size-8 items-center justify-center rounded-lg bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 max-[1366px]:size-[30px]">
+              <span className="material-symbols-outlined text-[18px] max-[1366px]:text-base">priority_high</span>
             </div>
-            <span className="text-2xl font-semibold text-gray-900 dark:text-white mb-1">
+            <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
               {getStatusCount('overdue', viewType)}
             </span>
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+            <span className="text-xs font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
               Overdue
             </span>
           </button>
@@ -510,15 +534,15 @@ export const AdminDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate(`/admin/tasks?view=${viewType}&status=completed`)}
-            className="relative bg-white dark:bg-slate-800/95 p-5 rounded-xl flex flex-col items-center text-center group cursor-pointer text-left border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-emerald-500 shadow-sm hover:shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 active:scale-[0.98]"
+            className="relative mx-auto flex w-full max-w-[220px] flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-emerald-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:max-w-[200px] max-[1366px]:p-2.5"
           >
-            <div className="mb-2.5 p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400">
-              <span className="material-symbols-outlined text-xl">task_alt</span>
+            <div ref={completedIconRef} className="mb-2 flex size-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400 max-[1366px]:size-[30px]">
+              <span className="material-symbols-outlined text-[18px] max-[1366px]:text-base">task_alt</span>
             </div>
-            <span className="text-2xl font-semibold text-gray-900 dark:text-white mb-1">
+            <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
               {getStatusCount('completed', viewType)}
             </span>
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+            <span className="text-xs font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
               Completed
             </span>
           </button>
@@ -529,15 +553,15 @@ export const AdminDashboard: React.FC = () => {
 
   return (
     <AdminLayout>
-      <div className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 md:px-8 py-6 md:py-8 space-y-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
+      <div className="min-h-screen w-full max-w-7xl flex-1 space-y-6 bg-gray-50 px-4 py-6 dark:bg-gray-900 sm:px-5 md:px-6 md:py-7 max-[1366px]:space-y-4 max-[1366px]:px-2.5 max-[1366px]:py-4">
         {/* Welcome Header */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
+        <div className="mb-4 max-[1366px]:mb-3">
+          <div className="mb-2 flex items-center justify-between max-[1366px]:mb-1.5">
             <div>
               <h1 className="text-2xl md:text-3xl font-semibold text-gray-900 dark:text-white">
-                Welcome , {user?.name || 'Admin'}
+                Welcome back, {user?.name || 'Admin'}
               </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1 text-sm">
+              <p className="mt-1 text-xs text-gray-600 dark:text-gray-400 md:text-sm max-[1366px]:mt-0.5 max-[1366px]:text-[11px]">
                 Here's an overview of your tasks and progress
               </p>
             </div>
@@ -545,12 +569,12 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         {/* Tasks List */}
-        <div className="space-y-10 md:space-y-12">
+        <div className="space-y-6 md:space-y-8 max-[1366px]:space-y-4">
           {/* Self Tasks Row */}
-          {renderTaskRow(selfTasks, 'self', 'Self Tasks', selfTasksToDoIconRef, selfTasksInProgressIconRef)}
+          {renderTaskRow(selfTasks, 'self', 'Self Tasks', selfTasksToDoIconRef, selfTasksInProgressIconRef, selfTasksCompletedIconRef)}
           
           {/* Assigned Tasks Row */}
-          {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks', assignedTasksToDoIconRef, assignedTasksInProgressIconRef)}
+          {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks', assignedTasksToDoIconRef, assignedTasksInProgressIconRef, assignedTasksCompletedIconRef)}
 
           {/* Document Management Section - Combined for both self and assigned */}
           {isLoading ? (
@@ -770,6 +794,7 @@ export const AdminDashboard: React.FC = () => {
                         key={task.id}
                         id={task.id}
                         title={merged.title}
+                        clientName={merged.client_name || merged.clientName}
                         description={merged.description}
                         status="inprogress"
                         dueDate={merged.due_date || merged.dueDate}
@@ -853,17 +878,41 @@ export const AdminDashboard: React.FC = () => {
       </div>
 
       {/* Task Transition Animation */}
-      {shouldAnimate && animationSection === 'self' && (
-        <TaskTransitionAnimation
-          sourceRef={selfTasksToDoIconRef}
-          targetRef={selfTasksInProgressIconRef}
-          taskId={taskId}
-          section="self"
-          onComplete={() => {
-            clearAnimationState();
-            refetchAdminDashboard();
-          }}
-        />
+      {shouldAnimate && isAnimationReady && (
+        (() => {
+          const section = taskSection || 'self';
+          const from = (fromStatus || 'todo') as any;
+          const to = (toStatus || 'inprogress') as any;
+          const refs =
+            section === 'assigned'
+              ? {
+                  todo: assignedTasksToDoIconRef,
+                  inprogress: assignedTasksInProgressIconRef,
+                  completed: assignedTasksCompletedIconRef,
+                }
+              : {
+                  todo: selfTasksToDoIconRef,
+                  inprogress: selfTasksInProgressIconRef,
+                  completed: selfTasksCompletedIconRef,
+                };
+          const sourceRef = refs[from === 'inprogress' ? 'inprogress' : 'todo'];
+          const targetRef = refs[to === 'completed' ? 'completed' : 'inprogress'];
+          if (!sourceRef.current || !targetRef.current) return null;
+          return (
+            <TaskTransitionAnimation
+              sourceRef={sourceRef}
+              targetRef={targetRef}
+              taskId={taskId}
+              section={section}
+              fromStatus={from}
+              toStatus={to}
+              onComplete={() => {
+                clearAnimationState();
+                refetchAdminDashboard();
+              }}
+            />
+          );
+        })()
       )}
     </AdminLayout>
   );

@@ -1,5 +1,4 @@
 import React from 'react';
-import { format } from 'date-fns';
 
 interface ReplyMessageProps {
   replyTo?: {
@@ -17,21 +16,23 @@ export const ReplyMessage: React.FC<ReplyMessageProps> = ({ replyTo, onCancel })
   if (!replyTo) return null;
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 border-l-4 border-primary rounded-lg">
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-semibold text-primary mb-0.5">
-          Replying to {replyTo.senderName || 'Unknown'}
-        </p>
-        <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
-          {replyTo.content}
-        </p>
+    <div className="w-full rounded-2xl border border-[#E7D9FF] bg-[#F8F5FF] px-3 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="mb-1 text-xs font-semibold text-primary">
+            Replying to {replyTo.senderName || 'Unknown'}
+          </p>
+          <p className="truncate text-sm text-[#1F2937]">
+            {replyTo.content}
+          </p>
+        </div>
+        <button
+          onClick={onCancel}
+          className="shrink-0 rounded-md border border-[#E7D9FF] bg-white px-2 py-1 text-xs font-semibold text-primary"
+        >
+          Close
+        </button>
       </div>
-      <button
-        onClick={onCancel}
-        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1"
-      >
-        <span className="material-symbols-outlined text-sm">close</span>
-      </button>
     </div>
   );
 };
@@ -47,11 +48,11 @@ export const ReplyPreview: React.FC<{
   if (!replyTo) return null;
 
   return (
-    <div className="border-l-4 border-primary/50 pl-2 ml-2 mb-1">
-      <p className="text-xs font-semibold text-primary">
+    <div className="mb-1 ml-2 w-full max-w-[85%] rounded-xl border border-[#E5E7EB] bg-[#F3F4F6] px-3 py-2">
+      <p className="text-xs font-semibold text-[#1F2937]">
         {replyTo.senderName || 'Unknown'}
       </p>
-      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+      <p className="truncate text-xs text-[#6B7280]">
         {replyTo.content}
       </p>
     </div>

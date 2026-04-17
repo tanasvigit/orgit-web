@@ -103,17 +103,30 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Not set';
     try {
-      // If we get full ISO, use only the YYYY-MM-DD part to avoid TZ shifts.
-      const iso = String(dateString);
-      const datePart = iso.includes('T') ? iso.split('T')[0] : iso;
-      const [y, m, d] = datePart.split(/[-/]/).map((v) => parseInt(v, 10));
-      if (!y || !m || !d) return 'Not set';
-      const date = new Date(y, m - 1, d);
-      if (isNaN(date.getTime())) return 'Not set';
-      return date.toLocaleDateString([], {
+      const raw = String(dateString).trim();
+      // Plain date (YYYY-MM-DD or YYYY/MM/DD): keep as calendar date, no timezone conversion.
+      const plain = raw.match(/^(\d{4})[-/](\d{2})[-/](\d{2})$/);
+      if (plain) {
+        const y = parseInt(plain[1], 10);
+        const m = parseInt(plain[2], 10);
+        const d = parseInt(plain[3], 10);
+        const date = new Date(y, m - 1, d);
+        if (isNaN(date.getTime())) return 'Not set';
+        return date.toLocaleDateString('en-IN', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+      }
+
+      // Timestamp values from API: format in IST to prevent previous-day shift.
+      const parsed = new Date(raw);
+      if (isNaN(parsed.getTime())) return 'Not set';
+      return parsed.toLocaleDateString('en-IN', {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
+        timeZone: 'Asia/Kolkata',
       });
     } catch {
       return 'Not set';
@@ -307,6 +320,46 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
         throw new Error('Missing taskId or userId');
       }
       return taskService.markMemberComplete(taskId, currentUserId);
+    },
+    {
+      onSuccess: (data: any) => {
+        // Invalidate task-related queries so dashboard and detail reflect the new state
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries('tasks');
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        if (isAdmin) {
+          queryClient.invalidateQueries(['admin-dashboard']);
+          queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        }
+
+        const message = data?.taskCompleted
+          ? 'Task completed. The entire task has been marked as completed.'
+          : 'Your completion has been marked.';
+        toast.success(message);
+
+        // Always go back to dashboard and animate lifecycle movement.
+        // Even when verification is pending, the viewer's assignee status becomes "completed"
+        // and the card should move to Completed in the dashboard.
+        const dashboardPath = isAdmin ? '/admin' : '/dashboard';
+
+        navigate(dashboardPath, {
+          state: {
+            animateTaskTransition: true,
+            taskId,
+            fromStatus: 'inprogress',
+            toStatus: 'completed',
+            taskSection: 'self',
+          },
+        });
+      },
+      onError: (error: any) => {
+        const message =
+          error?.response?.data?.error ||
+          error?.message ||
+          'Failed to mark completion';
+        toast.error(message);
+      },
     }
   );
 
@@ -324,6 +377,21 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
           queryClient.invalidateQueries(['admin-dashboard-statistics']);
         }
         toast.success('Task moved to In Progress.');
+
+        // Navigate back to dashboard with transition animation (TODO → In Progress)
+        const assigneeIds = (assignees || []).map((a: any) => a?.id || a?.user_id || a?.userId).filter(Boolean);
+        const hasOtherAssignees = !!currentUserId && assigneeIds.some((id: any) => String(id) !== String(currentUserId));
+        const taskSection: 'self' | 'assigned' = isCreator && hasOtherAssignees ? 'assigned' : 'self';
+        const dashboardPath = isAdmin ? '/admin' : '/dashboard';
+        navigate(dashboardPath, {
+          state: {
+            animateTaskTransition: true,
+            taskId,
+            fromStatus: 'todo',
+            toStatus: 'inprogress',
+            taskSection,
+          },
+        });
       },
       onError: (error: any) => {
         const message =
@@ -344,7 +412,7 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
       onConfirm: async () => {
         try {
           setProcessing(true);
-          const data: any = await markCompleteMutation.mutateAsync();
+          await markCompleteMutation.mutateAsync();
 
           // If the current user is the creator, also attempt to move the task to completed.
           // This mirrors the mobile flow where creator completion immediately completes the task.
@@ -358,24 +426,7 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
             }
           }
 
-          // Invalidate task-related queries so dashboard and detail reflect the new state
-          queryClient.invalidateQueries(['task', taskId]);
-          queryClient.invalidateQueries('tasks');
-          queryClient.invalidateQueries(['dashboard']);
-          queryClient.invalidateQueries(['dashboard-statistics']);
-          if (isAdmin) {
-            queryClient.invalidateQueries(['admin-dashboard']);
-            queryClient.invalidateQueries(['admin-dashboard-statistics']);
-          }
-
-          const message = data?.taskCompleted
-            ? 'Task completed. The entire task has been marked as completed.'
-            : 'Your completion has been marked and sent for approval.';
-          toast.success(message);
-
-          // After marking complete, take the user back to the dashboard (same as mobile)
-          const dashboardPath = isAdmin ? '/admin' : '/dashboard';
-          navigate(dashboardPath);
+          // navigation + animation handled in mutation onSuccess
         } catch (error: any) {
           const message =
             error?.response?.data?.error ||
@@ -417,6 +468,17 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
 
         if (result?.allCompleted) {
           toast.success('All members have been verified. Task is now completed.');
+          // Navigate back to dashboard with transition animation (In Progress → Completed)
+          const dashboardPath = isAdmin ? '/admin' : '/dashboard';
+          navigate(dashboardPath, {
+            state: {
+              animateTaskTransition: true,
+              taskId,
+              fromStatus: 'inprogress',
+              toStatus: 'completed',
+              taskSection: 'self',
+            },
+          });
         } else {
           toast.success('Member completion verified successfully.');
         }
@@ -798,6 +860,11 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
                 {heroStatusLabel}
               </span>
               <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">{displayTask.title}</h2>
+              {displayTask.client_name && (
+                <p className="text-slate-600 dark:text-slate-300 mt-2 text-sm font-medium">
+                  Client: <span className="font-bold text-slate-900 dark:text-white">{displayTask.client_name}</span>
+                </p>
+              )}
               <p className="text-slate-500 dark:text-slate-400 mt-2 text-sm flex items-center gap-4">
                 <span>Created: {formatDate(displayTask.created_at)}</span>
                 {displayTask.id && (
@@ -895,7 +962,7 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
                   <div className={`absolute left-0 w-4 h-4 rounded-full border-4 border-white dark:border-card-dark z-10 ${timelineStep === 'start' ? 'bg-task-primary' : 'bg-slate-400'}`}></div>
                   <div className="pl-8 -mt-1">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Start Date</p>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{displayTask.start_date ? new Date(displayTask.start_date).toLocaleDateString() : 'Not set'}</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{formatDate(displayTask.start_date)}</p>
                   </div>
                 </div>
                 <div className="relative timeline-item pb-10">
@@ -910,7 +977,7 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
                   <div className={`absolute left-0 w-4 h-4 rounded-full border-4 border-white dark:border-card-dark z-10 ${timelineStep === 'target' ? 'bg-task-primary' : 'bg-slate-400'}`}></div>
                   <div className="pl-8 -mt-1">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Target Date</p>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{displayTask.target_date ? new Date(displayTask.target_date).toLocaleDateString() : 'Not set'}</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{formatDate(displayTask.target_date)}</p>
                   </div>
                 </div>
                 <div className="relative timeline-item pb-10">
@@ -925,7 +992,7 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
                   <div className={`absolute left-0 w-4 h-4 rounded-full border-4 border-white dark:border-card-dark z-10 ${timelineStep === 'due_date' ? 'bg-task-primary' : 'bg-slate-400'}`}></div>
                   <div className="pl-8 -mt-1">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Due Date</p>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{displayTask.due_date ? new Date(displayTask.due_date).toLocaleDateString() : 'Not set'}</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{formatDate(displayTask.due_date)}</p>
                   </div>
                 </div>
                 <div className="relative timeline-item pb-10">

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
-import { useNavigate } from 'react-router-dom';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { organizationService } from '../../services/organizationService';
 import { entityMasterBulkService } from '../../services/entityMasterBulkService';
@@ -10,11 +9,42 @@ import api from '../../services/api';
 import { getBackendBaseUrlWithSlash } from '../../config/env';
 import { masterDataService } from '../../services/masterDataService';
 
+const mapOrgToFormState = (orgData: any) => ({
+  name: orgData.name || '',
+  shortName: orgData.shortName || '',
+  email: orgData.email || '',
+  mobile: orgData.mobile || '',
+  address: orgData.address || '',
+  countryId: orgData.countryId || '',
+  stateId: orgData.stateId || '',
+  cityId: orgData.cityId || '',
+  countryName: orgData.country?.name || '',
+  stateName: orgData.state?.name || '',
+  cityName: orgData.city?.name || '',
+  pinCode: orgData.pinCode || '',
+  addressLine1: orgData.addressLine1 || '',
+  addressLine2: orgData.addressLine2 || '',
+  website: orgData.website || '',
+  phoneNumber: orgData.phoneNumber || '',
+  orgConstitution: orgData.orgConstitution || '',
+  depotCount: orgData.depotCount ?? 0,
+  warehouseCount: orgData.warehouseCount ?? 0,
+  gst: orgData.gst || '',
+  pan: orgData.pan || '',
+  cin: orgData.cin || '',
+  logoUrl: orgData.logoUrl || '',
+  accountingYearStart: orgData.accountingYearStart || '',
+  costCentres: Array.isArray(orgData.costCentres) ? orgData.costCentres : [],
+  branches: Array.isArray(orgData.branches) ? orgData.branches : [],
+  depots: Array.isArray(orgData.depots) ? orgData.depots : [],
+  warehouses: Array.isArray(orgData.warehouses) ? orgData.warehouses : [],
+});
+
 export const EntityMasterData: React.FC = () => {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { toast } = useToast();
+  const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     shortName: '',
@@ -69,40 +99,11 @@ export const EntityMasterData: React.FC = () => {
   );
 
   useEffect(() => {
-    if (orgData) {
+    if (orgData && !isEditing) {
       console.log('[EntityMaster] org data loaded', { name: orgData.name, country: orgData.country?.name, state: orgData.state?.name, city: orgData.city?.name });
-      setFormData({
-        name: orgData.name || '',
-        shortName: orgData.shortName || '',
-        email: orgData.email || '',
-        mobile: orgData.mobile || '',
-        address: orgData.address || '',
-        countryId: orgData.countryId || '',
-        stateId: orgData.stateId || '',
-        cityId: orgData.cityId || '',
-        countryName: orgData.country?.name || '',
-        stateName: orgData.state?.name || '',
-        cityName: orgData.city?.name || '',
-        pinCode: orgData.pinCode || '',
-        addressLine1: orgData.addressLine1 || '',
-        addressLine2: orgData.addressLine2 || '',
-        website: orgData.website || '',
-        phoneNumber: orgData.phoneNumber || '',
-        orgConstitution: orgData.orgConstitution || '',
-        depotCount: orgData.depotCount ?? 0,
-        warehouseCount: orgData.warehouseCount ?? 0,
-        gst: orgData.gst || '',
-        pan: orgData.pan || '',
-        cin: orgData.cin || '',
-        logoUrl: orgData.logoUrl || '',
-        accountingYearStart: orgData.accountingYearStart || '',
-        costCentres: Array.isArray(orgData.costCentres) ? orgData.costCentres : [],
-        branches: Array.isArray(orgData.branches) ? orgData.branches : [],
-        depots: Array.isArray(orgData.depots) ? orgData.depots : [],
-        warehouses: Array.isArray(orgData.warehouses) ? orgData.warehouses : [],
-      });
+      setFormData(mapOrgToFormState(orgData));
     }
-  }, [orgData]);
+  }, [orgData, isEditing]);
 
   const updateMutation = useMutation(
     (data: any) => {
@@ -114,6 +115,7 @@ export const EntityMasterData: React.FC = () => {
     {
       onSuccess: () => {
         queryClient.invalidateQueries('admin-organization');
+        setIsEditing(false);
         toast.success('Organization details updated successfully!');
       },
       onError: (error: any) => {
@@ -124,9 +126,21 @@ export const EntityMasterData: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isEditing) return;
     console.log('[EntityMaster] form submit', { name: formData.name, countryId: formData.countryId, stateId: formData.stateId, cityId: formData.cityId });
     updateMutation.mutate(formData);
   };
+
+  const handleCancelEdit = () => {
+    if (orgData) {
+      setFormData(mapOrgToFormState(orgData));
+    }
+    setIsEditing(false);
+  };
+
+  const locked = !isEditing;
+  const fieldClass = (base: string) =>
+    `${base} border border-slate-200 ${locked ? 'bg-slate-100 text-slate-700 cursor-not-allowed' : 'bg-white'}`;
 
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -270,52 +284,25 @@ export const EntityMasterData: React.FC = () => {
 
   return (
     <AdminLayout>
-      <main className="flex-1 overflow-y-auto p-6 md:p-8 pb-20 scroll-smooth">
-        <div className="max-w-5xl mx-auto space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-extrabold text-text-main tracking-tight mb-2">
+      <main className="flex-1 overflow-y-auto bg-slate-100/80 p-4 md:p-6 pb-20 scroll-smooth">
+        <div className="max-w-5xl mx-auto space-y-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0 shrink-0">
+              <h1 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight mb-0.5">
                 Entity Master Data
               </h1>
-              <p className="text-text-muted text-sm">
+              <p className="text-slate-500 text-xs md:text-sm leading-snug">
                 Manage organization details, statutory information, and system defaults.
               </p>
             </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => navigate('/admin')}
-                className="px-4 py-2.5 text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 font-medium text-sm transition-all shadow-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={updateMutation.isLoading}
-                className="bg-primary hover:bg-primary-700 text-white font-semibold py-2.5 px-6 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-primary/20 active:scale-95 disabled:opacity-50"
-              >
-                <span className="material-symbols-outlined text-[20px]">save</span>
-                <span>{updateMutation.isLoading ? 'Saving...' : 'Save Changes'}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Bulk update: Download template / Upload file */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden p-6 mb-6">
-            <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary text-2xl">upload_file</span>
-              Bulk update from Excel
-            </h2>
-            <p className="text-slate-600 text-sm mb-4">
-              
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end lg:shrink-0">
               <button
                 type="button"
                 onClick={handleDownloadTemplate}
                 disabled={isDownloadingTemplate}
-                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium text-sm flex items-center gap-2 disabled:opacity-50"
+                className="px-3 py-2 md:px-4 md:py-2.5 bg-white border-2 border-primary text-primary rounded-lg font-semibold text-xs md:text-sm flex items-center gap-1.5 md:gap-2 hover:bg-primary/5 disabled:opacity-50 transition-colors whitespace-nowrap"
               >
-                <span className="material-symbols-outlined text-[18px]">download</span>
+                <span className="material-symbols-outlined text-base md:text-[18px]">download</span>
                 {isDownloadingTemplate ? 'Downloading...' : 'Download template'}
               </button>
               <input
@@ -329,87 +316,123 @@ export const EntityMasterData: React.FC = () => {
                 type="button"
                 onClick={() => bulkFileInputRef.current?.click()}
                 disabled={isBulkUploading}
-                className="px-4 py-2.5 bg-primary hover:bg-primary-700 text-white rounded-lg font-medium text-sm flex items-center gap-2 disabled:opacity-50"
+                className="px-3 py-2 md:px-4 md:py-2.5 bg-primary hover:bg-primary/90 text-white rounded-lg font-semibold text-xs md:text-sm flex items-center gap-1.5 md:gap-2 disabled:opacity-50 shadow-sm transition-colors whitespace-nowrap"
               >
-                <span className="material-symbols-outlined text-[18px]">upload</span>
+                <span className="material-symbols-outlined text-base md:text-[18px]">upload</span>
                 {isBulkUploading ? 'Uploading...' : 'Upload file'}
               </button>
+              {!isEditing ? (
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  className="px-3 py-2 md:px-4 bg-primary text-white font-semibold rounded-lg flex items-center gap-1.5 md:gap-2 text-xs md:text-sm shadow-sm hover:bg-primary/90 transition-colors whitespace-nowrap"
+                >
+                  <span className="material-symbols-outlined text-base md:text-[18px]">edit</span>
+                  Edit
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="px-3 py-2 text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 font-medium text-xs md:text-sm whitespace-nowrap"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    form="entity-master-form"
+                    disabled={updateMutation.isLoading}
+                    className="bg-primary hover:bg-primary/90 text-white font-semibold py-2 px-3 md:px-5 rounded-lg flex items-center gap-1.5 md:gap-2 text-xs md:text-sm shadow-sm disabled:opacity-50 whitespace-nowrap"
+                  >
+                    <span className="material-symbols-outlined text-base md:text-[18px]">save</span>
+                    <span>{updateMutation.isLoading ? 'Saving...' : 'Save Changes'}</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col">
+          <form id="entity-master-form" onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
             {/* Organization Details */}
-            <div className="p-6 md:p-8 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900 mb-2 flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-2xl">business</span>
+            <div className="p-5 md:p-6 border-b border-slate-100">
+              <h2 className="text-base font-semibold text-slate-900 mb-5 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-lg">business</span>
                 Organisation details
               </h2>
-              <p className="text-sm text-slate-500 mb-6"></p>
-              <div className="flex flex-col md:flex-row gap-8">
-                <div className="w-full md:w-1/3 flex flex-col gap-2">
-                  <p className="text-xs text-slate-500 mb-1">Additional (not in bulk template)</p>
-                  <label className="block text-sm font-medium text-slate-700">Company Logo</label>
-                  <div 
-                    onClick={handleLogoClick}
-                    className="flex-1 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 hover:bg-slate-100 hover:border-primary/50 transition-all cursor-pointer flex flex-col items-center justify-center p-6 text-center min-h-[220px] group relative overflow-hidden"
-                  >
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleLogoUpload}
-                      disabled={isUploadingLogo}
-                      className="hidden"
-                    />
-                    <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
-                    {isUploadingLogo ? (
-                      <div className="flex flex-col items-center justify-center relative z-10">
-                        <div className="size-14 rounded-full bg-white border border-slate-200 flex items-center justify-center mb-3 shadow-sm">
-                          <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+              <div className="flex flex-col gap-6">
+                {/* Logo left; Name, Short Name, Phone on the right */}
+                <div className="flex flex-col md:flex-row gap-6 md:items-start">
+                  <div className="flex flex-col gap-2 w-full max-w-[220px] shrink-0 mx-auto md:mx-0">
+                    <p className="text-xs text-slate-500">Additional (not in bulk template)</p>
+                    <label className="block text-sm font-medium text-slate-700">Company Logo</label>
+                    <div 
+                      onClick={locked || isUploadingLogo ? undefined : handleLogoClick}
+                      role={locked ? undefined : 'button'}
+                      className={`aspect-square w-full max-w-[220px] border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 flex flex-col items-center justify-center p-4 text-center group relative overflow-hidden ${
+                        locked || isUploadingLogo
+                          ? 'cursor-not-allowed opacity-90'
+                          : 'cursor-pointer hover:bg-slate-100 hover:border-primary/50 transition-all'
+                      }`}
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleLogoUpload}
+                        disabled={isUploadingLogo || locked}
+                        className="hidden"
+                      />
+                      <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+                      {isUploadingLogo ? (
+                        <div className="flex flex-col items-center justify-center relative z-10 px-2">
+                          <div className="size-12 rounded-full bg-white border border-slate-200 flex items-center justify-center mb-2 shadow-sm">
+                            <div className="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+                          </div>
+                          <p className="text-xs font-bold text-slate-900">Uploading...</p>
                         </div>
-                        <p className="text-sm font-bold text-slate-900">Uploading...</p>
-                        <p className="text-xs text-slate-500 mt-1">Please wait</p>
-                      </div>
-                    ) : formData.logoUrl ? (
-                      <div className="relative w-full h-full group/logo">
-                        <img
-                          src={formData.logoUrl}
-                          alt="Company Logo"
-                          className="w-full h-full object-contain rounded-lg"
-                        />
-                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/logo:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
-                          <span className="text-white text-sm font-medium">Click to change</span>
+                      ) : formData.logoUrl ? (
+                        <div className="relative w-full h-full min-h-0 flex items-center justify-center p-2 group/logo">
+                          <img
+                            src={formData.logoUrl}
+                            alt="Company Logo"
+                            className="max-w-full max-h-full object-contain rounded-lg"
+                          />
+                          <div className="absolute inset-2 bg-black/50 opacity-0 group-hover/logo:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+                            <span className="text-white text-xs font-medium px-2 text-center">Click to change</span>
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="size-14 rounded-full bg-white border border-slate-200 flex items-center justify-center mb-3 shadow-sm group-hover:scale-110 group-hover:border-primary/30 transition-all relative z-10">
-                          <span className="material-symbols-outlined text-slate-400 group-hover:text-primary transition-colors text-3xl">
-                            cloud_upload
-                          </span>
-                        </div>
-                        <p className="text-sm font-bold text-slate-900 relative z-10">Click to upload logo</p>
-                        <p className="text-xs text-slate-500 mt-1 relative z-10">SVG, PNG, JPG (Max 2MB)</p>
-                      </>
-                    )}
+                      ) : (
+                        <>
+                          <div className="size-12 rounded-full bg-white border border-slate-200 flex items-center justify-center mb-2 shadow-sm group-hover:scale-105 group-hover:border-primary/30 transition-all relative z-10">
+                            <span className="material-symbols-outlined text-slate-400 group-hover:text-primary transition-colors text-2xl">
+                              cloud_upload
+                            </span>
+                          </div>
+                          <p className="text-xs font-semibold text-slate-900 relative z-10 leading-tight">Click to upload logo</p>
+                          <p className="text-[10px] text-slate-500 mt-1 relative z-10 px-1 leading-tight">SVG, PNG, JPG (Max 2MB)</p>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="w-full md:w-2/3 space-y-5">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgName">
-                      Name of the Organisation
-                    </label>
-                    <input
-                      id="orgName"
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
-                      placeholder="e.g. Acme Corporation Pvt Ltd"
-                      required
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="flex-1 min-w-0 space-y-5">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgName">
+                        Name of the Organisation
+                      </label>
+                      <input
+                        id="orgName"
+                        type="text"
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        disabled={locked}
+                        className={fieldClass(
+                          'w-full rounded-lg text-slate-900 text-sm py-2.5 px-3 transition-shadow focus:border-primary focus:ring-primary focus:ring-1'
+                        )}
+                        placeholder="e.g. Acme Corporation Pvt Ltd"
+                        required
+                      />
+                    </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgShortName">
                         Short Name
@@ -419,7 +442,10 @@ export const EntityMasterData: React.FC = () => {
                         type="text"
                         value={formData.shortName}
                         onChange={(e) => setFormData({ ...formData, shortName: e.target.value })}
-                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        disabled={locked}
+                        className={fieldClass(
+                          'w-full rounded-lg text-slate-900 text-sm py-2.5 px-3 transition-shadow focus:border-primary focus:ring-primary focus:ring-1'
+                        )}
                         placeholder="e.g. SNKFCA"
                       />
                     </div>
@@ -432,48 +458,36 @@ export const EntityMasterData: React.FC = () => {
                         type="tel"
                         value={formData.phoneNumber}
                         onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
-                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        disabled={locked}
+                        className={fieldClass(
+                          'w-full rounded-lg text-slate-900 text-sm py-2.5 px-3 transition-shadow focus:border-primary focus:ring-primary focus:ring-1'
+                        )}
                         placeholder="e.g. +91..."
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgEmail">
-                        E Mail ID
-                      </label>
-                      <div className="relative">
-                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
-                          mail
-                        </span>
-                        <input
-                          id="orgEmail"
-                          type="email"
-                          value={formData.email}
-                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                          className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 pl-10 pr-3 transition-shadow"
-                          placeholder="admin@company.com"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 mb-1">Additional (not in bulk template)</p>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgMobile">
-                        Mobile Number
-                      </label>
-                      <div className="relative">
-                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
-                          phone
-                        </span>
-                        <input
-                          id="orgMobile"
-                          type="tel"
-                          value={formData.mobile}
-                          onChange={(e) => setFormData({ ...formData, mobile: e.target.value })}
-                          className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 pl-10 pr-3 transition-shadow"
-                          placeholder="+1 (555) 000-0000"
-                        />
-                      </div>
+                </div>
+
+                <div className="w-full space-y-5">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgEmail">
+                      E Mail ID
+                    </label>
+                    <div className="relative max-w-full md:max-w-xl">
+                      <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
+                        mail
+                      </span>
+                      <input
+                        id="orgEmail"
+                        type="email"
+                        value={formData.email}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        disabled={locked}
+                        className={fieldClass(
+                          'w-full rounded-lg text-slate-900 text-sm py-2.5 pl-10 pr-3 transition-shadow focus:border-primary focus:ring-primary focus:ring-1'
+                        )}
+                        placeholder="admin@company.com"
+                      />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -486,7 +500,10 @@ export const EntityMasterData: React.FC = () => {
                         type="url"
                         value={formData.website}
                         onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        disabled={locked}
+                        className={fieldClass(
+                          'w-full rounded-lg text-slate-900 text-sm py-2.5 px-3 transition-shadow focus:border-primary focus:ring-primary focus:ring-1'
+                        )}
                         placeholder="https://..."
                       />
                     </div>
@@ -498,7 +515,10 @@ export const EntityMasterData: React.FC = () => {
                         id="orgConstitution"
                         value={formData.orgConstitution}
                         onChange={(e) => setFormData({ ...formData, orgConstitution: e.target.value })}
-                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        disabled={locked}
+                        className={fieldClass(
+                          'w-full rounded-lg text-slate-900 text-sm py-2.5 px-3 transition-shadow focus:border-primary focus:ring-primary focus:ring-1'
+                        )}
                       >
                         <option value="">Select</option>
                         {(orgConstitutionsData || []).map((o: any) => (
@@ -518,7 +538,10 @@ export const EntityMasterData: React.FC = () => {
                         value={formData.countryName}
                         onChange={(e) => setFormData({ ...formData, countryName: e.target.value })}
                         placeholder="e.g. India"
-                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        disabled={locked}
+                        className={fieldClass(
+                          'w-full rounded-lg text-slate-900 text-sm py-2.5 px-3 transition-shadow focus:border-primary focus:ring-primary focus:ring-1'
+                        )}
                       />
                     </div>
                     <div>
@@ -528,7 +551,10 @@ export const EntityMasterData: React.FC = () => {
                         value={formData.stateName}
                         onChange={(e) => setFormData({ ...formData, stateName: e.target.value })}
                         placeholder="e.g. Maharashtra"
-                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        disabled={locked}
+                        className={fieldClass(
+                          'w-full rounded-lg text-slate-900 text-sm py-2.5 px-3 transition-shadow focus:border-primary focus:ring-primary focus:ring-1'
+                        )}
                       />
                     </div>
                     <div>
@@ -538,7 +564,10 @@ export const EntityMasterData: React.FC = () => {
                         value={formData.cityName}
                         onChange={(e) => setFormData({ ...formData, cityName: e.target.value })}
                         placeholder="e.g. Mumbai"
-                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        disabled={locked}
+                        className={fieldClass(
+                          'w-full rounded-lg text-slate-900 text-sm py-2.5 px-3 transition-shadow focus:border-primary focus:ring-primary focus:ring-1'
+                        )}
                       />
                     </div>
                   </div>
@@ -549,7 +578,10 @@ export const EntityMasterData: React.FC = () => {
                         type="text"
                         value={formData.pinCode}
                         onChange={(e) => setFormData({ ...formData, pinCode: e.target.value })}
-                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        disabled={locked}
+                        className={fieldClass(
+                          'w-full rounded-lg text-slate-900 text-sm py-2.5 px-3 transition-shadow focus:border-primary focus:ring-primary focus:ring-1'
+                        )}
                         placeholder="530003"
                       />
                     </div>
@@ -559,7 +591,10 @@ export const EntityMasterData: React.FC = () => {
                         type="text"
                         value={formData.addressLine1}
                         onChange={(e) => setFormData({ ...formData, addressLine1: e.target.value })}
-                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        disabled={locked}
+                        className={fieldClass(
+                          'w-full rounded-lg text-slate-900 text-sm py-2.5 px-3 transition-shadow focus:border-primary focus:ring-primary focus:ring-1'
+                        )}
                         placeholder="Address first line"
                       />
                     </div>
@@ -569,7 +604,10 @@ export const EntityMasterData: React.FC = () => {
                         type="text"
                         value={formData.addressLine2}
                         onChange={(e) => setFormData({ ...formData, addressLine2: e.target.value })}
-                        className="w-full rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 transition-shadow"
+                        disabled={locked}
+                        className={fieldClass(
+                          'w-full rounded-lg text-slate-900 text-sm py-2.5 px-3 transition-shadow focus:border-primary focus:ring-primary focus:ring-1'
+                        )}
                         placeholder="Address second line"
                       />
                     </div>
@@ -579,12 +617,12 @@ export const EntityMasterData: React.FC = () => {
             </div>
 
             {/* Statutory Details */}
-            <div className="p-6 md:p-8 border-b border-slate-100 bg-slate-50/30">
-              <h2 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-2xl">gavel</span>
+            <div className="p-5 md:p-6 border-b border-slate-100 bg-slate-50/40">
+              <h2 className="text-base font-semibold text-slate-900 mb-5 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-lg">description</span>
                 Statutory Details
               </h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="gstNo">
                     GST Number
@@ -594,7 +632,10 @@ export const EntityMasterData: React.FC = () => {
                     type="text"
                     value={formData.gst}
                     onChange={(e) => setFormData({ ...formData, gst: e.target.value.toUpperCase() })}
-                    className="w-full rounded-lg border-slate-200 bg-white text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 uppercase font-mono tracking-wide placeholder:normal-case placeholder:font-sans placeholder:tracking-normal"
+                    disabled={locked}
+                    className={`${fieldClass(
+                      'w-full rounded-lg text-slate-900 text-sm py-2.5 px-3 uppercase font-mono tracking-wide placeholder:normal-case placeholder:font-sans placeholder:tracking-normal focus:border-primary focus:ring-primary focus:ring-1'
+                    )}`}
                     placeholder="22AAAAA0000A1Z5"
                   />
                 </div>
@@ -607,7 +648,10 @@ export const EntityMasterData: React.FC = () => {
                     type="text"
                     value={formData.pan}
                     onChange={(e) => setFormData({ ...formData, pan: e.target.value.toUpperCase() })}
-                    className="w-full rounded-lg border-slate-200 bg-white text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 uppercase font-mono tracking-wide placeholder:normal-case placeholder:font-sans placeholder:tracking-normal"
+                    disabled={locked}
+                    className={`${fieldClass(
+                      'w-full rounded-lg text-slate-900 text-sm py-2.5 px-3 uppercase font-mono tracking-wide placeholder:normal-case placeholder:font-sans placeholder:tracking-normal focus:border-primary focus:ring-primary focus:ring-1'
+                    )}`}
                     placeholder="ABCDE1234F"
                   />
                 </div>
@@ -620,7 +664,10 @@ export const EntityMasterData: React.FC = () => {
                     type="text"
                     value={formData.cin}
                     onChange={(e) => setFormData({ ...formData, cin: e.target.value.toUpperCase() })}
-                    className="w-full rounded-lg border-slate-200 bg-white text-slate-900 text-sm focus:border-primary focus:ring-primary py-2.5 px-3 uppercase font-mono tracking-wide placeholder:normal-case placeholder:font-sans placeholder:tracking-normal"
+                    disabled={locked}
+                    className={`${fieldClass(
+                      'w-full rounded-lg text-slate-900 text-sm py-2.5 px-3 uppercase font-mono tracking-wide placeholder:normal-case placeholder:font-sans placeholder:tracking-normal focus:border-primary focus:ring-primary focus:ring-1'
+                    )}`}
                     placeholder="L12345MH2023PLC123456"
                   />
                 </div>
@@ -628,21 +675,22 @@ export const EntityMasterData: React.FC = () => {
             </div>
 
             {/* Cost Centres */}
-            <div className="p-6 md:p-8 border-b border-slate-100">
+            <div className="p-5 md:p-6 border-b border-slate-100">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-2xl">account_balance</span>
+                <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-lg">account_balance</span>
                   Cost Centres
                 </h2>
                 <button
                   type="button"
+                  disabled={locked}
                   onClick={() =>
                     setFormData({
                       ...formData,
                       costCentres: [...formData.costCentres, { name: '', shortName: '' }],
                     })
                   }
-                  className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90"
+                  className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Add
                 </button>
@@ -651,7 +699,8 @@ export const EntityMasterData: React.FC = () => {
                 {formData.costCentres.map((cc, idx) => (
                   <div key={idx} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-center">
                     <input
-                      className="md:col-span-3 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      disabled={locked}
+                      className={fieldClass('md:col-span-3 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="Cost Centre Name"
                       value={cc.name}
                       onChange={(e) => {
@@ -661,7 +710,8 @@ export const EntityMasterData: React.FC = () => {
                       }}
                     />
                     <input
-                      className="md:col-span-1 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      disabled={locked}
+                      className={fieldClass('md:col-span-1 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="Short Name"
                       value={cc.shortName || ''}
                       onChange={(e) => {
@@ -672,11 +722,12 @@ export const EntityMasterData: React.FC = () => {
                     />
                     <button
                       type="button"
+                      disabled={locked}
                       onClick={() => {
                         const next = formData.costCentres.filter((_, i) => i !== idx);
                         setFormData({ ...formData, costCentres: next });
                       }}
-                      className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm"
+                      className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm disabled:opacity-50"
                     >
                       Remove
                     </button>
@@ -689,21 +740,22 @@ export const EntityMasterData: React.FC = () => {
             </div>
 
             {/* Branches */}
-            <div className="p-6 md:p-8">
+            <div className="p-5 md:p-6 border-b border-slate-100">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-2xl">apartment</span>
+                <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-lg">apartment</span>
                   Branches
                 </h2>
                 <button
                   type="button"
+                  disabled={locked}
                   onClick={() =>
                     setFormData({
                       ...formData,
                       branches: [...formData.branches, { name: '', shortName: '', address: '', gstNumber: '' }],
                     })
                   }
-                  className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90"
+                  className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
                 >
                   Add
                 </button>
@@ -712,7 +764,8 @@ export const EntityMasterData: React.FC = () => {
                 {formData.branches.map((b, idx) => (
                   <div key={idx} className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
                     <input
-                      className="md:col-span-2 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      disabled={locked}
+                      className={fieldClass('md:col-span-2 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="Branch Name"
                       value={b.name}
                       onChange={(e) => {
@@ -722,7 +775,8 @@ export const EntityMasterData: React.FC = () => {
                       }}
                     />
                     <input
-                      className="md:col-span-1 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      disabled={locked}
+                      className={fieldClass('md:col-span-1 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="Short"
                       value={b.shortName || ''}
                       onChange={(e) => {
@@ -732,7 +786,8 @@ export const EntityMasterData: React.FC = () => {
                       }}
                     />
                     <input
-                      className="md:col-span-2 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      disabled={locked}
+                      className={fieldClass('md:col-span-2 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="Address"
                       value={b.address || ''}
                       onChange={(e) => {
@@ -742,7 +797,8 @@ export const EntityMasterData: React.FC = () => {
                       }}
                     />
                     <input
-                      className="md:col-span-1 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      disabled={locked}
+                      className={fieldClass('md:col-span-1 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="GST"
                       value={(b as any).gstNumber || ''}
                       onChange={(e) => {
@@ -753,11 +809,12 @@ export const EntityMasterData: React.FC = () => {
                     />
                     <button
                       type="button"
+                      disabled={locked}
                       onClick={() => {
                         const next = formData.branches.filter((_, i) => i !== idx);
                         setFormData({ ...formData, branches: next });
                       }}
-                      className="md:col-span-6 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm"
+                      className="md:col-span-6 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm disabled:opacity-50"
                     >
                       Remove
                     </button>
@@ -768,21 +825,22 @@ export const EntityMasterData: React.FC = () => {
             </div>
 
             {/* Depot */}
-            <div className="p-6 md:p-8 border-b border-slate-100">
+            <div className="p-5 md:p-6 border-b border-slate-100">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-2xl">local_shipping</span>
+                <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-lg">local_shipping</span>
                   Depot
                 </h2>
                 <button
                   type="button"
+                  disabled={locked}
                   onClick={() =>
                     setFormData({
                       ...formData,
                       depots: [...formData.depots, { name: '', shortName: '' }],
                     })
                   }
-                  className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90"
+                  className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
                 >
                   Add
                 </button>
@@ -791,7 +849,8 @@ export const EntityMasterData: React.FC = () => {
                 {formData.depots.map((d, idx) => (
                   <div key={idx} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-center">
                     <input
-                      className="md:col-span-3 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      disabled={locked}
+                      className={fieldClass('md:col-span-3 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="Depot Name"
                       value={d.name}
                       onChange={(e) => {
@@ -801,7 +860,8 @@ export const EntityMasterData: React.FC = () => {
                       }}
                     />
                     <input
-                      className="md:col-span-1 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      disabled={locked}
+                      className={fieldClass('md:col-span-1 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="Short Name"
                       value={d.shortName || ''}
                       onChange={(e) => {
@@ -812,11 +872,12 @@ export const EntityMasterData: React.FC = () => {
                     />
                     <button
                       type="button"
+                      disabled={locked}
                       onClick={() => {
                         const next = formData.depots.filter((_, i) => i !== idx);
                         setFormData({ ...formData, depots: next });
                       }}
-                      className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm"
+                      className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm disabled:opacity-50"
                     >
                       Remove
                     </button>
@@ -829,21 +890,22 @@ export const EntityMasterData: React.FC = () => {
             </div>
 
             {/* Warehouse */}
-            <div className="p-6 md:p-8">
+            <div className="p-5 md:p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-2xl">warehouse</span>
+                <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-lg">warehouse</span>
                   Warehouse
                 </h2>
                 <button
                   type="button"
+                  disabled={locked}
                   onClick={() =>
                     setFormData({
                       ...formData,
                       warehouses: [...formData.warehouses, { name: '', shortName: '', address: '', gstNumber: '' }],
                     })
                   }
-                  className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90"
+                  className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
                 >
                   Add
                 </button>
@@ -852,7 +914,8 @@ export const EntityMasterData: React.FC = () => {
                 {formData.warehouses.map((w, idx) => (
                   <div key={idx} className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
                     <input
-                      className="md:col-span-2 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      disabled={locked}
+                      className={fieldClass('md:col-span-2 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="Warehouse Name"
                       value={w.name}
                       onChange={(e) => {
@@ -862,7 +925,8 @@ export const EntityMasterData: React.FC = () => {
                       }}
                     />
                     <input
-                      className="md:col-span-1 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      disabled={locked}
+                      className={fieldClass('md:col-span-1 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="Short"
                       value={w.shortName || ''}
                       onChange={(e) => {
@@ -872,7 +936,8 @@ export const EntityMasterData: React.FC = () => {
                       }}
                     />
                     <input
-                      className="md:col-span-2 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      disabled={locked}
+                      className={fieldClass('md:col-span-2 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="Address"
                       value={w.address || ''}
                       onChange={(e) => {
@@ -882,7 +947,8 @@ export const EntityMasterData: React.FC = () => {
                       }}
                     />
                     <input
-                      className="md:col-span-1 rounded-lg border-slate-200 bg-slate-50/30 text-slate-900 text-sm py-2.5 px-3"
+                      disabled={locked}
+                      className={fieldClass('md:col-span-1 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="GST"
                       value={(w as any).gstNumber || ''}
                       onChange={(e) => {
@@ -893,11 +959,12 @@ export const EntityMasterData: React.FC = () => {
                     />
                     <button
                       type="button"
+                      disabled={locked}
                       onClick={() => {
                         const next = formData.warehouses.filter((_, i) => i !== idx);
                         setFormData({ ...formData, warehouses: next });
                       }}
-                      className="md:col-span-6 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm"
+                      className="md:col-span-6 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm disabled:opacity-50"
                     >
                       Remove
                     </button>

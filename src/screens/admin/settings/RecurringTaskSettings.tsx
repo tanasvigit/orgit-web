@@ -73,7 +73,7 @@ export const RecurringTaskSettings: React.FC = () => {
       <div className="max-w-4xl mx-auto w-full p-6 md:p-8">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-text-main-light dark:text-text-main-dark mb-1">
+            <h1 className="text-xl md:text-2xl font-bold text-text-main-light dark:text-text-main-dark mb-1">
               Recurring Task Settings
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">

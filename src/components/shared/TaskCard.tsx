@@ -6,6 +6,7 @@ import { formatTaskDueLabel } from '../../utils/chatTime';
 interface TaskCardProps {
   id: string;
   title: string;
+  clientName?: string;
   description?: string;
   status: 'scheduled' | 'overdue' | 'duesoon' | 'inprogress' | 'completed';
   dueDate?: string;
@@ -20,6 +21,7 @@ interface TaskCardProps {
 
 export const TaskCard: React.FC<TaskCardProps> = ({
   title,
+  clientName,
   description,
   status,
   dueDate,
@@ -83,6 +85,11 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         >
           {title}
         </h4>
+        {clientName && (
+          <p className="text-text-muted dark:text-white/70 text-sm mb-1">
+            Client: <span className="font-bold text-text-main dark:text-white">{clientName}</span>
+          </p>
+        )}
         {description && (
           <p className="text-text-muted dark:text-white/60 text-sm mb-3">
             {category && `${category} • `}

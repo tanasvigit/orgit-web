@@ -244,20 +244,20 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
   const sidebarContent = (
     <>
       {/* Desktop Header */}
-      <div className={`hidden md:block p-6 pb-2 shrink-0 relative ${isCollapsed ? 'px-4' : ''}`}>
-        <div className={`flex items-center gap-3 mb-8 ${isCollapsed ? 'justify-center' : ''}`}>
-          <div className="bg-primary p-2 rounded-lg text-white shadow-lg shadow-primary/20 shrink-0">
-            <span className="material-symbols-outlined text-2xl">admin_panel_settings</span>
+      <div className={`hidden md:block p-6 pb-2 shrink-0 relative max-[1366px]:p-3 max-[1366px]:pb-0.5 ${isCollapsed ? 'px-4 max-[1366px]:px-2.5' : ''}`}>
+        <div className={`flex items-center gap-3 mb-8 max-[1366px]:mb-3 ${isCollapsed ? 'justify-center' : ''}`}>
+          <div className="bg-primary p-2 rounded-lg text-white shadow-lg shadow-primary/20 shrink-0 max-[1366px]:p-1.5">
+            <span className="material-symbols-outlined text-2xl max-[1366px]:text-xl">admin_panel_settings</span>
           </div>
           {!isCollapsed && (
             <div className="flex flex-col min-w-0">
-              <h1 className="text-slate-900 text-lg font-extrabold tracking-tight leading-none truncate">ORGIT</h1>
-              <span className="text-[10px] text-slate-500 font-medium">Enterprise Admin</span>
+              <h1 className="text-slate-900 text-lg font-extrabold tracking-tight leading-none truncate max-[1366px]:text-base">ORGIT</h1>
+              <span className="text-[10px] text-slate-500 font-medium max-[1366px]:text-[9px]">Enterprise Admin</span>
             </div>
           )}
         </div>
       </div>
-      <nav className={`flex-1 overflow-y-auto overflow-x-visible pb-2 flex flex-col gap-1 ${isCollapsed ? 'px-3' : 'px-3 md:px-6'}`}>
+      <nav className={`flex-1 overflow-y-auto overflow-x-visible pb-2 flex flex-col gap-1 max-[1366px]:gap-0 ${isCollapsed ? 'px-3 max-[1366px]:px-1.5' : 'px-3 md:px-6 max-[1366px]:px-3'}`}>
         {navItems.map((item) => {
           // Special handling for Dashboard - only active when exactly /admin or /admin/
           let isActive: boolean;
@@ -275,7 +275,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                   setIsMobileOpen(false);
                 }
               }}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 min-h-[44px] ${
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
                 isCollapsed ? 'justify-center' : ''
               } ${
                 isActive
@@ -285,7 +285,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
               title={isCollapsed ? item.label : item.label}
             >
               <span
-                className={`material-symbols-outlined text-[22px] shrink-0 ${
+                className={`material-symbols-outlined text-[22px] shrink-0 max-[1366px]:text-xl ${
                   isActive
                     ? ''
                     : 'text-slate-400 group-hover:text-slate-600 transition-colors'
@@ -293,7 +293,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
               >
                 {item.icon}
               </span>
-              {!isCollapsed && <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0">{item.label}</span>}
+              {!isCollapsed && <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0 max-[1366px]:text-xs">{item.label}</span>}
             </Link>
           );
         })}
@@ -301,7 +301,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
         {/* Settings: icon + label navigate; chevron toggles dropdown */}
         <div className="relative">
           <div
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 min-h-[44px] ${
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
               isCollapsed ? 'justify-center' : ''
             } ${
               isSettingsActive
@@ -319,14 +319,14 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
               title={isCollapsed ? 'Settings' : 'Settings'}
             >
               <span
-                className={`material-symbols-outlined text-[22px] shrink-0 ${
+                className={`material-symbols-outlined text-[22px] shrink-0 max-[1366px]:text-xl ${
                   isSettingsActive ? '' : 'text-slate-400 group-hover:text-slate-600 transition-colors'
                 }`}
               >
                 settings
               </span>
               {!isCollapsed && (
-                <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0 flex-1">Settings</span>
+                <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0 flex-1 max-[1366px]:text-xs">Settings</span>
               )}
             </button>
             {!isCollapsed && (
@@ -420,10 +420,10 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
           )}
         </div>
       </nav>
-      <div className={`shrink-0 p-4 border-t border-slate-100 ${isCollapsed ? 'px-2' : ''}`}>
+      <div className={`shrink-0 p-4 border-t border-slate-100 max-[1366px]:p-2 ${isCollapsed ? 'px-2 max-[1366px]:px-1.5' : ''}`}>
         <Link
           to="/profile"
-          className={`flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-100 transition-colors cursor-pointer ${
+          className={`flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-100 transition-colors cursor-pointer max-[1366px]:p-2 ${
             isCollapsed ? 'justify-center' : ''
           }`}
           title={isCollapsed ? user?.name || 'Admin' : ''}
@@ -441,7 +441,6 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
           {!isCollapsed && (
             <div className="min-w-0 flex-1">
               <p className="text-sm font-bold text-slate-900 truncate">{user?.name || 'Admin'}</p>
-              <p className="text-xs text-slate-500 truncate">{user?.email || 'admin@orgit.com'}</p>
             </div>
           )}
         </Link>
@@ -462,8 +461,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
       {/* Desktop Sidebar */}
       <aside
         className={`hidden md:flex flex-col bg-white border-r border-slate-200 h-full font-body shrink-0 z-20 transition-all duration-300 ${
-          isCollapsed ? 'w-20' : 'w-72'
+          isCollapsed ? 'w-[70px]' : 'w-[240px]'
         }`}
+        onClick={(event) => {
+          const target = event.target as HTMLElement;
+          if (target.closest('a,button,input,textarea,select,label,[role="button"]')) return;
+          handleToggle();
+        }}
       >
         {sidebarContent}
       </aside>

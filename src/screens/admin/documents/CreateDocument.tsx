@@ -457,7 +457,7 @@ export const CreateDocument: React.FC = () => {
         <div className="p-6 md:p-8 max-w-[1200px] mx-auto">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-1">
+              <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-1">
                 {template.name}
               </h1>
               <p className="text-gray-500 dark:text-gray-400 text-sm">
@@ -513,7 +513,7 @@ export const CreateDocument: React.FC = () => {
         {/* Page Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-1">
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-1">
               Create New Document
             </h1>
             <p className="text-gray-500 dark:text-gray-400 text-sm">

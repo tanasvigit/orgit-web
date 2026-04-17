@@ -1296,6 +1296,8 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   );
 
   const task = taskData;
+  const taskName = task?.title || task?.task_name || conversationName;
+  const taskClientName = task?.client_name || task?.clientName;
   const currentUserId = user?.id || (user as any)?.userId;
   const taskDeleted = isTaskDeleted(task);
   const taskNotFound = !!taskId && taskFetchError;
@@ -1534,6 +1536,19 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             ? 'Task completed. The entire task has been marked as completed.'
             : 'Your completion has been marked and sent for approval.';
         toast.success(message);
+
+        // Navigate back to dashboard and animate In Progress → Completed
+        // (Web expects the card to move to Completed immediately for the viewer once they mark complete.)
+        const dashboardPath = user?.role === 'admin' ? '/admin' : '/dashboard';
+        navigate(dashboardPath, {
+          state: {
+            animateTaskTransition: true,
+            taskId,
+            fromStatus: 'inprogress',
+            toStatus: 'completed',
+            taskSection: 'self',
+          },
+        });
       },
       onError: (error: any) => {
         toast.error(
@@ -1921,6 +1936,14 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                 </span>
               )}
             </div>
+            <p className="text-xs text-gray-600 dark:text-gray-300">
+              Task: <span className="font-semibold">{taskName || 'N/A'}</span>
+              {taskClientName ? (
+                <>
+                  {' '}| Client: <span className="font-bold">{taskClientName}</span>
+                </>
+              ) : null}
+            </p>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {isTyping ? (
                 <span className="flex items-center gap-1">
