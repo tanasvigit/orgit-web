@@ -113,6 +113,14 @@ export const taskService = {
     const response = await api.post(`/tasks/${taskId}/complete`);
     return response.data;
   },
+  verifyTaskCompletion: async (taskId: string) => {
+    const response = await api.post(`/tasks/${taskId}/verify`);
+    return response.data;
+  },
+  rejectTaskCompletion: async (taskId: string, reason: string) => {
+    const response = await api.post(`/tasks/${taskId}/reject-completion`, { reason });
+    return response.data;
+  },
 
   updateTask: async (taskId: string, updates: Partial<CreateTaskRequest>) => {
     const response = await api.patch(`/tasks/${taskId}`, updates);
@@ -134,6 +142,30 @@ export const taskService = {
   // Delete a task (web-only helper, uses existing API route)
   deleteTask: async (taskId: string) => {
     const response = await api.delete(`/tasks/${taskId}`);
+    return response.data;
+  },
+  requestTaskDelete: async (taskId: string, reason: string) => {
+    const response = await api.post(`/tasks/${taskId}/request-delete`, { reason });
+    return response.data;
+  },
+  approveTaskDeleteRequest: async (taskId: string) => {
+    const response = await api.post(`/tasks/${taskId}/approve-delete-request`);
+    return response.data;
+  },
+  denyTaskDeleteRequest: async (taskId: string) => {
+    const response = await api.post(`/tasks/${taskId}/deny-delete-request`);
+    return response.data;
+  },
+  createExitRequest: async (taskId: string, comment: string) => {
+    const response = await api.post(`/tasks/${taskId}/exit-request`, { comment });
+    return response.data;
+  },
+  approveExitRequest: async (taskId: string, requestId: string) => {
+    const response = await api.post(`/tasks/${taskId}/exit-request/${requestId}/approve`);
+    return response.data;
+  },
+  rejectExitRequest: async (taskId: string, requestId: string) => {
+    const response = await api.post(`/tasks/${taskId}/exit-request/${requestId}/reject`);
     return response.data;
   },
 

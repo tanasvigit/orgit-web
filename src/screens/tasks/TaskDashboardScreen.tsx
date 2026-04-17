@@ -647,10 +647,15 @@ export const TaskDashboardScreen: React.FC = () => {
             });
           }
         };
+        const handleTaskStatusChanged = () => {
+          queryClient.invalidateQueries('tasks');
+          queryClient.invalidateQueries('dashboard-data');
+        };
 
         socket.on('new_message', handleNewMessage);
         socket.on('message_status_update', handleMessageStatusUpdate);
         socket.on('conversation_messages_read', handleConversationMessagesRead);
+        socket.on('task:status_changed', handleTaskStatusChanged);
 
         socketRef.current = socket;
 
@@ -658,6 +663,7 @@ export const TaskDashboardScreen: React.FC = () => {
           socket.off('new_message', handleNewMessage);
           socket.off('message_status_update', handleMessageStatusUpdate);
           socket.off('conversation_messages_read', handleConversationMessagesRead);
+          socket.off('task:status_changed', handleTaskStatusChanged);
         };
       } catch (error) {
         console.error('Socket setup error:', error);

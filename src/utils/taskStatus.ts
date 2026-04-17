@@ -72,6 +72,10 @@ export function getTaskStatusCategoryFromTask(
   currentUserId?: string | null
 ): TaskStatusCategory | null {
   if (!task) return null;
+  const derived = normalizeLifecycleStatus((task as any).derived_status);
+  if (derived) {
+    return derived;
+  }
   const debugTaskId = '21b9036f-8eeb-4b7d-b12f-b09246705ef9';
   const isDebugTask = String((task as any)?.id || '') === debugTaskId;
 

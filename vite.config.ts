@@ -43,7 +43,6 @@ export default defineConfig(({ mode }) => {
     server: {
       host: true,
       port: 3001,
-      host: true,
       allowedHosts: ['https://orgit.mcb5.in'],
       proxy: {
         '/api': {

@@ -559,7 +559,7 @@ export const EmployeeDashboard: React.FC = () => {
           <div className="flex items-center justify-between mb-2">
             <div>
               <h1 className="text-2xl md:text-3xl font-semibold text-gray-900 dark:text-white">
-                Welcome back, {user?.name || 'User'}
+                Welcome , {user?.name || 'User'}
               </h1>
               <p className="text-gray-600 dark:text-gray-400 mt-1 text-sm">
                 Here's an overview of your tasks and progress

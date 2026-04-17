@@ -219,7 +219,7 @@ export const Login: React.FC = () => {
       <div className="flex flex-col flex-1 w-full max-w-md mx-auto">
         {/* Headline */}
         <h1 className="text-slate-900 dark:text-white tracking-tight text-[32px] font-bold leading-tight px-6 text-center pt-4">
-          Welcome back
+          Welcome 
         </h1>
 
         {/* Body Text */}
