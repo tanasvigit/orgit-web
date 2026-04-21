@@ -376,7 +376,7 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
               )}
 
               {/* Recurrence Info */}
-              {(task.task_type === 'recurring' || task.taskType === 'recurring') && (task.recurrence_type || task.recurrenceType) && (
+              {((task.task_type === 'recurring' || task.taskType === 'recurring' || task.task_type === 'recurring_instance' || task.taskType === 'recurring_instance')) && (task.recurrence_type || task.recurrenceType) && (
                 <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
                     Recurrence Pattern

@@ -117,8 +117,33 @@ export const TaskDashboardScreen: React.FC = () => {
     { staleTime: 5 * 60 * 1000 }
   );
   const clientMatrixClients = (clientMatrixData as any)?.clients || [];
+  const dashboardTagSuggestions = useMemo(() => {
+    const out = new Set<string>();
+    const cachedDashboardData = queryClient.getQueryData(['task-dashboard-data']) as any;
+    const data = cachedDashboardData?.data || {};
+    const groups = ['selfTasks', 'assignedTasks'];
+    const buckets = ['general', 'documentManagement', 'complianceManagement'];
+    const statuses = ['scheduled', 'todo', 'overdue', 'dueSoon', 'inProgress', 'completed'];
+    groups.forEach((g) => {
+      buckets.forEach((b) => {
+        statuses.forEach((s) => {
+          const list = data?.[g]?.[b]?.[s];
+          if (!Array.isArray(list)) return;
+          list.forEach((t: any) => {
+            const tags = Array.isArray(t?.tags)
+              ? t.tags
+              : typeof t?.tags === 'string'
+              ? t.tags.split(',').map((x: string) => x.trim())
+              : [];
+            tags.filter(Boolean).forEach((tag: string) => out.add(tag));
+          });
+        });
+      });
+    });
+    return Array.from(out).slice(0, 40);
+  }, [queryClient, searchQuery]);
 
-  // Google-like suggestions: show both Services and Clients
+  // Google-like suggestions: show Services, Clients and Task Tags
   // When focused with empty query show top items; when typing filter by text
   const suggestions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -139,14 +164,21 @@ export const TaskDashboardScreen: React.FC = () => {
         type: 'client' as const,
       })) || [];
 
-    let combined = [...serviceItems, ...clientItems];
+    const tagItems =
+      dashboardTagSuggestions.map((tag) => ({
+        id: `tag-${tag}`,
+        title: tag,
+        type: 'tag' as const,
+      })) || [];
+
+    let combined = [...serviceItems, ...clientItems, ...tagItems];
 
     if (q) {
       combined = combined.filter((item) => (item.title || '').toLowerCase().includes(q));
     }
 
     return combined.slice(0, 25);
-  }, [searchQuery, allTaskServices, clientMatrixClients]);
+  }, [searchQuery, allTaskServices, clientMatrixClients, dashboardTagSuggestions]);
 
   // Status filter from URL (dashboard card navigation) or local state
   const statusFromUrl = searchParams.get('status');
@@ -365,7 +397,13 @@ export const TaskDashboardScreen: React.FC = () => {
         const titleMatch = task.title?.toLowerCase().includes(query);
         const clientMatch = task.client_name?.toLowerCase().includes(query);
         const descMatch = task.description?.toLowerCase().includes(query);
-        return titleMatch || clientMatch || descMatch;
+        const tags = Array.isArray(task?.tags)
+          ? task.tags.join(' ').toLowerCase()
+          : typeof task?.tags === 'string'
+          ? task.tags.toLowerCase()
+          : '';
+        const tagMatch = tags.includes(query);
+        return titleMatch || clientMatch || descMatch || tagMatch;
       });
     }
 
@@ -880,7 +918,7 @@ export const TaskDashboardScreen: React.FC = () => {
                     }`}
                   >
                     <span className="material-icons-outlined text-[22px] text-gray-400 dark:text-gray-500 shrink-0">
-                      {item.type === 'client' ? 'business' : 'assignment'}
+                      {item.type === 'client' ? 'business' : item.type === 'tag' ? 'sell' : 'assignment'}
                     </span>
                     <div className="flex-1 min-w-0">
                       <span className="font-medium truncate block">
@@ -894,6 +932,11 @@ export const TaskDashboardScreen: React.FC = () => {
                       {item.type === 'service' && item.frequency && (
                         <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate block">
                           Service • {item.frequency}
+                        </span>
+                      )}
+                      {item.type === 'tag' && (
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate block">
+                          Tag
                         </span>
                       )}
                     </div>
@@ -1094,11 +1137,22 @@ export const TaskDashboardScreen: React.FC = () => {
                           )}
                         </div>
                       </div>
-                      {task?.client_name && (
-                        <p className="text-[9px] leading-3 text-gray-500 dark:text-gray-400 truncate">
-                          Client: <span className="font-bold text-gray-700 dark:text-gray-200">{task.client_name}</span>
-                        </p>
-                      )}
+                      {(() => {
+                        const tagText = Array.isArray(task?.tags)
+                          ? task.tags.filter(Boolean).join(', ')
+                          : typeof task?.tags === 'string'
+                          ? task.tags
+                          : '';
+                        const rawDescription = typeof task?.description === 'string' ? task.description : '';
+                        const cleanDescription = rawDescription.replace(/^tags:\s*/i, '').trim();
+                        const cardMeta = (tagText || cleanDescription || '').trim();
+                        if (!cardMeta) return null;
+                        return (
+                          <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
+                            {cardMeta}
+                          </p>
+                        );
+                      })()}
                       <div className="flex items-center gap-1.5">
                         {lastMessage && (
                           <>
@@ -1174,18 +1228,22 @@ export const TaskDashboardScreen: React.FC = () => {
                           </span>
                         )}
                       </div>
-                      {task.client_name && (
-                        <p className="text-[9px] leading-3 text-gray-500 dark:text-gray-400 truncate">
-                          Client: <span className="font-bold text-gray-700 dark:text-gray-200">{task.client_name}</span>
-                        </p>
-                      )}
-                      {task.description && (
-                        <p className="text-[10px] leading-3 text-gray-600 dark:text-gray-400 truncate">
-                          {task.description.length > 80
-                            ? `${task.description.substring(0, 80)}...`
-                            : task.description}
-                        </p>
-                      )}
+                      {(() => {
+                        const tagText = Array.isArray(task?.tags)
+                          ? task.tags.filter(Boolean).join(', ')
+                          : typeof task?.tags === 'string'
+                          ? task.tags
+                          : '';
+                        const rawDescription = typeof task?.description === 'string' ? task.description : '';
+                        const cleanDescription = rawDescription.replace(/^tags:\s*/i, '').trim();
+                        const cardMeta = (tagText || cleanDescription || '').trim();
+                        if (!cardMeta) return null;
+                        return (
+                          <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
+                            {cardMeta.length > 80 ? `${cardMeta.substring(0, 80)}...` : cardMeta}
+                          </p>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>

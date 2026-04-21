@@ -7,6 +7,7 @@ interface TaskCardProps {
   id: string;
   title: string;
   clientName?: string;
+  tags?: string[] | string;
   description?: string;
   status: 'scheduled' | 'overdue' | 'duesoon' | 'inprogress' | 'completed';
   dueDate?: string;
@@ -22,6 +23,7 @@ interface TaskCardProps {
 export const TaskCard: React.FC<TaskCardProps> = ({
   title,
   clientName,
+  tags,
   description,
   status,
   dueDate,
@@ -85,17 +87,22 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         >
           {title}
         </h4>
-        {clientName && (
-          <p className="text-text-muted dark:text-white/70 text-sm mb-1">
-            Client: <span className="font-bold text-text-main dark:text-white">{clientName}</span>
-          </p>
-        )}
-        {description && (
-          <p className="text-text-muted dark:text-white/60 text-sm mb-3">
-            {category && `${category} • `}
-            {description}
-          </p>
-        )}
+        {(() => {
+          const tagText = Array.isArray(tags)
+            ? tags.filter(Boolean).join(', ')
+            : typeof tags === 'string'
+            ? tags
+            : '';
+          const cleanDescription = (description || '').replace(/^tags:\s*/i, '').trim();
+          const metaText = (tagText || cleanDescription || clientName || '').trim();
+          if (!metaText) return null;
+          return (
+            <p className="text-text-muted dark:text-white/60 text-sm mb-3">
+              {category && `${category} • `}
+              {metaText}
+            </p>
+          );
+        })()}
         {finance && (finance.amount != null || finance.type) && (
           <div className="flex items-center justify-between gap-2 text-sm mb-3">
             {finance.type && (

@@ -35,6 +35,10 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [showRequestDeleteModal, setShowRequestDeleteModal] = useState(false);
+  const [requestDeleteReason, setRequestDeleteReason] = useState('');
+  const [showExitRequestModal, setShowExitRequestModal] = useState(false);
+  const [exitRequestComment, setExitRequestComment] = useState('');
   const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
 
   // Fetch task
@@ -133,7 +137,10 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     }
   };
 
-  const isAssigned = normalizedTask?.assignees?.some((a: any) => (a.id || a.user_id || a.userId) === (user?.id || (user as any)?.userId));
+  const isAssigned = normalizedTask?.assignees?.some((a: any) => {
+    const aid = a.id || a.user_id || a.userId;
+    return aid != null && String(aid) === String(currentUserId);
+  });
   const currentUserStatus = normalizedTask?.current_user_status;
   const hasAccepted = currentUserStatus?.has_accepted || false;
   const hasRejected = currentUserStatus?.has_rejected || false;
@@ -158,6 +165,16 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     !!currentUserId &&
     !!taskOwnerId &&
     String(taskOwnerId) === String(currentUserId);
+
+  const isAdminOrSuper = user?.role === 'admin' || user?.role === 'super_admin';
+  const canDirectDelete = isCreator || isAdminOrSuper;
+  const taskActiveForDelete =
+    !!normalizedTask && String(normalizedTask?.status || '').toLowerCase() !== 'rejected';
+  const canRequestTaskDelete =
+    !!normalizedTask &&
+    taskActiveForDelete &&
+    !canDirectDelete &&
+    (isAssigned || !!currentUserStatus);
 
   // Accept: persist via backend (so buttons stay hidden after refresh), then post "[Name] accepted the task." in chat.
   const acceptTaskMutation = useMutation(
@@ -493,7 +510,57 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     }
   );
 
-  // Delete task (creator only)
+  const requestTaskDeleteMutation = useMutation(
+    (reason: string) => taskService.requestTaskDelete(taskId!, reason),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries('tasks');
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        if (isAdmin) {
+          queryClient.invalidateQueries(['admin-dashboard']);
+          queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        }
+        toast.success(
+          'Your deletion request was sent to the task owner. It will also appear in the task group chat.'
+        );
+        setShowRequestDeleteModal(false);
+        setRequestDeleteReason('');
+      },
+      onError: (error: any) => {
+        toast.error(
+          error?.response?.data?.error || error?.message || 'Failed to send delete request'
+        );
+      },
+    }
+  );
+
+  const createExitRequestMutation = useMutation(
+    (comment: string) => taskService.createExitRequest(taskId!, comment),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries('tasks');
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        queryClient.invalidateQueries(['conversations']);
+        if (isAdmin) {
+          queryClient.invalidateQueries(['admin-dashboard']);
+          queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        }
+        toast.success('Exit request submitted');
+        setShowExitRequestModal(false);
+        setExitRequestComment('');
+        navigate(isAdmin ? `/admin/tasks/${taskId}/chat` : `/tasks/${taskId}/chat`);
+      },
+      onError: (error: any) => {
+        toast.error(error?.response?.data?.error || error?.message || 'Failed to submit exit request');
+      },
+    }
+  );
+
+  // Delete task (owner / admin / super_admin)
   const deleteTaskMutation = useMutation(
     () => taskService.deleteTask(taskId!),
     {
@@ -528,7 +595,7 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
   );
 
   const handleDeleteTask = () => {
-    if (!taskId || !isCreator) return;
+    if (!taskId || !canDirectDelete) return;
     toast.confirm('Are you sure you want to delete this task? This action cannot be undone.', {
       confirmLabel: 'Delete',
       cancelLabel: 'Cancel',
@@ -540,6 +607,32 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
         }
       },
     });
+  };
+
+  const handleSubmitRequestDelete = async () => {
+    const r = requestDeleteReason.trim();
+    if (!r || !taskId) {
+      toast.error('Please enter a reason for the deletion request.');
+      return;
+    }
+    try {
+      await requestTaskDeleteMutation.mutateAsync(r);
+    } catch {
+      // onError
+    }
+  };
+
+  const handleSubmitExitRequest = async () => {
+    const comment = exitRequestComment.trim();
+    if (!comment || !taskId) {
+      toast.error('Please enter a comment for your exit request.');
+      return;
+    }
+    try {
+      await createExitRequestMutation.mutateAsync(comment);
+    } catch {
+      // onError handled in mutation
+    }
   };
 
   const handleVerifyMember = (memberUserId: string, memberName: string) => {
@@ -847,6 +940,22 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     isAssigned &&
     !hasRejected &&
     globalStatus === 'todo';
+
+  const canExitWithComments =
+    !!normalizedTask &&
+    !!taskId &&
+    isAssigned &&
+    !isCreator &&
+    hasAccepted &&
+    String(normalizedTask?.status || '').toLowerCase() !== 'rejected';
+
+  const showActionBar =
+    canAccept ||
+    canReject ||
+    canMarkComplete ||
+    canDirectDelete ||
+    canRequestTaskDelete ||
+    canExitWithComments;
 
   const content = (
     <div className="p-0 font-task min-h-screen bg-background-light dark:bg-background-dark">
@@ -1458,7 +1567,7 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
       </main>
 
       {/* Action Bar - Design style */}
-      {(canAccept || canReject || canMarkComplete || isCreator) && (
+      {showActionBar && (
         <div className="max-w-5xl mx-auto px-4">
           <div className="bg-card-light dark:bg-card-dark rounded-2xl border border-slate-200 dark:border-slate-800 p-6 flex flex-col md:flex-row gap-4 items-center justify-between">
             <div className="flex flex-wrap gap-4 w-full md:w-auto justify-center md:justify-start">
@@ -1512,7 +1621,7 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
                   )}
                 </button>
               )}
-              {isCreator && (
+              {canDirectDelete && taskActiveForDelete && (
                 <button
                   type="button"
                   onClick={handleDeleteTask}
@@ -1521,6 +1630,34 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
                 >
                   <span className="material-symbols-outlined text-lg">delete_outline</span>
                   <span>{deleteTaskMutation.isLoading ? 'Deleting...' : 'Delete Task'}</span>
+                </button>
+              )}
+              {canRequestTaskDelete && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRequestDeleteReason('');
+                    setShowRequestDeleteModal(true);
+                  }}
+                  disabled={requestTaskDeleteMutation.isLoading}
+                  className="px-6 py-3 border-2 border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-300 font-bold rounded-xl hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-lg">outgoing_mail</span>
+                  <span>Request deletion</span>
+                </button>
+              )}
+              {canExitWithComments && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExitRequestComment('');
+                    setShowExitRequestModal(true);
+                  }}
+                  disabled={createExitRequestMutation.isLoading}
+                  className="px-6 py-3 border-2 border-indigo-200 dark:border-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-lg">logout</span>
+                  <span>Exit with comments</span>
                 </button>
               )}
             </div>
@@ -1536,6 +1673,88 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
       >
         <span className="material-symbols-outlined text-2xl">add</span>
       </button>
+
+      {/* Request task deletion (assignee → owner, same as mobile) */}
+      {showRequestDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-labelledby="request-delete-title">
+          <div className="bg-card-light dark:bg-card-dark rounded-2xl shadow-xl max-w-md w-full p-6">
+            <h2 id="request-delete-title" className="text-lg font-bold text-slate-900 dark:text-white mb-2">
+              Request task deletion
+            </h2>
+            <p className="text-slate-600 dark:text-slate-400 text-sm mb-4">
+              Only the task owner can delete this task. Send a request with a short reason — the owner is notified and it appears in the task group chat.
+            </p>
+            <textarea
+              value={requestDeleteReason}
+              onChange={(e) => setRequestDeleteReason(e.target.value)}
+              placeholder="Reason (required)..."
+              rows={4}
+              className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-500 focus:ring-2 focus:ring-task-primary focus:border-transparent"
+            />
+            <div className="flex gap-3 mt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRequestDeleteModal(false);
+                  setRequestDeleteReason('');
+                }}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800/50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitRequestDelete}
+                disabled={requestTaskDeleteMutation.isLoading || !requestDeleteReason.trim()}
+                className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-medium disabled:opacity-50"
+              >
+                {requestTaskDeleteMutation.isLoading ? 'Sending...' : 'Send request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Exit with comments (assignee -> owner) */}
+      {showExitRequestModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-labelledby="exit-request-title">
+          <div className="bg-card-light dark:bg-card-dark rounded-2xl shadow-xl max-w-md w-full p-6">
+            <h2 id="exit-request-title" className="text-lg font-bold text-slate-900 dark:text-white mb-2">
+              Exit with comments
+            </h2>
+            <p className="text-slate-600 dark:text-slate-400 text-sm mb-4">
+              Share why you are requesting to exit this task. The task owner will review it in task chat.
+            </p>
+            <textarea
+              value={exitRequestComment}
+              onChange={(e) => setExitRequestComment(e.target.value)}
+              placeholder="Comment (required)..."
+              rows={4}
+              className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-500 focus:ring-2 focus:ring-task-primary focus:border-transparent"
+            />
+            <div className="flex gap-3 mt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExitRequestModal(false);
+                  setExitRequestComment('');
+                }}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800/50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitExitRequest}
+                disabled={createExitRequestMutation.isLoading || !exitRequestComment.trim()}
+                className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium disabled:opacity-50"
+              >
+                {createExitRequestMutation.isLoading ? 'Sending...' : 'Send request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Reject modal */}
       {showRejectModal && (

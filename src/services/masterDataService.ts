@@ -11,7 +11,7 @@ export interface OrgConstitutionOption {
   label: string;
 }
 
-export type TaskServiceType = 'recurring' | 'one_time';
+export type TaskServiceType = 'recurring' | 'one_time' | 'recurring_instance' | 'recurring_template';
 export type TaskServiceFrequency =
   | 'Daily'
   | 'Weekly'

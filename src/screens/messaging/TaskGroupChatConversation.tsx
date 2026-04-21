@@ -183,6 +183,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       reactions: msg.reactions || [],
       starred: msg.starred || false,
       visibility_mode: msg.visibility_mode || msg.visibilityMode || 'shared_to_group',
+      metadata: msg.metadata,
       created_at: msg.created_at || msg.createdAt,
       updated_at: msg.updated_at || msg.updatedAt,
     };
@@ -1391,6 +1392,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const [rejectionReason, setRejectionReason] = useState('');
   const [acceptRejectProcessing, setAcceptRejectProcessing] = useState(false);
   const [hasAcceptedLocally, setHasAcceptedLocally] = useState(false);
+  const [resolvedExitRequestIds, setResolvedExitRequestIds] = useState<Set<string>>(new Set());
 
   // Get current user assignee (EXACT mobile logic) — must be before canAccept/canReject
   const currentUserAssignee = React.useMemo(() => {
@@ -1608,6 +1610,116 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     });
   };
 
+  const markExitRequestResolved = (requestId: string) => {
+    setResolvedExitRequestIds((prev) => {
+      const next = new Set(prev);
+      next.add(String(requestId));
+      return next;
+    });
+  };
+
+  const handleApproveExitRequest = async (requestId: string) => {
+    if (!taskId) {
+      toast.error('Task details are not available for this request');
+      return;
+    }
+
+    try {
+      await taskService.approveExitRequest(String(taskId), String(requestId));
+      markExitRequestResolved(requestId);
+      toast.success('Exit request approved');
+      queryClient.invalidateQueries(['task', taskId]);
+      queryClient.invalidateQueries(['dashboard']);
+      queryClient.invalidateQueries(['messages', conversationId]);
+      queryClient.invalidateQueries(['conversation', conversationId]);
+      loadMessages();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || error?.message || 'Failed to approve exit request');
+    }
+  };
+
+  const handleRejectExitRequest = (requestId: string) => {
+    if (!taskId) {
+      toast.error('Task details are not available for this request');
+      return;
+    }
+
+    toast.confirm('Reject this exit request?', {
+      onConfirm: async () => {
+        try {
+          await taskService.rejectExitRequest(String(taskId), String(requestId));
+          markExitRequestResolved(requestId);
+          toast.success('Exit request rejected');
+          queryClient.invalidateQueries(['task', taskId]);
+          queryClient.invalidateQueries(['dashboard']);
+          queryClient.invalidateQueries(['messages', conversationId]);
+          queryClient.invalidateQueries(['conversation', conversationId]);
+          loadMessages();
+        } catch (error: any) {
+          toast.error(error?.response?.data?.error || error?.message || 'Failed to reject exit request');
+        }
+      },
+      confirmLabel: 'Reject',
+      cancelLabel: 'Cancel',
+    });
+  };
+
+  const handleApproveDeleteRequest = async (messageId: string) => {
+    if (!taskId) {
+      toast.error('Task details are not available for this request');
+      return;
+    }
+
+    try {
+      await taskService.approveTaskDeleteRequest(String(taskId));
+      setResolvedExitRequestIds((prev) => {
+        const next = new Set(prev);
+        next.add(`delete:${String(messageId)}`);
+        return next;
+      });
+      toast.success('Delete request approved');
+      queryClient.invalidateQueries(['task', taskId]);
+      queryClient.invalidateQueries(['tasks']);
+      queryClient.invalidateQueries(['dashboard']);
+      queryClient.invalidateQueries(['messages', conversationId]);
+      queryClient.invalidateQueries(['conversation', conversationId]);
+      loadMessages();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || error?.message || 'Failed to approve delete request');
+    }
+  };
+
+  const handleRejectDeleteRequest = (messageId: string) => {
+    if (!taskId) {
+      toast.error('Task details are not available for this request');
+      return;
+    }
+
+    toast.confirm('Reject this delete request?', {
+      onConfirm: async () => {
+        try {
+          await taskService.denyTaskDeleteRequest(String(taskId));
+          setResolvedExitRequestIds((prev) => {
+            const next = new Set(prev);
+            next.add(`delete:${String(messageId)}`);
+            return next;
+          });
+          toast.success('Delete request rejected');
+          queryClient.invalidateQueries(['task', taskId]);
+          queryClient.invalidateQueries(['tasks']);
+          queryClient.invalidateQueries(['dashboard']);
+          queryClient.invalidateQueries(['messages', conversationId]);
+          queryClient.invalidateQueries(['conversation', conversationId]);
+          loadMessages();
+        } catch (error: any) {
+          toast.error(error?.response?.data?.error || error?.message || 'Failed to reject delete request');
+        }
+      },
+      confirmLabel: 'Reject',
+      cancelLabel: 'Cancel',
+    });
+  };
+
   // Get assignees from task
   const assignees = React.useMemo(() => {
     if (!task?.assignees) return [];
@@ -1711,6 +1823,44 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
     // System messages
     if (messageType === 'system' || msg.type === 'system') {
+      let parsedMetadata: any = msg.metadata;
+      if (typeof parsedMetadata === 'string') {
+        try {
+          parsedMetadata = JSON.parse(parsedMetadata);
+        } catch {
+          parsedMetadata = null;
+        }
+      }
+
+      const actionChips = Array.isArray(parsedMetadata?.actionChips) ? parsedMetadata.actionChips : [];
+      const requestId = parsedMetadata?.requestId ? String(parsedMetadata.requestId) : null;
+      const taskOwnerId = task?.created_by ?? task?.creator_id;
+      const isTaskOwner =
+        !!taskOwnerId && !!currentUserId && String(taskOwnerId) === String(currentUserId);
+      const isTaskExitRequest = parsedMetadata?.requestType === 'task_exit';
+      const isTaskDeleteRequest = parsedMetadata?.requestType === 'task_delete';
+      const isCenteredRequestMessage = isTaskExitRequest || isTaskDeleteRequest;
+      const senderDisplayName = msg.sender_name || msg.senderName || senderName;
+      const normalizedSystemContent = (() => {
+        if (isTaskExitRequest) {
+          return `${senderDisplayName} requested task exit`;
+        }
+        return msg.content;
+      })();
+      const deleteActionKey = `delete:${String(msg.id)}`;
+      const canShowExitActions =
+        isTaskExitRequest &&
+        !!requestId &&
+        isTaskOwner &&
+        !resolvedExitRequestIds.has(requestId) &&
+        (actionChips.includes('approve') || actionChips.includes('reject'));
+      const canShowDeleteActions =
+        isTaskDeleteRequest &&
+        isTaskOwner &&
+        !resolvedExitRequestIds.has(deleteActionKey) &&
+        (actionChips.includes('approve') || actionChips.includes('reject'));
+      const showActions = canShowExitActions || canShowDeleteActions;
+
       return (
         <div key={msg.id} className="w-full">
           {showDateSeparator && (
@@ -1720,10 +1870,54 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
               </span>
             </div>
           )}
-          <div className="flex justify-center w-full">
-            <div className="bg-gray-200 dark:bg-gray-800 rounded-full px-4 py-1.5 flex items-center gap-2">
+          <div className={`flex w-full ${
+            isCenteredRequestMessage ? 'justify-center' : isMyMessage ? 'justify-end' : 'justify-start'
+          }`}>
+            <div className={`rounded-2xl px-4 py-2 flex flex-col gap-2 min-w-[260px] max-w-[88%] ${
+              !isCenteredRequestMessage && isMyMessage
+                ? 'bg-[#EDE9FE] text-[#1F2937] border border-[#A78BFA]'
+                : 'bg-gray-200 dark:bg-gray-800'
+            }`}>
               <span className="material-symbols-outlined text-gray-500 text-base">smart_toy</span>
-              <p className="text-gray-600 dark:text-gray-400 text-xs font-medium">{msg.content}</p>
+              <p className="text-gray-600 dark:text-gray-400 text-xs font-medium">{normalizedSystemContent}</p>
+              {showActions && (
+                <div className="w-full grid grid-cols-2 gap-2 mt-1">
+                  {actionChips.includes('approve') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (canShowExitActions && requestId) {
+                          handleApproveExitRequest(requestId);
+                          return;
+                        }
+                        if (canShowDeleteActions) {
+                          handleApproveDeleteRequest(String(msg.id));
+                        }
+                      }}
+                      className="w-full px-3 py-2 rounded-xl text-sm font-semibold bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50 transition-colors"
+                    >
+                      Approve
+                    </button>
+                  )}
+                  {actionChips.includes('reject') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (canShowExitActions && requestId) {
+                          handleRejectExitRequest(requestId);
+                          return;
+                        }
+                        if (canShowDeleteActions) {
+                          handleRejectDeleteRequest(String(msg.id));
+                        }
+                      }}
+                      className="w-full px-3 py-2 rounded-xl text-sm font-semibold bg-white text-rose-700 border border-rose-200 hover:bg-rose-50 transition-colors"
+                    >
+                      Reject
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

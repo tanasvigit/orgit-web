@@ -246,6 +246,7 @@ export const AdminDashboard: React.FC = () => {
     () => {
       const counts: Record<TaskStatusCategory, number> = {
         todo: 0,
+        scheduled: 0,
         overdue: 0,
         duesoon: 0,
         inprogress: 0,
@@ -269,6 +270,7 @@ export const AdminDashboard: React.FC = () => {
   const assignedUserStatusCounts = useMemo(() => {
     const counts: Record<TaskStatusCategory, number> = {
       todo: 0,
+      scheduled: 0,
       overdue: 0,
       duesoon: 0,
       inprogress: 0,
@@ -350,7 +352,7 @@ export const AdminDashboard: React.FC = () => {
       const merged = full ? { ...task, ...full } : task;
 
       const type = merged.task_type || merged.taskType;
-      if (type !== 'recurring') return false;
+      if (type !== 'recurring' && type !== 'recurring_instance') return false;
 
       const due = merged.due_date || merged.dueDate;
       if (!due) return false;
@@ -559,7 +561,7 @@ export const AdminDashboard: React.FC = () => {
           <div className="mb-2 flex items-center justify-between max-[1366px]:mb-1.5">
             <div>
               <h1 className="text-2xl md:text-3xl font-semibold text-gray-900 dark:text-white">
-                Welcome back, {user?.name || 'Admin'}
+                Welcome, {user?.name || 'Admin'}
               </h1>
               <p className="mt-1 text-xs text-gray-600 dark:text-gray-400 md:text-sm max-[1366px]:mt-0.5 max-[1366px]:text-[11px]">
                 Here's an overview of your tasks and progress

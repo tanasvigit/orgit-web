@@ -26,6 +26,8 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
   const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [showRequestDeleteModal, setShowRequestDeleteModal] = useState(false);
+  const [requestDeleteReason, setRequestDeleteReason] = useState('');
   const [processing, setProcessing] = useState(false);
 
   // Fetch task
@@ -69,13 +71,18 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
         onClose();
         // Redirect to appropriate dashboard with animation state
         const dashboardPath = isAdmin ? '/admin' : '/dashboard';
+        const fresh = queryClient.getQueryData(['task', taskId]) as any;
+        const uid = user?.id || (user as any)?.userId;
+        const owner = fresh?.created_by ?? fresh?.creator_id;
+        const creatorLane =
+          owner != null && uid != null && String(owner) === String(uid);
         navigate(dashboardPath, {
           state: {
             animateTaskTransition: true,
             taskId: taskId,
             fromStatus: 'todo',
             toStatus: 'inprogress',
-            taskSection: isCreator ? 'self' : 'assigned',
+            taskSection: creatorLane ? 'self' : 'assigned',
           },
         });
       },
@@ -125,6 +132,57 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
     }
   };
 
+  const deleteTaskMutation = useMutation(
+    () => taskService.deleteTask(taskId!),
+    {
+      onSuccess: () => {
+        const deletedId = taskId!;
+        queryClient.removeQueries(['task', deletedId]);
+        queryClient.setQueryData('tasks', (old: any) =>
+          Array.isArray(old) ? old.filter((t: any) => t?.id !== deletedId) : old
+        );
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['conversation-details']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        queryClient.invalidateQueries(['admin-dashboard']);
+        queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        void queryClient.refetchQueries({ queryKey: ['admin-dashboard'] });
+        void queryClient.refetchQueries({ queryKey: ['admin-dashboard-statistics'] });
+        void queryClient.refetchQueries({ queryKey: ['dashboard'] });
+        void queryClient.refetchQueries({ queryKey: ['dashboard-statistics'] });
+        toast.success('Task deleted successfully');
+        onClose();
+      },
+      onError: (error: any) => {
+        toast.error(error.response?.data?.error || error.message || 'Failed to delete task');
+      },
+    }
+  );
+
+  const requestTaskDeleteMutation = useMutation(
+    (reason: string) => taskService.requestTaskDelete(taskId!, reason),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        queryClient.invalidateQueries(['admin-dashboard']);
+        queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        toast.success(
+          'Your deletion request was sent to the task owner. It will also appear in the task group chat.'
+        );
+        setShowRequestDeleteModal(false);
+        setRequestDeleteReason('');
+      },
+      onError: (error: any) => {
+        toast.error(error.response?.data?.error || error.message || 'Failed to send delete request');
+      },
+    }
+  );
+
   if (!visible) return null;
 
   if (isLoading) {
@@ -160,43 +218,29 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
 
   const displayTask = normalizedTask;
   const currentUserId = user?.id || user?.userId;
-  const isCreator = (displayTask.created_by || displayTask.creator_id) === currentUserId;
-  const currentUserAssignee = assignees.find((a: any) => (a.id || a.user_id || a.userId) === currentUserId);
+  const taskOwnerId = displayTask.created_by || displayTask.creator_id;
+  const isCreator =
+    !!taskOwnerId && !!currentUserId && String(taskOwnerId) === String(currentUserId);
+  const currentUserAssignee = assignees.find((a: any) => {
+    const aid = a.id || a.user_id || a.userId;
+    return aid != null && String(aid) === String(currentUserId);
+  });
   const canAccept = !isCreator && currentUserAssignee && !currentUserAssignee.has_accepted;
   const canReject = !isCreator && currentUserAssignee && !currentUserAssignee.has_accepted;
-
-  // Delete task (creator only, web UI only)
-  const deleteTaskMutation = useMutation(
-    () => taskService.deleteTask(taskId!),
-    {
-      onSuccess: () => {
-        const deletedId = taskId!;
-        queryClient.removeQueries(['task', deletedId]);
-        queryClient.setQueryData('tasks', (old: any) =>
-          Array.isArray(old) ? old.filter((t: any) => t?.id !== deletedId) : old
-        );
-        queryClient.invalidateQueries(['tasks']);
-        queryClient.invalidateQueries(['conversations']);
-        queryClient.invalidateQueries(['conversation-details']);
-        queryClient.invalidateQueries(['dashboard']);
-        queryClient.invalidateQueries(['dashboard-statistics']);
-        queryClient.invalidateQueries(['admin-dashboard']);
-        queryClient.invalidateQueries(['admin-dashboard-statistics']);
-        void queryClient.refetchQueries({ queryKey: ['admin-dashboard'] });
-        void queryClient.refetchQueries({ queryKey: ['admin-dashboard-statistics'] });
-        void queryClient.refetchQueries({ queryKey: ['dashboard'] });
-        void queryClient.refetchQueries({ queryKey: ['dashboard-statistics'] });
-        toast.success('Task deleted successfully');
-        onClose();
-      },
-      onError: (error: any) => {
-        toast.error(error.response?.data?.error || error.message || 'Failed to delete task');
-      },
-    }
-  );
+  const isAdminOrSuper = user?.role === 'admin' || user?.role === 'super_admin';
+  const canDirectDelete = isCreator || isAdminOrSuper;
+  const taskActiveForDelete = String(displayTask.status || '').toLowerCase() !== 'rejected';
+  const isAssignedMember = assignees.some((a: any) => {
+    const aid = a.id || a.user_id || a.userId;
+    return aid != null && String(aid) === String(currentUserId);
+  });
+  const canRequestTaskDelete =
+    taskActiveForDelete &&
+    !canDirectDelete &&
+    (isAssignedMember || !!displayTask.current_user_status);
 
   const handleDeleteTask = () => {
-    if (!taskId || !isCreator) return;
+    if (!taskId || !canDirectDelete) return;
     toast.confirm('Are you sure you want to delete this task? This action cannot be undone.', {
       confirmLabel: 'Delete',
       cancelLabel: 'Cancel',
@@ -208,6 +252,19 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
         }
       },
     });
+  };
+
+  const handleSubmitRequestDelete = async () => {
+    const r = requestDeleteReason.trim();
+    if (!r || !taskId) {
+      toast.error('Please enter a reason for the deletion request.');
+      return;
+    }
+    try {
+      await requestTaskDeleteMutation.mutateAsync(r);
+    } catch {
+      // onError
+    }
   };
 
   const formatDate = (dateString?: string) => {
@@ -553,7 +610,7 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
       </main>
 
       {/* Action Bar */}
-      {(canAccept || canReject || isCreator) && (
+      {(canAccept || canReject || canDirectDelete || canRequestTaskDelete) && (
         <div className="max-w-4xl mx-auto mt-6 pb-4">
           <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-md border border-gray-200 dark:border-gray-700">
             {(canAccept || canReject) && (
@@ -589,22 +646,86 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
                 )}
               </div>
             )}
-            {isCreator && (
-              <div className="pt-2 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center gap-3">
+            {(canDirectDelete || canRequestTaskDelete) && (
+              <div className="pt-2 border-t border-gray-100 dark:border-gray-700 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                 <span className="text-xs text-gray-500 dark:text-gray-400">
-                  Only the task creator can delete this task.
+                  {canDirectDelete
+                    ? 'Task owners and admins can delete this task. Assignees can request deletion instead.'
+                    : 'You can request that the task owner deletes this task.'}
                 </span>
-                <button
-                  type="button"
-                  onClick={handleDeleteTask}
-                  disabled={deleteTaskMutation.isLoading}
-                  className="inline-flex items-center gap-2 rounded-lg border border-red-500/40 px-4 py-2 text-xs sm:text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
-                >
-                  <span className="material-symbols-outlined text-base">delete</span>
-                  <span>{deleteTaskMutation.isLoading ? 'Deleting...' : 'Delete Task'}</span>
-                </button>
+                <div className="flex flex-wrap gap-2 justify-end">
+                  {canRequestTaskDelete && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRequestDeleteReason('');
+                        setShowRequestDeleteModal(true);
+                      }}
+                      disabled={requestTaskDeleteMutation.isLoading}
+                      className="inline-flex items-center gap-2 rounded-lg border border-amber-500/40 px-4 py-2 text-xs sm:text-sm font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-base">outgoing_mail</span>
+                      Request deletion
+                    </button>
+                  )}
+                  {canDirectDelete && taskActiveForDelete && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteTask}
+                      disabled={deleteTaskMutation.isLoading}
+                      className="inline-flex items-center gap-2 rounded-lg border border-red-500/40 px-4 py-2 text-xs sm:text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-base">delete</span>
+                      <span>{deleteTaskMutation.isLoading ? 'Deleting...' : 'Delete Task'}</span>
+                    </button>
+                  )}
+                </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {showRequestDeleteModal && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setShowRequestDeleteModal(false)}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-lg shadow-2xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Request task deletion</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Only the task owner can delete this task. Send a request with a reason — the owner is notified and it appears in the task group chat.
+            </p>
+            <textarea
+              value={requestDeleteReason}
+              onChange={(e) => setRequestDeleteReason(e.target.value)}
+              placeholder="Reason (required)..."
+              rows={4}
+              className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none mb-4"
+            />
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRequestDeleteModal(false);
+                  setRequestDeleteReason('');
+                }}
+                className="flex-1 py-3 px-4 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-semibold hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitRequestDelete}
+                disabled={requestTaskDeleteMutation.isLoading || !requestDeleteReason.trim()}
+                className="flex-1 py-3 px-4 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold disabled:opacity-50"
+              >
+                {requestTaskDeleteMutation.isLoading ? 'Sending...' : 'Send request'}
+              </button>
+            </div>
           </div>
         </div>
       )}
