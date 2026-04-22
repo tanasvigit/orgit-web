@@ -66,6 +66,10 @@ export const TaskDashboardScreen: React.FC = () => {
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+  const [showTeamMemberFilter, setShowTeamMemberFilter] = useState(false);
+  const [teamMemberSearch, setTeamMemberSearch] = useState('');
+  const [selectedTeamMemberIds, setSelectedTeamMemberIds] = useState<string[]>([]);
+  const teamMemberFilterRef = useRef<HTMLDivElement>(null);
   const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -213,6 +217,17 @@ export const TaskDashboardScreen: React.FC = () => {
       setViewFilter('all');
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (teamMemberFilterRef.current && !teamMemberFilterRef.current.contains(target)) {
+        setShowTeamMemberFilter(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
 
   // Dashboard data for aligning Task Management filters with dashboard metrics
   const { data: dashboardData } = useQuery(
@@ -363,6 +378,46 @@ export const TaskDashboardScreen: React.FC = () => {
     return map;
   }, [taskIdByConvId, uniqueTaskIds, taskDetailsQueries]);
 
+  const getTaskAssigneeEntries = (task: any) => {
+    if (!task) return [] as Array<{ id: string; name: string }>;
+    const assignees = Array.isArray(task.assignees) ? task.assignees : [];
+    return assignees
+      .map((a: any) => ({
+        id: String(a?.id || a?.user_id || a?.userId || '').trim(),
+        name: String(a?.name || a?.user_name || a?.username || '').trim(),
+      }))
+      .filter((a: { id: string; name: string }) => !!a.id);
+  };
+
+  const teamMemberOptions = useMemo(() => {
+    const currentUserId = String(user?.id || (user as any)?.userId || '');
+    const optionsMap = new Map<string, { id: string; name: string }>();
+    const allTasks = [
+      ...(Object.values(taskByConvId || {}) as any[]),
+      ...(Array.isArray(directTasks) ? directTasks : []),
+    ];
+
+    allTasks.forEach((task: any) => {
+      getTaskAssigneeEntries(task).forEach((a) => {
+        if (!a.id || a.id === currentUserId) return;
+        if (!optionsMap.has(a.id)) {
+          optionsMap.set(a.id, { id: a.id, name: a.name || 'Unknown Member' });
+        }
+      });
+    });
+
+    const search = teamMemberSearch.trim().toLowerCase();
+    const rows = Array.from(optionsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+    if (!search) return rows;
+    return rows.filter((r) => r.name.toLowerCase().includes(search));
+  }, [taskByConvId, directTasks, user, teamMemberSearch]);
+
+  const taskMatchesSelectedMembers = (task: any) => {
+    if (selectedTeamMemberIds.length === 0) return true;
+    const memberIds = new Set(getTaskAssigneeEntries(task).map((a) => a.id));
+    return selectedTeamMemberIds.some((id) => memberIds.has(id));
+  };
+
   // Get task IDs that already have conversations
   const tasksWithConversations = useMemo(() => {
     return new Set(Object.values(taskIdByConvId).filter(Boolean));
@@ -407,6 +462,11 @@ export const TaskDashboardScreen: React.FC = () => {
       });
     }
 
+    // Assigned view: filter by selected team members (multi-select).
+    if (viewFilter === 'assigned' && selectedTeamMemberIds.length > 0) {
+      filtered = filtered.filter((task: any) => taskMatchesSelectedMembers(task));
+    }
+
     // Status filter: always use per-user lifecycle categorization (same as Task Details).
     // If view filter is present (self/assigned), constrain by the selected section's task IDs.
     if (statusFilter !== 'all') {
@@ -428,7 +488,16 @@ export const TaskDashboardScreen: React.FC = () => {
       const bTime = timestampToMs(b.created_at || b.createdAt || 0);
       return bTime - aTime;
     });
-  }, [directTasks, tasksWithConversations, user, searchQuery, statusFilter, hasTasksFetchedSinceMount]);
+  }, [
+    directTasks,
+    tasksWithConversations,
+    user,
+    searchQuery,
+    statusFilter,
+    hasTasksFetchedSinceMount,
+    viewFilter,
+    selectedTeamMemberIds,
+  ]);
 
   // Task IDs that failed to load (e.g. 404 = deleted) — exclude those convs from list
   const failedTaskIds = useMemo(
@@ -492,6 +561,16 @@ export const TaskDashboardScreen: React.FC = () => {
       });
     }
 
+    // Assigned view: filter by selected team members (multi-select).
+    if (viewFilter === 'assigned' && selectedTeamMemberIds.length > 0) {
+      filtered = filtered.filter((conv: any) => {
+        const convId = conv.id ?? conv.conversationId;
+        const key = convId != null ? String(convId) : '';
+        const task = key ? taskByConvId[key] : undefined;
+        return taskMatchesSelectedMembers(task);
+      });
+    }
+
     // When not driven by a dashboard metric, apply local status categorization
     if (!dashboardTaskIdsForView || dashboardTaskIdsForView.size === 0) {
       if (statusFilter !== 'all') {
@@ -531,6 +610,8 @@ export const TaskDashboardScreen: React.FC = () => {
     isConversationDetailsFetching,
     isTaskDetailsLoading,
     isTaskDetailsFetching,
+    viewFilter,
+    selectedTeamMemberIds,
   ]);
 
   // Update conversation with new message (matching mobile pattern)
@@ -946,6 +1027,87 @@ export const TaskDashboardScreen: React.FC = () => {
             </>
           )}
         </div>
+
+        {viewFilter === 'assigned' && (
+          <div className="mb-2.5 relative" ref={teamMemberFilterRef}>
+            <button
+              type="button"
+              onClick={() => setShowTeamMemberFilter((prev) => !prev)}
+              className="w-full flex items-center justify-between rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-surface-dark px-3 py-2 text-xs text-left text-gray-800 dark:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600"
+            >
+              <span className="truncate">
+                {selectedTeamMemberIds.length > 0
+                  ? `Team Members (${selectedTeamMemberIds.length}) selected`
+                  : 'Filter by Team Members'}
+              </span>
+              <span className="material-icons-outlined text-base text-gray-500">
+                {showTeamMemberFilter ? 'expand_less' : 'expand_more'}
+              </span>
+            </button>
+
+            {showTeamMemberFilter && (
+              <div className="absolute z-30 mt-2 w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-surface-dark shadow-lg">
+                <div className="p-2 border-b border-gray-100 dark:border-gray-700">
+                  <input
+                    type="text"
+                    value={teamMemberSearch}
+                    onChange={(e) => setTeamMemberSearch(e.target.value)}
+                    placeholder="Search team member..."
+                    className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent px-2.5 py-1.5 text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div className="max-h-48 overflow-y-auto p-1.5 space-y-1">
+                  {teamMemberOptions.length > 0 ? (
+                    teamMemberOptions.map((member) => {
+                      const checked = selectedTeamMemberIds.includes(member.id);
+                      return (
+                        <label
+                          key={member.id}
+                          className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setSelectedTeamMemberIds((prev) =>
+                                prev.includes(member.id)
+                                  ? prev.filter((id) => id !== member.id)
+                                  : [...prev, member.id]
+                              );
+                            }}
+                            className="rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          <span className="text-xs text-gray-800 dark:text-gray-200 truncate">{member.name}</span>
+                        </label>
+                      );
+                    })
+                  ) : (
+                    <div className="px-2 py-2 text-xs text-gray-500 dark:text-gray-400">No team members found</div>
+                  )}
+                </div>
+                <div className="flex items-center justify-between px-2.5 py-2 border-t border-gray-100 dark:border-gray-700">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedTeamMemberIds([]);
+                      setTeamMemberSearch('');
+                    }}
+                    className="text-[11px] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowTeamMemberFilter(false)}
+                    className="text-[11px] font-medium text-primary hover:text-primary/80"
+                  >
+                    Apply
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Status Filters - Enhanced Design */}
         <div className="space-y-2">

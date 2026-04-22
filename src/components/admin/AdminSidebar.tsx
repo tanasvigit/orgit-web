@@ -13,7 +13,6 @@ const navItems: NavItem[] = [
   { path: '/admin/messages', icon: 'chat', label: 'Messaging' },
   { path: '/admin/tasks', icon: 'check_circle', label: 'Task Management' },
   { path: '/admin/documents', icon: 'description', label: 'Document Management' },
-  { path: '/admin/entity-master', icon: 'domain', label: 'Entity Master Data' },
 ];
 
 const ADMIN_STORAGE_KEY = 'admin-sidebar-minimized-by-messages';
@@ -26,7 +25,7 @@ interface AdminSidebarProps {
 export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
@@ -227,6 +226,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
   // Auto-open settings dropdown and highlight Settings when on SettingsScreen or any settings route
   const isSettingsActive =
     location.pathname === '/admin/settings' ||
+    location.pathname === '/admin/entity-master' || location.pathname.startsWith('/admin/entity-master/') ||
     location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users/') ||
     location.pathname === '/admin/services' || location.pathname.startsWith('/admin/services/') ||
     location.pathname === '/admin/entities' || location.pathname.startsWith('/admin/entities/') ||
@@ -350,6 +350,22 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
           {!isCollapsed && isSettingsOpen && (
             <div className="ml-4 mt-1 space-y-1 border-l-2 border-slate-200 pl-4">
               <Link
+                to="/admin/entity-master"
+                onClick={() => {
+                  if (window.innerWidth < 768) {
+                    setIsMobileOpen(false);
+                  }
+                }}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
+                  location.pathname === '/admin/entity-master' || location.pathname.startsWith('/admin/entity-master/')
+                    ? 'bg-primary/10 text-primary font-semibold'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg shrink-0">domain</span>
+                <span className="font-medium text-sm whitespace-nowrap">Entity Master Data</span>
+              </Link>
+              <Link
                 to="/admin/users"
                 onClick={() => {
                   if (window.innerWidth < 768) {
@@ -420,30 +436,42 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
           )}
         </div>
       </nav>
-      <div className={`shrink-0 p-4 border-t border-slate-100 max-[1366px]:p-2 ${isCollapsed ? 'px-2 max-[1366px]:px-1.5' : ''}`}>
-        <Link
-          to="/profile"
-          className={`flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-100 transition-colors cursor-pointer max-[1366px]:p-2 ${
+      <div className={`shrink-0 p-4 border-t border-slate-100 space-y-2 max-[1366px]:p-2 max-[1366px]:space-y-0.5 ${isCollapsed ? 'px-2 max-[1366px]:px-1.5' : ''}`}>
+        <button
+          onClick={() => {
+            navigate('/profile');
+            if (window.innerWidth < 768) {
+              setIsMobileOpen(false);
+            }
+          }}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
             isCollapsed ? 'justify-center' : ''
+          } ${
+            location.pathname === '/profile'
+              ? 'bg-primary text-white shadow-md shadow-primary/20'
+              : 'text-slate-500 hover:text-primary hover:bg-slate-100'
           }`}
-          title={isCollapsed ? user?.name || 'Admin' : ''}
+          title={isCollapsed ? 'Profile' : ''}
         >
-          {user?.profilePhotoUrl ? (
-            <div
-              className="size-9 rounded-full bg-cover bg-center border border-slate-200 shrink-0"
-              style={{ backgroundImage: `url(${user.profilePhotoUrl})` }}
-            />
-          ) : (
-            <div className="size-9 rounded-full bg-primary flex items-center justify-center text-white font-bold border border-slate-200 shrink-0">
-              {user?.name?.charAt(0).toUpperCase() || 'A'}
-            </div>
-          )}
-          {!isCollapsed && (
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold text-slate-900 truncate">{user?.name || 'Admin'}</p>
-            </div>
-          )}
-        </Link>
+          <span className="material-icons-outlined text-2xl shrink-0 max-[1366px]:text-xl">person</span>
+          {!isCollapsed && <span className="font-medium text-sm max-[1366px]:text-xs">Profile</span>}
+        </button>
+        <button
+          onClick={() => {
+            logout();
+            navigate('/login');
+            if (window.innerWidth < 768) {
+              setIsMobileOpen(false);
+            }
+          }}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
+            isCollapsed ? 'justify-center' : ''
+          } text-slate-500 hover:text-red-500 hover:bg-red-50`}
+          title={isCollapsed ? 'Logout' : ''}
+        >
+          <span className="material-icons-outlined text-2xl shrink-0 max-[1366px]:text-xl">logout</span>
+          {!isCollapsed && <span className="font-medium text-sm max-[1366px]:text-xs">Logout</span>}
+        </button>
       </div>
     </>
   );

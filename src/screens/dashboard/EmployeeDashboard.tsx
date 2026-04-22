@@ -472,7 +472,7 @@ export const EmployeeDashboard: React.FC = () => {
         </div>
 
         {/* Statistics Cards for this section */}
-        <div className="mb-6 grid grid-cols-2 gap-3 min-[1366px]:grid-cols-5 min-[1366px]:gap-3 max-[1366px]:mb-4 max-[1366px]:gap-2.5">
+        <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5 max-[1366px]:mb-4 max-[1366px]:gap-2.5">
           {/* To-Do Card (Today’s recurring, not completed) */}
           <button
             type="button"

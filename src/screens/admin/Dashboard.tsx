@@ -22,6 +22,10 @@ export const AdminDashboard: React.FC = () => {
   const [expandedDM, setExpandedDM] = useState(false);
   // const [expandedCM, setExpandedCM] = useState(false);
   const [taskDetails, setTaskDetails] = useState<Record<string, any>>({});
+  const [showAssignedMemberFilter, setShowAssignedMemberFilter] = useState(false);
+  const [assignedMemberSearch, setAssignedMemberSearch] = useState('');
+  const [selectedAssignedMemberIds, setSelectedAssignedMemberIds] = useState<string[]>([]);
+  const assignedMemberFilterRef = useRef<HTMLDivElement>(null);
 
   // Refs for task transition animation (Self Tasks section)
   const selfTasksToDoIconRef = useRef<HTMLDivElement>(null);
@@ -122,6 +126,17 @@ export const AdminDashboard: React.FC = () => {
       prevPathRef.current = pathname;
     }
   }, [location.pathname, refetchAdminDashboard]);
+
+  useEffect(() => {
+    const onOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (assignedMemberFilterRef.current && !assignedMemberFilterRef.current.contains(target)) {
+        setShowAssignedMemberFilter(false);
+      }
+    };
+    document.addEventListener('mousedown', onOutsideClick);
+    return () => document.removeEventListener('mousedown', onOutsideClick);
+  }, []);
 
   useEffect(() => {
     const onFocus = () => {
@@ -231,6 +246,41 @@ export const AdminDashboard: React.FC = () => {
     return all;
   }, [assignedTasks]);
 
+  const getTaskAssignees = (task: any) => {
+    const assignees = Array.isArray(task?.assignees) ? task.assignees : [];
+    return assignees
+      .map((a: any) => ({
+        id: String(a?.id || a?.user_id || a?.userId || '').trim(),
+        name: String(a?.name || a?.user_name || a?.username || '').trim() || 'Unknown Member',
+      }))
+      .filter((a: { id: string; name: string }) => !!a.id);
+  };
+
+  const assignedMemberOptions = useMemo(() => {
+    const currentId = String(currentUserId || '');
+    const rowsMap = new Map<string, { id: string; name: string }>();
+
+    flattenedAssignedTasksForUser.forEach((task: any) => {
+      const full = taskDetails[task.id];
+      const merged = full ? { ...task, ...full } : task;
+      getTaskAssignees(merged).forEach((assignee: { id: string; name: string }) => {
+        if (assignee.id === currentId) return;
+        if (!rowsMap.has(assignee.id)) rowsMap.set(assignee.id, assignee);
+      });
+    });
+
+    const list = Array.from(rowsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+    const q = assignedMemberSearch.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((m) => m.name.toLowerCase().includes(q));
+  }, [flattenedAssignedTasksForUser, taskDetails, assignedMemberSearch, currentUserId]);
+
+  const matchesAssignedMemberFilter = (task: any) => {
+    if (selectedAssignedMemberIds.length === 0) return true;
+    const memberIds = new Set(getTaskAssignees(task).map((a: { id: string; name: string }) => a.id));
+    return selectedAssignedMemberIds.some((id) => memberIds.has(id));
+  };
+
   const isBeforeStartDate = (task: any) => {
     const rawStart = task?.start_date ?? task?.startDate;
     if (!rawStart) return false;
@@ -281,12 +331,13 @@ export const AdminDashboard: React.FC = () => {
     flattenedAssignedTasksForUser.forEach((task: any) => {
       const full = taskDetails[task.id];
       const merged = full ? { ...task, ...full } : task;
+      if (!matchesAssignedMemberFilter(merged)) return;
       if (isBeforeStartDate(merged)) return;
       const bucket = (getTaskStatusCategoryFromTask(merged, 3, currentUserId) || 'todo') as TaskStatusCategory;
       counts[bucket] = (counts[bucket] ?? 0) + 1;
     });
     return counts;
-  }, [flattenedAssignedTasksForUser, taskDetails]);
+  }, [flattenedAssignedTasksForUser, taskDetails, selectedAssignedMemberIds]);
 
   const selfUserStatusCountsFromDetails = useMemo(() => {
     const counts = { inprogress: 0, completed: 0 };
@@ -350,6 +401,7 @@ export const AdminDashboard: React.FC = () => {
     return flat.filter((task: any) => {
       const full = taskDetails[task.id];
       const merged = full ? { ...task, ...full } : task;
+      if (view === 'assigned' && !matchesAssignedMemberFilter(merged)) return false;
 
       const type = merged.task_type || merged.taskType;
       if (type !== 'recurring' && type !== 'recurring_instance') return false;
@@ -460,10 +512,80 @@ export const AdminDashboard: React.FC = () => {
           <div className="w-1 h-8 bg-primary rounded-full"></div>
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white md:text-2xl max-[1366px]:text-lg">{title}</h2>
           <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
+          {viewType === 'assigned' && (
+            <div className="relative min-w-[230px]" ref={assignedMemberFilterRef}>
+              <button
+                type="button"
+                onClick={() => setShowAssignedMemberFilter((prev) => !prev)}
+                className="w-full flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs text-gray-700 dark:text-gray-200"
+              >
+                <span className="truncate">
+                  {selectedAssignedMemberIds.length > 0
+                    ? `Team (${selectedAssignedMemberIds.length}) selected`
+                    : 'Filter team members'}
+                </span>
+                <span className="material-symbols-outlined text-base">
+                  {showAssignedMemberFilter ? 'expand_less' : 'expand_more'}
+                </span>
+              </button>
+              {showAssignedMemberFilter && (
+                <div className="absolute right-0 z-20 mt-2 w-[280px] rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 shadow-lg">
+                  <div className="p-2 border-b border-gray-100 dark:border-gray-700">
+                    <input
+                      type="text"
+                      value={assignedMemberSearch}
+                      onChange={(e) => setAssignedMemberSearch(e.target.value)}
+                      placeholder="Search member..."
+                      className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent px-2.5 py-1.5 text-xs text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <div className="max-h-48 overflow-y-auto p-1.5 space-y-1">
+                    {assignedMemberOptions.length > 0 ? assignedMemberOptions.map((member) => (
+                      <label key={member.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedAssignedMemberIds.includes(member.id)}
+                          onChange={() => {
+                            setSelectedAssignedMemberIds((prev) =>
+                              prev.includes(member.id)
+                                ? prev.filter((id) => id !== member.id)
+                                : [...prev, member.id]
+                            );
+                          }}
+                        />
+                        <span className="text-xs text-gray-800 dark:text-gray-200 truncate">{member.name}</span>
+                      </label>
+                    )) : (
+                      <div className="px-2 py-2 text-xs text-gray-500 dark:text-gray-400">No team members found</div>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between px-2.5 py-2 border-t border-gray-100 dark:border-gray-700">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedAssignedMemberIds([]);
+                        setAssignedMemberSearch('');
+                      }}
+                      className="text-[11px] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAssignedMemberFilter(false)}
+                      className="text-[11px] font-medium text-primary hover:text-primary/80"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Statistics Cards for this section */}
-        <div className="mb-6 grid grid-cols-2 gap-3 min-[1366px]:grid-cols-5 min-[1366px]:gap-3 max-[1366px]:gap-2.5 max-[1366px]:mb-4">
+        <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5 max-[1366px]:gap-2.5 max-[1366px]:mb-4">
           {/* To-Do Card (Today’s recurring, not completed) */}
           <button
             type="button"
