@@ -10,6 +10,7 @@ import { entityListService } from '../../services/entityListService';
 import { waitForSocketConnection } from '../../services/socketService';
 import { setTaskFinancial } from '../../utils/taskFinancialStorage';
 import { CustomDatePicker } from '../shared/CustomDatePicker';
+import api from '../../services/api';
 
 interface TaskCreateModalProps {
   visible: boolean;
@@ -33,6 +34,12 @@ type UserLike = {
   name: string;
   mobile?: string;
   phone?: string;
+};
+
+type TaskUnitSection = {
+  key: string;
+  label: string;
+  units: string[];
 };
 
 const questionBubbleClass =
@@ -104,6 +111,8 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [taskTags, setTaskTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [taskUnit, setTaskUnit] = useState('');
+  const [selectedTaskUnitSectionKey, setSelectedTaskUnitSectionKey] = useState('');
+  const [selectedTaskUnitName, setSelectedTaskUnitName] = useState('');
   const [showTitleSuggestions, setShowTitleSuggestions] = useState(false);
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
   const [basicInfoConfirmed, setBasicInfoConfirmed] = useState(false);
@@ -168,10 +177,39 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     },
     { enabled: visible }
   );
+  const { data: orgDataForTaskUnit } = useQuery(
+    'task-create-org-data-for-unit',
+    async () => {
+      const res = await api.get('/organization/data');
+      return res.data?.data ?? res.data ?? {};
+    },
+    { enabled: visible }
+  );
 
   const users = useMemo(() => (usersData || []).map(normalizeUser).filter((u) => !!u.id), [usersData]);
   const services = useMemo(() => (Array.isArray(serviceData) ? serviceData : []), [serviceData]);
   const clients = useMemo(() => (Array.isArray(clientMatrixData) ? clientMatrixData : []), [clientMatrixData]);
+  const taskUnitSections = useMemo<TaskUnitSection[]>(() => {
+    const org = orgDataForTaskUnit || {};
+    const getNames = (list: any[]) =>
+      (Array.isArray(list) ? list : [])
+        .map((item: any) => String(item?.name || '').trim())
+        .filter((name: string) => !!name);
+    const sections: TaskUnitSection[] = [
+      { key: 'cost_centre', label: 'Cost Centre', units: getNames(org.costCentres) },
+      // Branch values are sourced from organization branches in settings.
+      { key: 'branches', label: 'Branches', units: getNames(org.branches) },
+      { key: 'depot', label: 'Depot', units: getNames(org.depots) },
+      { key: 'warehouse', label: 'Warehouse', units: getNames(org.warehouses) },
+      { key: 'project', label: 'Project', units: getNames(org.projects) },
+      { key: 'factory', label: 'Factory', units: getNames(org.factories) },
+    ];
+    return sections.filter((section) => section.units.length > 0);
+  }, [orgDataForTaskUnit]);
+  const selectedTaskUnitSection = useMemo(
+    () => taskUnitSections.find((section) => section.key === selectedTaskUnitSectionKey) || null,
+    [taskUnitSections, selectedTaskUnitSectionKey]
+  );
 
   const filteredUsers = useMemo(() => {
     const q = userSearchQuery.trim().toLowerCase();
@@ -196,6 +234,8 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     setTaskTags([]);
     setTagInput('');
     setTaskUnit('');
+    setSelectedTaskUnitSectionKey('');
+    setSelectedTaskUnitName('');
     setShowTitleSuggestions(false);
     setShowTagSuggestions(false);
     setBasicInfoConfirmed(false);
@@ -550,15 +590,56 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
               </div>
             ) : null}
             <label className={`${labelClass} mt-3`}>Task Unit</label>
-            <input
-              value={taskUnit}
-              onChange={(e) => {
-                setTaskUnit(e.target.value);
-                setBasicInfoConfirmed(false);
-              }}
-              placeholder="e.g., Hours, Items, Visits"
-              className={inputClass}
-            />
+            {taskUnitSections.length > 0 ? (
+              <div className="space-y-2">
+                <select
+                  value={selectedTaskUnitSectionKey}
+                  onChange={(e) => {
+                    const nextSectionKey = e.target.value;
+                    setSelectedTaskUnitSectionKey(nextSectionKey);
+                    setSelectedTaskUnitName('');
+                    setTaskUnit('');
+                    setBasicInfoConfirmed(false);
+                  }}
+                  className={inputClass}
+                >
+                  <option value="">Select unit section</option>
+                  {taskUnitSections.map((section) => (
+                    <option key={section.key} value={section.key}>
+                      {section.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={selectedTaskUnitName}
+                  onChange={(e) => {
+                    const unitName = e.target.value;
+                    setSelectedTaskUnitName(unitName);
+                    setTaskUnit(unitName);
+                    setBasicInfoConfirmed(false);
+                  }}
+                  className={inputClass}
+                  disabled={!selectedTaskUnitSection}
+                >
+                  <option value="">{selectedTaskUnitSection ? 'Select unit name' : 'Select section first'}</option>
+                  {(selectedTaskUnitSection?.units || []).map((unitName) => (
+                    <option key={unitName} value={unitName}>
+                      {unitName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <input
+                value={taskUnit}
+                onChange={(e) => {
+                  setTaskUnit(e.target.value);
+                  setBasicInfoConfirmed(false);
+                }}
+                placeholder="e.g., Hours, Items, Visits"
+                className={inputClass}
+              />
+            )}
             <div className="mt-3 flex justify-end">
               <button
                 type="button"

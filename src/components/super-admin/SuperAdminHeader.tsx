@@ -127,10 +127,23 @@ export const SuperAdminHeader: React.FC<SuperAdminHeaderProps> = ({
           </button>
 
           {showProfileMenu && (
-            <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 py-2 z-[100]">
-              <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-                <p className="text-sm font-semibold text-gray-900 dark:text-white">{user?.name || 'Super Admin'}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.email || 'superadmin@orgit.com'}</p>
+            <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 py-2 z-[100]">
+              <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-700 flex items-center gap-3">
+                {user?.profilePhotoUrl ? (
+                  <img
+                    src={user.profilePhotoUrl}
+                    alt={user.name || 'User'}
+                    className="w-10 h-10 rounded-full object-cover border-2 border-gray-200 dark:border-slate-600"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-super-admin-primary flex items-center justify-center text-white font-semibold text-sm">
+                    {user?.name?.charAt(0).toUpperCase() || 'U'}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">Hello {user?.name || 'User'}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.email || 'superadmin@orgit.com'}</p>
+                </div>
               </div>
               <div className="py-1">
                 <button
@@ -141,26 +154,17 @@ export const SuperAdminHeader: React.FC<SuperAdminHeaderProps> = ({
                   className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
                 >
                   <span className="material-symbols-outlined text-lg">person</span>
-                  View Profile
+                  View/Edit Profile
                 </button>
                 <button
                   onClick={() => {
                     setShowProfileMenu(false);
-                    navigate('/settings');
+                    handleLogout();
                   }}
-                  className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
-                >
-                  <span className="material-symbols-outlined text-lg">settings</span>
-                  Settings
-                </button>
-              </div>
-              <div className="border-t border-gray-100 dark:border-slate-700 pt-1">
-                <button
-                  onClick={handleLogout}
                   className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                 >
                   <span className="material-symbols-outlined text-lg">logout</span>
-                  Sign Out
+                  Logout
                 </button>
               </div>
             </div>

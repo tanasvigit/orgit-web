@@ -75,6 +75,12 @@ export const EntityMasterData: React.FC = () => {
     depots: [] as Array<{ name: string; shortName?: string; displayOrder?: number }>,
     warehouses: [] as Array<{ name: string; shortName?: string; address?: string; gstNumber?: string }>,
   });
+  const [showOrganisationMore, setShowOrganisationMore] = useState(false);
+  const [expandedCostCentreRows, setExpandedCostCentreRows] = useState<Record<number, boolean>>({});
+  const [expandedBranchRows, setExpandedBranchRows] = useState<Record<number, boolean>>({});
+  const [expandedDepotRows, setExpandedDepotRows] = useState<Record<number, boolean>>({});
+  const [expandedWarehouseRows, setExpandedWarehouseRows] = useState<Record<number, boolean>>({});
+  const [selectedEntitySection, setSelectedEntitySection] = useState<'costCentre' | 'branches' | 'depot' | 'warehouse' | 'project' | 'factory'>('costCentre');
 
   const { data: orgConstitutionsData } = useQuery(['master-org-constitutions'], async () => {
     const res = await masterDataService.getOrgConstitutions();
@@ -469,6 +475,18 @@ export const EntityMasterData: React.FC = () => {
                 </div>
 
                 <div className="w-full space-y-5">
+                  <button
+                    type="button"
+                    onClick={() => setShowOrganisationMore((prev) => !prev)}
+                    className="w-full md:w-auto px-3 py-2 rounded-lg border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 text-sm font-medium flex items-center gap-1.5"
+                  >
+                    <span className={`material-symbols-outlined text-base transition-transform ${showOrganisationMore ? 'rotate-180' : ''}`}>
+                      expand_more
+                    </span>
+                    {showOrganisationMore ? 'Hide more details' : 'Show more details'}
+                  </button>
+                  {showOrganisationMore && (
+                    <>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="orgEmail">
                       E Mail ID
@@ -612,8 +630,35 @@ export const EntityMasterData: React.FC = () => {
                       />
                     </div>
                   </div>
+                    </>
+                  )}
                 </div>
               </div>
+            </div>
+
+            <div className="p-5 md:p-6 border-b border-slate-100 bg-slate-50/40">
+              <h2 className="text-base font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-lg">tune</span>
+                Entity Section
+              </h2>
+              <select
+                value={selectedEntitySection}
+                onChange={(e) =>
+                  setSelectedEntitySection(
+                    e.target.value as 'costCentre' | 'branches' | 'depot' | 'warehouse' | 'project' | 'factory'
+                  )
+                }
+                className={fieldClass(
+                  'w-full md:max-w-sm rounded-lg text-slate-900 text-sm py-2.5 px-3 transition-shadow focus:border-primary focus:ring-primary focus:ring-1'
+                )}
+              >
+                <option value="costCentre">Cost Centre</option>
+                <option value="branches">Branches</option>
+                <option value="depot">Depot</option>
+                <option value="warehouse">Warehouse</option>
+                <option value="project">Project</option>
+                <option value="factory">Factory</option>
+              </select>
             </div>
 
             {/* Statutory Details */}
@@ -675,6 +720,7 @@ export const EntityMasterData: React.FC = () => {
             </div>
 
             {/* Cost Centres */}
+            {selectedEntitySection === 'costCentre' && (
             <div className="p-5 md:p-6 border-b border-slate-100">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
@@ -697,10 +743,11 @@ export const EntityMasterData: React.FC = () => {
               </div>
               <div className="space-y-3">
                 {formData.costCentres.map((cc, idx) => (
-                  <div key={idx} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-center">
+                  <div key={idx} className="rounded-lg border border-slate-200 p-3 bg-slate-50/40 space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
                     <input
                       disabled={locked}
-                      className={fieldClass('md:col-span-3 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
+                      className={fieldClass('md:col-span-2 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="Cost Centre Name"
                       value={cc.name}
                       onChange={(e) => {
@@ -720,6 +767,53 @@ export const EntityMasterData: React.FC = () => {
                         setFormData({ ...formData, costCentres: next });
                       }}
                     />
+                    <input
+                      disabled={locked}
+                      className={fieldClass('md:col-span-2 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
+                      placeholder="Phone Number"
+                      value={(cc as any).phoneNumber || ''}
+                      onChange={(e) => {
+                        const next = [...formData.costCentres];
+                        next[idx] = { ...next[idx], phoneNumber: e.target.value } as any;
+                        setFormData({ ...formData, costCentres: next });
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedCostCentreRows((prev) => ({ ...prev, [idx]: !prev[idx] }))
+                      }
+                      className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 text-sm"
+                    >
+                      {expandedCostCentreRows[idx] ? 'Hide' : 'More'}
+                    </button>
+                    </div>
+                    {expandedCostCentreRows[idx] && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                          disabled={locked}
+                          className={fieldClass('rounded-lg text-slate-900 text-sm py-2.5 px-3')}
+                          placeholder="Address Line 1"
+                          value={(cc as any).addressLine1 || ''}
+                          onChange={(e) => {
+                            const next = [...formData.costCentres];
+                            next[idx] = { ...next[idx], addressLine1: e.target.value } as any;
+                            setFormData({ ...formData, costCentres: next });
+                          }}
+                        />
+                        <input
+                          disabled={locked}
+                          className={fieldClass('rounded-lg text-slate-900 text-sm py-2.5 px-3')}
+                          placeholder="Address Line 2"
+                          value={(cc as any).addressLine2 || ''}
+                          onChange={(e) => {
+                            const next = [...formData.costCentres];
+                            next[idx] = { ...next[idx], addressLine2: e.target.value } as any;
+                            setFormData({ ...formData, costCentres: next });
+                          }}
+                        />
+                      </div>
+                    )}
                     <button
                       type="button"
                       disabled={locked}
@@ -727,7 +821,7 @@ export const EntityMasterData: React.FC = () => {
                         const next = formData.costCentres.filter((_, i) => i !== idx);
                         setFormData({ ...formData, costCentres: next });
                       }}
-                      className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm disabled:opacity-50"
+                      className="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm disabled:opacity-50"
                     >
                       Remove
                     </button>
@@ -738,8 +832,10 @@ export const EntityMasterData: React.FC = () => {
                 )}
               </div>
             </div>
+            )}
 
             {/* Branches */}
+            {selectedEntitySection === 'branches' && (
             <div className="p-5 md:p-6 border-b border-slate-100">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
@@ -762,7 +858,8 @@ export const EntityMasterData: React.FC = () => {
               </div>
               <div className="space-y-3">
                 {formData.branches.map((b, idx) => (
-                  <div key={idx} className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
+                  <div key={idx} className="rounded-lg border border-slate-200 p-3 bg-slate-50/40 space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
                     <input
                       disabled={locked}
                       className={fieldClass('md:col-span-2 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
@@ -788,17 +885,38 @@ export const EntityMasterData: React.FC = () => {
                     <input
                       disabled={locked}
                       className={fieldClass('md:col-span-2 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
-                      placeholder="Address"
-                      value={b.address || ''}
+                      placeholder="Phone Number"
+                      value={(b as any).phoneNumber || ''}
                       onChange={(e) => {
                         const next = [...formData.branches];
-                        next[idx] = { ...next[idx], address: e.target.value };
+                        next[idx] = { ...next[idx], phoneNumber: e.target.value } as any;
                         setFormData({ ...formData, branches: next });
                       }}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setExpandedBranchRows((prev) => ({ ...prev, [idx]: !prev[idx] }))}
+                      className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 text-sm"
+                    >
+                      {expandedBranchRows[idx] ? 'Hide' : 'More'}
+                    </button>
+                    </div>
+                    {expandedBranchRows[idx] && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                          disabled={locked}
+                          className={fieldClass('rounded-lg text-slate-900 text-sm py-2.5 px-3')}
+                          placeholder="Address"
+                          value={b.address || ''}
+                          onChange={(e) => {
+                            const next = [...formData.branches];
+                            next[idx] = { ...next[idx], address: e.target.value };
+                            setFormData({ ...formData, branches: next });
+                          }}
+                        />
                     <input
                       disabled={locked}
-                      className={fieldClass('md:col-span-1 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
+                      className={fieldClass('rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="GST"
                       value={(b as any).gstNumber || ''}
                       onChange={(e) => {
@@ -807,6 +925,8 @@ export const EntityMasterData: React.FC = () => {
                         setFormData({ ...formData, branches: next });
                       }}
                     />
+                      </div>
+                    )}
                     <button
                       type="button"
                       disabled={locked}
@@ -814,7 +934,7 @@ export const EntityMasterData: React.FC = () => {
                         const next = formData.branches.filter((_, i) => i !== idx);
                         setFormData({ ...formData, branches: next });
                       }}
-                      className="md:col-span-6 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm disabled:opacity-50"
+                      className="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm disabled:opacity-50"
                     >
                       Remove
                     </button>
@@ -823,8 +943,10 @@ export const EntityMasterData: React.FC = () => {
                 {formData.branches.length === 0 && <div className="text-sm text-slate-500">No branches yet.</div>}
               </div>
             </div>
+            )}
 
             {/* Depot */}
+            {selectedEntitySection === 'depot' && (
             <div className="p-5 md:p-6 border-b border-slate-100">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
@@ -847,10 +969,11 @@ export const EntityMasterData: React.FC = () => {
               </div>
               <div className="space-y-3">
                 {formData.depots.map((d, idx) => (
-                  <div key={idx} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-center">
+                  <div key={idx} className="rounded-lg border border-slate-200 p-3 bg-slate-50/40 space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
                     <input
                       disabled={locked}
-                      className={fieldClass('md:col-span-3 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
+                      className={fieldClass('md:col-span-2 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="Depot Name"
                       value={d.name}
                       onChange={(e) => {
@@ -870,6 +993,51 @@ export const EntityMasterData: React.FC = () => {
                         setFormData({ ...formData, depots: next });
                       }}
                     />
+                    <input
+                      disabled={locked}
+                      className={fieldClass('md:col-span-2 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
+                      placeholder="Phone Number"
+                      value={(d as any).phoneNumber || ''}
+                      onChange={(e) => {
+                        const next = [...formData.depots];
+                        next[idx] = { ...next[idx], phoneNumber: e.target.value } as any;
+                        setFormData({ ...formData, depots: next });
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setExpandedDepotRows((prev) => ({ ...prev, [idx]: !prev[idx] }))}
+                      className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 text-sm"
+                    >
+                      {expandedDepotRows[idx] ? 'Hide' : 'More'}
+                    </button>
+                    </div>
+                    {expandedDepotRows[idx] && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                          disabled={locked}
+                          className={fieldClass('rounded-lg text-slate-900 text-sm py-2.5 px-3')}
+                          placeholder="Address Line 1"
+                          value={(d as any).addressLine1 || ''}
+                          onChange={(e) => {
+                            const next = [...formData.depots];
+                            next[idx] = { ...next[idx], addressLine1: e.target.value } as any;
+                            setFormData({ ...formData, depots: next });
+                          }}
+                        />
+                        <input
+                          disabled={locked}
+                          className={fieldClass('rounded-lg text-slate-900 text-sm py-2.5 px-3')}
+                          placeholder="Address Line 2"
+                          value={(d as any).addressLine2 || ''}
+                          onChange={(e) => {
+                            const next = [...formData.depots];
+                            next[idx] = { ...next[idx], addressLine2: e.target.value } as any;
+                            setFormData({ ...formData, depots: next });
+                          }}
+                        />
+                      </div>
+                    )}
                     <button
                       type="button"
                       disabled={locked}
@@ -877,7 +1045,7 @@ export const EntityMasterData: React.FC = () => {
                         const next = formData.depots.filter((_, i) => i !== idx);
                         setFormData({ ...formData, depots: next });
                       }}
-                      className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm disabled:opacity-50"
+                      className="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm disabled:opacity-50"
                     >
                       Remove
                     </button>
@@ -888,8 +1056,10 @@ export const EntityMasterData: React.FC = () => {
                 )}
               </div>
             </div>
+            )}
 
             {/* Warehouse */}
+            {selectedEntitySection === 'warehouse' && (
             <div className="p-5 md:p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
@@ -912,7 +1082,8 @@ export const EntityMasterData: React.FC = () => {
               </div>
               <div className="space-y-3">
                 {formData.warehouses.map((w, idx) => (
-                  <div key={idx} className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
+                  <div key={idx} className="rounded-lg border border-slate-200 p-3 bg-slate-50/40 space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
                     <input
                       disabled={locked}
                       className={fieldClass('md:col-span-2 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
@@ -938,17 +1109,38 @@ export const EntityMasterData: React.FC = () => {
                     <input
                       disabled={locked}
                       className={fieldClass('md:col-span-2 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
-                      placeholder="Address"
-                      value={w.address || ''}
+                      placeholder="Phone Number"
+                      value={(w as any).phoneNumber || ''}
                       onChange={(e) => {
                         const next = [...formData.warehouses];
-                        next[idx] = { ...next[idx], address: e.target.value };
+                        next[idx] = { ...next[idx], phoneNumber: e.target.value } as any;
                         setFormData({ ...formData, warehouses: next });
                       }}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setExpandedWarehouseRows((prev) => ({ ...prev, [idx]: !prev[idx] }))}
+                      className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 text-sm"
+                    >
+                      {expandedWarehouseRows[idx] ? 'Hide' : 'More'}
+                    </button>
+                    </div>
+                    {expandedWarehouseRows[idx] && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                          disabled={locked}
+                          className={fieldClass('rounded-lg text-slate-900 text-sm py-2.5 px-3')}
+                          placeholder="Address"
+                          value={w.address || ''}
+                          onChange={(e) => {
+                            const next = [...formData.warehouses];
+                            next[idx] = { ...next[idx], address: e.target.value };
+                            setFormData({ ...formData, warehouses: next });
+                          }}
+                        />
                     <input
                       disabled={locked}
-                      className={fieldClass('md:col-span-1 rounded-lg text-slate-900 text-sm py-2.5 px-3')}
+                      className={fieldClass('rounded-lg text-slate-900 text-sm py-2.5 px-3')}
                       placeholder="GST"
                       value={(w as any).gstNumber || ''}
                       onChange={(e) => {
@@ -957,6 +1149,8 @@ export const EntityMasterData: React.FC = () => {
                         setFormData({ ...formData, warehouses: next });
                       }}
                     />
+                      </div>
+                    )}
                     <button
                       type="button"
                       disabled={locked}
@@ -964,7 +1158,7 @@ export const EntityMasterData: React.FC = () => {
                         const next = formData.warehouses.filter((_, i) => i !== idx);
                         setFormData({ ...formData, warehouses: next });
                       }}
-                      className="md:col-span-6 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm disabled:opacity-50"
+                      className="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm disabled:opacity-50"
                     >
                       Remove
                     </button>
@@ -973,6 +1167,17 @@ export const EntityMasterData: React.FC = () => {
                 {formData.warehouses.length === 0 && <div className="text-sm text-slate-500">No warehouses yet.</div>}
               </div>
             </div>
+            )}
+
+            {(selectedEntitySection === 'project' || selectedEntitySection === 'factory') && (
+              <div className="p-5 md:p-6">
+                <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+                  {selectedEntitySection === 'project'
+                    ? 'Project section will be mapped here.'
+                    : 'Factory section will be mapped here.'}
+                </div>
+              </div>
+            )}
 
           </form>
         </div>
