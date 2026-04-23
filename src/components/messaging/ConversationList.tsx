@@ -7,9 +7,9 @@ import { useAuth } from '../../context/AuthContext';
 interface ConversationListProps {
   conversations: Conversation[];
   currentConversationId?: string;
-  filter: 'All' | 'Direct' | 'Task Groups';
+  filter: 'All' | 'Direct';
   searchQuery: string;
-  onFilterChange: (filter: 'All' | 'Direct' | 'Task Groups') => void;
+  onFilterChange: (filter: 'All' | 'Direct') => void;
   onSearchChange: (query: string) => void;
   onCreateNew: () => void;
   hideHeader?: boolean;
@@ -92,8 +92,6 @@ export const ConversationList: React.FC<ConversationListProps> = ({
         (conv.type === 'direct' || (!conv.is_group && !conv.is_task_group)) && 
         !(conv.isTaskGroup || conv.is_task_group)
       );
-    } else if (filter === 'Task Groups') {
-      filtered = filtered.filter(conv => conv.isTaskGroup || conv.is_task_group);
     }
     // For 'All', show everything (no filter applied)
 
@@ -129,7 +127,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
       {!hideHeader && !hideSearchAndFilters && (
         <div className="p-6 pb-2">
           <div className="mb-6">
-            <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">Messages</h1>
+            <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">Chats</h1>
           </div>
           <div className="relative mb-6 flex items-center gap-2">
             <div className="relative flex-1">
@@ -138,7 +136,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
               </span>
               <input
                 className="w-full pl-10 pr-4 py-2 rounded-xl border-none bg-white dark:bg-surface-dark shadow-sm focus:ring-2 focus:ring-primary text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-200"
-                placeholder="Search chats or tasks..."
+                placeholder="Search chats..."
                 type="text"
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
@@ -153,7 +151,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
             </button>
           </div>
           <div className="bg-white dark:bg-surface-dark p-1 rounded-xl flex shadow-sm mb-4">
-            {(['All', 'Direct', 'Task Groups'] as const).map((filterType) => (
+            {(['All', 'Direct'] as const).map((filterType) => (
               <button
                 key={filterType}
                 onClick={() => onFilterChange(filterType)}
@@ -178,7 +176,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
               </span>
               <input
                 className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-surface-dark focus:ring-2 focus:ring-primary text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-200"
-                placeholder="Search chats or tasks..."
+                placeholder="Search chats..."
                 type="text"
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
@@ -193,7 +191,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
             </button>
           </div>
           <div className="bg-white dark:bg-surface-dark p-1 rounded-xl flex shadow-sm">
-            {(['All', 'Direct', 'Task Groups'] as const).map((filterType) => (
+            {(['All', 'Direct'] as const).map((filterType) => (
               <button
                 key={filterType}
                 onClick={() => onFilterChange(filterType)}
@@ -214,7 +212,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
           <div>
             <h3 className="flex items-center text-xs font-bold text-primary uppercase tracking-wider mb-3 px-2">
               <span className="material-icons-round text-sm mr-1">person</span>
-              Recent Messages
+              Recent Chats
             </h3>
             <div className="space-y-1">
               {allConversations.map((conv) => {

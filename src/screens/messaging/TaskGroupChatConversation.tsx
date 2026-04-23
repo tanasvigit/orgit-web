@@ -128,7 +128,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     {
       onSuccess: () => {
         queryClient.invalidateQueries(['conversation', conversationId]);
-        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['conversations', 'task']);
         toast.success(isPinned ? 'Conversation unpinned' : 'Conversation pinned');
       },
       onError: (err: any) => {
@@ -253,7 +253,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     () => messageService.markMessagesAsReadByConversationId(conversationId!),
     {
       onSuccess: () => {
-        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['conversations', 'task']);
       }
     }
   );
@@ -1190,8 +1190,8 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
   // Fetch conversations list for sidebar
   const { data: conversations = [] } = useQuery(
-    'conversations',
-    () => conversationService.getConversations(),
+    ['conversations', 'task'],
+    () => conversationService.getConversations('task'),
     {
       refetchInterval: 30000, // Refetch every 30 seconds
     }
@@ -1247,7 +1247,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     {
       onSuccess: () => {
         queryClient.invalidateQueries(['conversation', conversationId]);
-        queryClient.invalidateQueries('conversations');
+        queryClient.invalidateQueries(['conversations', 'task']);
         if (effectiveTaskId) {
           queryClient.invalidateQueries(['task', effectiveTaskId]);
           queryClient.invalidateQueries('dashboard');
@@ -1306,7 +1306,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   // When task no longer exists (deleted), keep conversation list in sync so this conv disappears from sidebar
   useEffect(() => {
     if (taskNotFound) {
-      queryClient.invalidateQueries(['conversations']);
+      queryClient.invalidateQueries(['conversations', 'task']);
       queryClient.invalidateQueries(['conversation-details']);
     }
   }, [taskNotFound, queryClient]);
@@ -1371,7 +1371,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     {
       onSuccess: () => {
         queryClient.invalidateQueries(['task', taskId]);
-        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['conversations', 'task']);
         queryClient.invalidateQueries(['dashboard']);
         queryClient.invalidateQueries(['dashboard-statistics']);
         loadMessages(); // Reload messages to show verification message
@@ -1431,7 +1431,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       onSuccess: () => {
         setHasAcceptedLocally(true); // Hide buttons immediately
         queryClient.invalidateQueries(['tasks']);
-        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['conversations', 'task']);
         queryClient.invalidateQueries(['dashboard']);
         queryClient.invalidateQueries(['dashboard-statistics']);
         if (user?.role === 'admin') {
@@ -1450,7 +1450,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       onSuccess: () => {
         queryClient.invalidateQueries(['task', taskId]);
         queryClient.invalidateQueries(['tasks']);
-        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['conversations', 'task']);
         queryClient.invalidateQueries(['dashboard']);
         queryClient.invalidateQueries(['dashboard-statistics']);
         if (user?.role === 'admin') {
@@ -1511,7 +1511,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       onSuccess: async (data: any) => {
         queryClient.invalidateQueries(['task', taskId]);
         queryClient.invalidateQueries(['tasks']);
-        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['conversations', 'task']);
         queryClient.invalidateQueries(['dashboard']);
         queryClient.invalidateQueries(['dashboard-statistics']);
         if (user?.role === 'admin') {

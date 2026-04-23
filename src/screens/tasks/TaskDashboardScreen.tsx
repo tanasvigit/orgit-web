@@ -264,11 +264,11 @@ export const TaskDashboardScreen: React.FC = () => {
     return ids;
   }, [dashboardData, viewFilter]);
 
-  // Fetch conversations (all conversations).
+  // Fetch task conversations only.
   // refetchOnMount: "always" + staleTime: 0 so we never render stale cached data on mount; fresh fetch runs first.
   const { data: conversations = [], isLoading: isConversationsLoading, isFetching: isConversationsFetching } = useQuery(
-    'conversations',
-    () => conversationService.getConversations(),
+    ['conversations', 'task'],
+    () => conversationService.getConversations('task'),
     {
       refetchInterval: 30000, // Refetch every 30 seconds
       refetchOnMount: 'always',
@@ -621,7 +621,7 @@ export const TaskDashboardScreen: React.FC = () => {
       return;
     }
 
-    queryClient.setQueryData('conversations', (oldData: any[] = []) => {
+    queryClient.setQueryData(['conversations', 'task'], (oldData: any[] = []) => {
       const conversationId = message.conversation_id;
       const conversationIndex = oldData.findIndex(
         (conv: any) => (conv.id || conv.conversationId) === conversationId
@@ -629,7 +629,7 @@ export const TaskDashboardScreen: React.FC = () => {
 
       if (conversationIndex === -1) {
         // Conversation not found, refetch to get it
-        queryClient.invalidateQueries('conversations');
+        queryClient.invalidateQueries(['conversations', 'task']);
         return oldData;
       }
 
@@ -709,7 +709,7 @@ export const TaskDashboardScreen: React.FC = () => {
           console.log('📊 Message status update in TaskDashboardScreen:', update);
           
           if (update.conversationId && update.messageId) {
-            queryClient.setQueryData('conversations', (oldData: any[] = []) => {
+            queryClient.setQueryData(['conversations', 'task'], (oldData: any[] = []) => {
               const updated = oldData.map((conv: any) => {
                 if ((conv.id || conv.conversationId) === update.conversationId) {
                   const lastMsg = conv.lastMessage || conv.last_message;
@@ -747,7 +747,7 @@ export const TaskDashboardScreen: React.FC = () => {
         const handleConversationMessagesRead = (data: any) => {
           console.log('Conversation messages read:', data);
           if (data.conversationId) {
-            queryClient.setQueryData('conversations', (oldData: any[] = []) => {
+            queryClient.setQueryData(['conversations', 'task'], (oldData: any[] = []) => {
               const updated = oldData.map((conv: any) => {
                 if ((conv.id || conv.conversationId) === data.conversationId) {
                   return {
@@ -868,7 +868,7 @@ export const TaskDashboardScreen: React.FC = () => {
           toast.error(err?.message || 'Failed to get upload status');
         }
         queryClient.invalidateQueries('tasks');
-        queryClient.invalidateQueries('conversations');
+        queryClient.invalidateQueries(['conversations', 'task']);
         if (bulkTaskFileInputRef.current) bulkTaskFileInputRef.current.value = '';
         setIsBulkUploadingTasks(false);
       },
@@ -1454,7 +1454,7 @@ export const TaskDashboardScreen: React.FC = () => {
       await taskService.rejectTask(rejectTaskId, rejectReason.trim());
       toast.success('Task rejected');
       queryClient.invalidateQueries('tasks');
-      queryClient.invalidateQueries('conversations');
+      queryClient.invalidateQueries(['conversations', 'task']);
       queryClient.invalidateQueries(['task', rejectTaskId]);
       if (rejectConvId) queryClient.invalidateQueries(['conversation-details', rejectConvId]);
       queryClient.invalidateQueries(['dashboard']);
@@ -1526,7 +1526,7 @@ export const TaskDashboardScreen: React.FC = () => {
           onClose={() => setShowTaskCreateModal(false)}
           onSuccess={() => {
             setShowTaskCreateModal(false);
-            queryClient.invalidateQueries('conversations');
+        queryClient.invalidateQueries(['conversations', 'task']);
           }}
         />
 
@@ -1616,7 +1616,7 @@ export const TaskDashboardScreen: React.FC = () => {
         onClose={() => setShowTaskCreateModal(false)}
         onSuccess={() => {
           setShowTaskCreateModal(false);
-          queryClient.invalidateQueries('conversations');
+          queryClient.invalidateQueries(['conversations', 'task']);
         }}
       />
 

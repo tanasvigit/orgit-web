@@ -40,6 +40,8 @@ export interface ConversationResponse {
   conversations: Conversation[];
 }
 
+export type ConversationScope = 'all' | 'chat' | 'task';
+
 export interface CreateConversationRequest {
   otherUserId: string;
 }
@@ -94,8 +96,10 @@ export const conversationService = {
   /**
    * Get all conversations for the current user
    */
-  getConversations: async (): Promise<Conversation[]> => {
-    const response = await api.get<ConversationResponse>('/conversations');
+  getConversations: async (scope: ConversationScope = 'all'): Promise<Conversation[]> => {
+    const response = await api.get<ConversationResponse>('/conversations', {
+      params: { scope },
+    });
     // Normalize the response to match our Conversation interface
     const conversations = (response.data.conversations || response.data as any).map((conv: any) => {
       const otherMembers = conv.other_members || conv.otherMembers || [];

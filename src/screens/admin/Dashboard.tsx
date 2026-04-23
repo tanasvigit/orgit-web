@@ -6,11 +6,13 @@ import { AdminLayout } from '../../components/admin/AdminLayout';
 import { dashboardService } from '../../services/dashboardService';
 import { useAuth } from '../../context/AuthContext';
 import { taskService } from '../../services/taskService';
+import { conversationService } from '../../services/conversationService';
 import { mergeTaskWithFinancial } from '../../utils/taskFinancialStorage';
 import { isTaskDeleted } from '../../utils/taskUtils';
 import { useTaskTransitionAnimation } from '../../hooks/useTaskTransitionAnimation';
 import { TaskTransitionAnimation } from '../../components/dashboard/TaskTransitionAnimation';
 import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
+import { waitForSocketConnection } from '../../services/socketService';
 
 export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -54,6 +56,14 @@ export const AdminDashboard: React.FC = () => {
 
   const selfTasks = dashboardData?.data?.selfTasks;
   const assignedTasks = dashboardData?.data?.assignedTasks;
+  const { data: taskConversations = [] } = useQuery(
+    ['dashboard-task-conversations', 'admin'],
+    () => conversationService.getConversations('task'),
+    {
+      refetchInterval: 30000,
+      refetchOnMount: 'always',
+    }
+  );
 
   // Animation hook (driven by navigation state from Task Details)
   const { shouldAnimate, taskId, fromStatus, toStatus, taskSection, clearAnimationState } = useTaskTransitionAnimation();
@@ -108,6 +118,67 @@ export const AdminDashboard: React.FC = () => {
   }, [shouldAnimate, taskSection, fromStatus, toStatus, isLoading]);
 
   const currentUserId = user?.id || (user as any)?.userId;
+  const unreadCountByConversationId = useMemo(() => {
+    const map: Record<string, number> = {};
+    (taskConversations || []).forEach((conv: any) => {
+      const convId = String(conv?.id || conv?.conversationId || '').trim();
+      if (!convId) return;
+      map[convId] = Number(conv?.unreadCount ?? conv?.unread_count ?? 0) || 0;
+    });
+    return map;
+  }, [taskConversations]);
+
+  useEffect(() => {
+    let mounted = true;
+    let cleanup: (() => void) | undefined;
+
+    const setupTaskConversationListeners = async () => {
+      try {
+        const socket = await waitForSocketConnection();
+        if (!mounted) return;
+
+        const handleNewMessage = (message: any) => {
+          const convId = String(message?.conversation_id || '').trim();
+          if (!convId) return;
+          queryClient.setQueryData(['dashboard-task-conversations', 'admin'], (oldData: any[] = []) => {
+            return oldData.map((conv: any) => {
+              const id = String(conv?.id || conv?.conversationId || '').trim();
+              if (id !== convId) return conv;
+              const nextUnread = Number(conv?.unreadCount ?? conv?.unread_count ?? 0) + 1;
+              return { ...conv, unreadCount: nextUnread, unread_count: nextUnread };
+            });
+          });
+        };
+
+        const handleConversationMessagesRead = (data: any) => {
+          const convId = String(data?.conversationId || '').trim();
+          if (!convId) return;
+          queryClient.setQueryData(['dashboard-task-conversations', 'admin'], (oldData: any[] = []) => {
+            return oldData.map((conv: any) => {
+              const id = String(conv?.id || conv?.conversationId || '').trim();
+              if (id !== convId) return conv;
+              return { ...conv, unreadCount: 0, unread_count: 0 };
+            });
+          });
+        };
+
+        socket.on('new_message', handleNewMessage);
+        socket.on('conversation_messages_read', handleConversationMessagesRead);
+        cleanup = () => {
+          socket.off('new_message', handleNewMessage);
+          socket.off('conversation_messages_read', handleConversationMessagesRead);
+        };
+      } catch {
+        // ignore socket setup errors on dashboard
+      }
+    };
+
+    setupTaskConversationListeners();
+    return () => {
+      mounted = false;
+      cleanup?.();
+    };
+  }, [queryClient]);
 
   const refetchAdminDashboard = React.useCallback(() => {
     queryClient.invalidateQueries(['admin-dashboard']);
@@ -476,6 +547,7 @@ export const AdminDashboard: React.FC = () => {
             .filter((a: any) => !!a.id);
           const hasFinance = merged.financial_value != null || merged.finance_type;
           const isCreator = (merged.created_by || merged.creator_id) === currentUserId;
+          const convId = String(merged.conversation_id || merged.conversationId || '').trim();
 
           return (
             <TaskCard
@@ -490,6 +562,7 @@ export const AdminDashboard: React.FC = () => {
               assignees={cardAssignees}
               progress={cardStatus === 'inprogress' ? progress : undefined}
               finance={hasFinance && isCreator ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
+              unreadCount={convId ? unreadCountByConversationId[convId] ?? 0 : 0}
               onClick={() => navigate(`/admin/tasks/${task.id}`)}
             />
           );
@@ -894,6 +967,7 @@ export const AdminDashboard: React.FC = () => {
                     const full = taskDetails[task.id];
                     const merged = mergeTaskWithFinancial(full ? { ...task, ...full } : task);
                     const convId = merged.conversation_id || merged.conversationId;
+                    const normalizedConvId = String(convId || '').trim();
                     const assignees = Array.isArray(merged?.assignees) ? merged.assignees : [];
                     const totalMembers = assignees.length;
                     const verifiedCompleted = assignees.filter((a: any) => !!a?.verified_at).length;
@@ -926,6 +1000,7 @@ export const AdminDashboard: React.FC = () => {
                         assignees={cardAssignees}
                         progress={progress}
                         finance={hasFinance && isCreator ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
+                        unreadCount={normalizedConvId ? unreadCountByConversationId[normalizedConvId] ?? 0 : 0}
                         onClick={() =>
                           convId
                             ? navigate(`/admin/tasks/task-group/${convId}`)

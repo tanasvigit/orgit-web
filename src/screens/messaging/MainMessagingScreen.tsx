@@ -8,7 +8,7 @@ import { AdminLayout } from '../../components/admin/AdminLayout';
 import { ConversationList } from '../../components/messaging/ConversationList';
 import { NewChatModal } from '../../components/messaging/NewChatModal';
 
-type FilterType = 'All' | 'Direct' | 'Task Groups';
+type FilterType = 'All' | 'Direct';
 
 export const MainMessagingScreen: React.FC = () => {
   const { user } = useAuth();
@@ -21,8 +21,8 @@ export const MainMessagingScreen: React.FC = () => {
 
   // Fetch conversations
   const { data: conversations = [] } = useQuery(
-    'conversations',
-    () => conversationService.getConversations(),
+    ['conversations', 'chat'],
+    () => conversationService.getConversations('chat'),
     {
       refetchInterval: 30000, // Refetch every 30 seconds
     }
@@ -39,8 +39,6 @@ export const MainMessagingScreen: React.FC = () => {
         (conv.type === 'direct' || (!conv.is_group && !conv.is_task_group)) && 
         !(conv.isTaskGroup || conv.is_task_group)
       );
-    } else if (filter === 'Task Groups') {
-      filtered = filtered.filter(conv => conv.isTaskGroup || conv.is_task_group);
     }
     // For 'All', show everything (no filter applied)
 
@@ -77,7 +75,7 @@ export const MainMessagingScreen: React.FC = () => {
       return;
     }
 
-    queryClient.setQueryData('conversations', (oldData: any[] = []) => {
+    queryClient.setQueryData(['conversations', 'chat'], (oldData: any[] = []) => {
       const conversationId = message.conversation_id;
       const conversationIndex = oldData.findIndex(
         (conv: any) => (conv.id || conv.conversationId) === conversationId
@@ -85,7 +83,7 @@ export const MainMessagingScreen: React.FC = () => {
 
       if (conversationIndex === -1) {
         // Conversation not found, refetch to get it
-        queryClient.invalidateQueries('conversations');
+        queryClient.invalidateQueries(['conversations', 'chat']);
         return oldData;
       }
 
@@ -175,7 +173,7 @@ export const MainMessagingScreen: React.FC = () => {
           console.log('📊 Message status update in MainMessagingScreen:', update);
           
           if (update.conversationId && update.messageId) {
-            queryClient.setQueryData('conversations', (oldData: any[] = []) => {
+            queryClient.setQueryData(['conversations', 'chat'], (oldData: any[] = []) => {
               const updated = oldData.map((conv: any) => {
                 if ((conv.id || conv.conversationId) === update.conversationId) {
                   const lastMsg = conv.lastMessage || conv.last_message;
@@ -216,7 +214,7 @@ export const MainMessagingScreen: React.FC = () => {
           console.log('Conversation messages read:', data);
           if (data.conversationId) {
             // Clear unread count for this conversation
-            queryClient.setQueryData('conversations', (oldData: any[] = []) => {
+            queryClient.setQueryData(['conversations', 'chat'], (oldData: any[] = []) => {
               const updated = oldData.map((conv: any) => {
                 if ((conv.id || conv.conversationId) === data.conversationId) {
                   return {

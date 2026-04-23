@@ -10,7 +10,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { path: '/admin', icon: 'grid_view', label: 'Dashboard' },
-  { path: '/admin/messages', icon: 'chat', label: 'Messaging' },
+  { path: '/admin/messages', icon: 'chat', label: 'Chats' },
   { path: '/admin/tasks', icon: 'check_circle', label: 'Task Management' },
   { path: '/admin/documents', icon: 'description', label: 'Document Management' },
 ];

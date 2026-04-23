@@ -17,6 +17,7 @@ interface TaskCardProps {
   progress?: number;
   /** Optional finance info (amount + type) to show a small row; mirrors mobile semantics. */
   finance?: { amount?: number | null; type?: 'income' | 'expense' | string | null };
+  unreadCount?: number;
   onClick?: () => void;
 }
 
@@ -32,6 +33,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   assignees = [],
   progress,
   finance,
+  unreadCount = 0,
   onClick,
 }) => {
   // Status color mapping with full Tailwind classes (required for build-time class detection)
@@ -70,15 +72,22 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       <div className="p-5 pl-6">
         <div className="flex justify-between items-start mb-2">
           <StatusBadge status={status} />
-          <button
-            className="text-gray-400 hover:text-primary transition-colors"
-            onClick={(e) => {
-              e.stopPropagation();
-              // Handle menu
-            }}
-          >
-            <span className="material-symbols-outlined text-[20px]">more_horiz</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {unreadCount > 0 && (
+              <span className="inline-flex min-w-[20px] h-5 px-1.5 items-center justify-center rounded-full bg-primary text-white text-[10px] font-bold">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+            <button
+              className="text-gray-400 hover:text-primary transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                // Handle menu
+              }}
+            >
+              <span className="material-symbols-outlined text-[20px]">more_horiz</span>
+            </button>
+          </div>
         </div>
         <h4
           className={`text-text-main dark:text-white font-bold text-base mb-1 ${

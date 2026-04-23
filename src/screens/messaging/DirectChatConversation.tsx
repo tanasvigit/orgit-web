@@ -90,8 +90,8 @@ export const DirectChatConversation: React.FC = () => {
 
   // Fetch conversations list for sidebar
   const { data: conversations = [] } = useQuery(
-    'conversations',
-    () => conversationService.getConversations(),
+    ['conversations', 'chat'],
+    () => conversationService.getConversations('chat'),
     {
       refetchInterval: 30000, // Refetch every 30 seconds
     }
@@ -129,7 +129,7 @@ export const DirectChatConversation: React.FC = () => {
     {
       onSuccess: () => {
         queryClient.invalidateQueries(['conversation', conversationId]);
-        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['conversations', 'chat']);
         toast.success(isPinned ? 'Conversation unpinned' : 'Conversation pinned');
       },
       onError: (err: any) => {
@@ -305,7 +305,7 @@ export const DirectChatConversation: React.FC = () => {
     () => messageService.markMessagesAsReadByConversationId(conversationId!),
     {
       onSuccess: () => {
-        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['conversations', 'chat']);
         setUnreadCount(0);
       }
     }
@@ -322,7 +322,7 @@ export const DirectChatConversation: React.FC = () => {
     {
       onSuccess: () => {
         // Messages will be received via socket, no need to refetch
-        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['conversations', 'chat']);
       }
     }
   );
