@@ -636,31 +636,6 @@ export const EntityMasterData: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-5 md:p-6 border-b border-slate-100 bg-slate-50/40">
-              <h2 className="text-base font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-lg">tune</span>
-                Entity Section
-              </h2>
-              <select
-                value={selectedEntitySection}
-                onChange={(e) =>
-                  setSelectedEntitySection(
-                    e.target.value as 'costCentre' | 'branches' | 'depot' | 'warehouse' | 'project' | 'factory'
-                  )
-                }
-                className={fieldClass(
-                  'w-full md:max-w-sm rounded-lg text-slate-900 text-sm py-2.5 px-3 transition-shadow focus:border-primary focus:ring-primary focus:ring-1'
-                )}
-              >
-                <option value="costCentre">Cost Centre</option>
-                <option value="branches">Branches</option>
-                <option value="depot">Depot</option>
-                <option value="warehouse">Warehouse</option>
-                <option value="project">Project</option>
-                <option value="factory">Factory</option>
-              </select>
-            </div>
-
             {/* Statutory Details */}
             <div className="p-5 md:p-6 border-b border-slate-100 bg-slate-50/40">
               <h2 className="text-base font-semibold text-slate-900 mb-5 flex items-center gap-2">
@@ -717,6 +692,31 @@ export const EntityMasterData: React.FC = () => {
                   />
                 </div>
               </div>
+            </div>
+
+            <div className="p-5 md:p-6 border-b border-slate-100 bg-slate-50/40">
+              <h2 className="text-base font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-lg">tune</span>
+                Entity Section
+              </h2>
+              <select
+                value={selectedEntitySection}
+                onChange={(e) =>
+                  setSelectedEntitySection(
+                    e.target.value as 'costCentre' | 'branches' | 'depot' | 'warehouse' | 'project' | 'factory'
+                  )
+                }
+                className={fieldClass(
+                  'w-full md:max-w-sm rounded-lg text-slate-900 text-sm py-2.5 px-3 transition-shadow focus:border-primary focus:ring-primary focus:ring-1'
+                )}
+              >
+                <option value="costCentre">Cost Centre</option>
+                <option value="branches">Branches</option>
+                <option value="depot">Depot</option>
+                <option value="warehouse">Warehouse</option>
+                <option value="project">Project</option>
+                <option value="factory">Factory</option>
+              </select>
             </div>
 
             {/* Cost Centres */}

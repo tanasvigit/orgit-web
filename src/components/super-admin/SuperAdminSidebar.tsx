@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { showLogoutConfirm } from '../../utils/logoutConfirm';
 
 interface NavItem {
   path: string;
@@ -22,7 +24,9 @@ interface SuperAdminSidebarProps {
 
 export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRef }) => {
   const location = useLocation();
-  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const { toast } = useToast();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
@@ -124,10 +128,12 @@ export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRe
           );
         })}
       </nav>
-      <div className={`p-4 border-t border-super-admin-border-light dark:border-super-admin-border-dark ${isCollapsed ? 'px-2' : ''}`}>
-        <div className={`flex items-center gap-3 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer transition-colors ${
-          isCollapsed ? 'justify-center' : ''
-        }`}>
+      <div className={`shrink-0 p-4 border-t border-super-admin-border-light dark:border-super-admin-border-dark space-y-2 ${isCollapsed ? 'px-2' : ''}`}>
+        <div
+          className={`flex items-center gap-3 p-2 rounded-lg bg-gray-50/80 dark:bg-slate-800/50 ${
+            isCollapsed ? 'justify-center' : ''
+          }`}
+        >
           {user?.profilePhotoUrl ? (
             <img
               alt={user.name}
@@ -146,6 +152,41 @@ export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRe
             </div>
           )}
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            navigate('/profile');
+            if (window.innerWidth < 768) setIsMobileOpen(false);
+          }}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors min-h-[44px] ${
+            isCollapsed ? 'justify-center' : ''
+          } ${
+            location.pathname === '/profile'
+              ? 'bg-super-admin-primary text-white shadow-md'
+              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+          }`}
+          title={isCollapsed ? 'Profile' : undefined}
+        >
+          <span className="material-symbols-outlined text-[22px] shrink-0">person</span>
+          {!isCollapsed && <span className="font-medium text-sm">Profile</span>}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            showLogoutConfirm(toast, logout, navigate, {
+              onAfterConfirm: () => {
+                if (window.innerWidth < 768) setIsMobileOpen(false);
+              },
+            });
+          }}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors min-h-[44px] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 ${
+            isCollapsed ? 'justify-center' : ''
+          }`}
+          title={isCollapsed ? 'Logout' : undefined}
+        >
+          <span className="material-symbols-outlined text-[22px] shrink-0">logout</span>
+          {!isCollapsed && <span className="font-medium text-sm">Logout</span>}
+        </button>
       </div>
     </>
   );

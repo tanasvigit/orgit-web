@@ -62,9 +62,8 @@ export const TaskChatScreen: React.FC = () => {
     ((task as any).created_by === currentUserId ||
       (task as any).creator_id === currentUserId);
 
-  // **Access rule**: task group chat is available only after user accepts the task,
-  // except the creator who always has access.
-  const canAccessChat = isCreator || (isAssigned && hasAccepted);
+  // No separate acceptance step: assigned users can access task chat immediately.
+  const canAccessChat = isCreator || isAssigned;
 
   // Accept / Reject mutations (same backend flow as TaskDetailsScreen)
   const acceptTaskMutation = useMutation(
@@ -276,8 +275,8 @@ export const TaskChatScreen: React.FC = () => {
             You must accept this task before you can access the task group chat.
           </p>
 
-          {/* Quick Accept / Reject actions for assignee */}
-          {isAssigned && !hasAccepted && (
+          {/* Acceptance step removed */}
+          {false && isAssigned && !hasAccepted && (
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-3">
                 <button

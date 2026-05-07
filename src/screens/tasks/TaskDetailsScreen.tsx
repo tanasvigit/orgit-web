@@ -230,8 +230,8 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     }
   );
 
-  const canAccept = !isCreator && isAssigned && !hasAccepted && !hasRejected && !hasAcceptedLocally;
-  const canReject = !isCreator && isAssigned && !hasRejected && !hasAccepted && !hasAcceptedLocally;
+  const canAccept = false;
+  const canReject = false;
 
   const handleAccept = async () => {
     try {
@@ -260,13 +260,20 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     }
   };
 
-  // Mirror mobile: creator can mark complete without accepting; entire task completes when creator marks complete.
-  // After verify, task.status is 'completed' (so assignees see Completed) but creator still needs to mark complete — show button for creator.
-  const canMarkComplete =
-    isAssigned &&
-    (isCreator || hasAccepted) &&
+  // Owner: can complete the whole task for everyone anytime before the task is terminal (no assignee completions required).
+  const rawTaskStatusUpper = String(normalizedTask?.status || '').toLowerCase();
+  const canOwnerForceCompleteTask =
+    !!isCreator &&
+    !!normalizedTask &&
+    rawTaskStatusUpper !== 'completed' &&
+    rawTaskStatusUpper !== 'deleted' &&
+    rawTaskStatusUpper !== 'rejected';
+
+  const canMarkCompleteAsAssignee =
+    !!isAssigned &&
+    !isCreator &&
     !hasCompleted &&
-    (normalizedTask?.status !== 'completed' || isCreator);
+    rawTaskStatusUpper !== 'completed';
 
   // EXACT mobile logic: getMemberStats counts completed_at (NOT verified_at)
   const getMemberStats = () => {
@@ -330,7 +337,7 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
   // Per-viewer status for details page is still used in some analytics,
   // but it no longer drives Accept / Reject visibility here.
 
-  // Mark current user's assignment as complete (creator: entire task completes; assignee: pending verification)
+  // Mark current user's assignment as complete (assignees only; owner uses ownerCompleteTask)
   const markCompleteMutation = useMutation(
     () => {
       if (!taskId || !currentUserId) {
@@ -420,43 +427,82 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     }
   );
 
+  const ownerCompleteMutation = useMutation(() => taskService.ownerCompleteTask(taskId!), {
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries(['task', taskId]);
+      queryClient.invalidateQueries('tasks');
+      queryClient.invalidateQueries(['dashboard']);
+      queryClient.invalidateQueries(['dashboard-statistics']);
+      if (isAdmin) {
+        queryClient.invalidateQueries(['admin-dashboard']);
+        queryClient.invalidateQueries(['admin-dashboard-statistics']);
+      }
+
+      const message = data?.already_completed
+        ? 'This task is already marked completed.'
+        : 'Task completed. The entire task has been marked as completed.';
+      toast.success(message);
+
+      const dashboardPath = isAdmin ? '/admin' : '/dashboard';
+      navigate(dashboardPath, {
+        state: {
+          animateTaskTransition: true,
+          taskId,
+          fromStatus: 'inprogress',
+          toStatus: 'completed',
+          taskSection: 'self',
+        },
+      });
+    },
+    onError: (error: any) => {
+      toast.error(
+        error?.response?.data?.error || error?.message || 'Failed to complete task'
+      );
+    },
+  });
+
+  const handleOwnerCompleteTask = () => {
+    if (!taskId) return;
+    toast.confirm(
+      'This will mark the task completed for everyone, even if members have not finished their part. Continue?',
+      {
+        onConfirm: async () => {
+          try {
+            setProcessing(true);
+            await ownerCompleteMutation.mutateAsync();
+          } finally {
+            setProcessing(false);
+          }
+        },
+        confirmLabel: 'Yes',
+        cancelLabel: 'Cancel',
+      }
+    );
+  };
+
   const handleMarkComplete = () => {
     if (!taskId || !currentUserId) return;
-    const confirmMessage = isCreator
-      ? 'As the creator, marking complete will complete the entire task for everyone. Continue?'
-      : 'Have you completed your part of this task? Your completion will need to be verified.';
-    toast.confirm(confirmMessage, {
-      onConfirm: async () => {
-        try {
-          setProcessing(true);
-          await markCompleteMutation.mutateAsync();
-
-          // If the current user is the creator, also attempt to move the task to completed.
-          // This mirrors the mobile flow where creator completion immediately completes the task.
-          if (isCreator) {
-            try {
-              await taskService.updateTaskStatus(taskId, 'completed');
-            } catch (statusError: any) {
-              // Log but do not block UX – backend already handles task completion in markMemberComplete.
-              // eslint-disable-next-line no-console
-              console.warn('Failed to update task status to completed after creator completion:', statusError);
-            }
+    toast.confirm(
+      'Have you completed your part of this task? Your completion will need to be verified.',
+      {
+        onConfirm: async () => {
+          try {
+            setProcessing(true);
+            await markCompleteMutation.mutateAsync();
+          } catch (error: any) {
+            const message =
+              error?.response?.data?.error ||
+              error?.message ||
+              'Failed to mark completion';
+            toast.error(message);
+          } finally {
+            setProcessing(false);
           }
-
-          // navigation + animation handled in mutation onSuccess
-        } catch (error: any) {
-          const message =
-            error?.response?.data?.error ||
-            error?.message ||
-            'Failed to mark completion';
-          toast.error(message);
-        } finally {
-          setProcessing(false);
-        }
-      },
-      confirmLabel: 'Yes',
-      cancelLabel: 'Cancel',
-    });
+        },
+        confirmLabel: 'Yes',
+        cancelLabel: 'Cancel',
+      }
+    );
   };
 
   // Verify another member's completion
@@ -923,15 +969,33 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     }
   };
 
-  // Timeline current step for User Progress Analytics
-  const getTimelineCurrentStep = (): string => {
-    if (globalStatus === 'completed') return 'completed';
-    if (globalStatus === 'overdue') return 'overdue';
-    if (globalStatus === 'inprogress') return 'in_progress';
-    if (globalStatus === 'todo') return 'start';
-    return 'in_progress';
-  };
-  const timelineStep = getTimelineCurrentStep();
+  const currentStatusLabel = heroStatusLabel;
+  const statusPlacement = React.useMemo(() => {
+    if (globalStatus === 'todo' || globalStatus === 'inprogress') {
+      return { startToTarget: currentStatusLabel, targetToDue: '', afterDue: '' };
+    }
+    if (globalStatus === 'duesoon') {
+      return { startToTarget: '', targetToDue: currentStatusLabel, afterDue: '' };
+    }
+    if (globalStatus === 'overdue') {
+      return { startToTarget: '', targetToDue: '', afterDue: currentStatusLabel };
+    }
+    if (globalStatus === 'completed') {
+      const completedAtRaw =
+        (displayTask as any)?.current_user_status?.completed_at ||
+        displayTask?.completed_at ||
+        null;
+      const dueDateRaw = displayTask?.due_date || null;
+      const completedAt = completedAtRaw ? new Date(completedAtRaw).getTime() : null;
+      const dueAt = dueDateRaw ? new Date(dueDateRaw).getTime() : null;
+      const completedAfterDue =
+        completedAt != null && dueAt != null ? completedAt > dueAt : false;
+      return completedAfterDue
+        ? { startToTarget: '', targetToDue: '', afterDue: currentStatusLabel }
+        : { startToTarget: '', targetToDue: currentStatusLabel, afterDue: '' };
+    }
+    return { startToTarget: '', targetToDue: '', afterDue: '' };
+  }, [globalStatus, currentStatusLabel, displayTask]);
 
   // Explicit "Mark as In Progress" action (mirrors mobile In Progress control).
   // Only available while the task is still in TODO for the current user.
@@ -952,7 +1016,8 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
   const showActionBar =
     canAccept ||
     canReject ||
-    canMarkComplete ||
+    canOwnerForceCompleteTask ||
+    canMarkCompleteAsAssignee ||
     canDirectDelete ||
     canRequestTaskDelete ||
     canExitWithComments;
@@ -996,6 +1061,35 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
               <div className="space-y-1">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-task-primary">Due Date</p>
                 <p className="text-base font-bold text-task-primary">{formatDate(displayTask.due_date)}</p>
+              </div>
+            </div>
+            <div className="pt-2">
+              <div className="grid grid-cols-[auto_1fr_auto_1fr_auto_1fr_auto] items-center gap-2">
+                  <span className="h-4 w-4 rounded-full bg-task-primary border-2 border-white dark:border-card-dark shadow-sm" />
+                  <div className="relative h-[2px] bg-slate-200 dark:bg-slate-700">
+                    {statusPlacement.startToTarget ? (
+                      <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card-light dark:bg-card-dark px-1.5 text-[10px] font-bold text-amber-700 dark:text-amber-300 whitespace-nowrap">
+                        {statusPlacement.startToTarget}
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="h-4 w-4 rounded-full bg-task-primary border-2 border-white dark:border-card-dark shadow-sm" />
+                  <div className="relative h-[2px] bg-slate-200 dark:bg-slate-700">
+                    {statusPlacement.targetToDue ? (
+                      <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card-light dark:bg-card-dark px-1.5 text-[10px] font-bold text-task-primary whitespace-nowrap">
+                        {statusPlacement.targetToDue}
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="h-4 w-4 rounded-full bg-task-primary border-2 border-white dark:border-card-dark shadow-sm" />
+                  <div className="relative h-[2px] bg-slate-200 dark:bg-slate-700">
+                    {statusPlacement.afterDue ? (
+                      <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card-light dark:bg-card-dark px-1.5 text-[10px] font-bold text-rose-700 dark:text-rose-300 whitespace-nowrap">
+                        {statusPlacement.afterDue}
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="h-4 w-4 rounded-full bg-slate-300 dark:bg-slate-600 border-2 border-white dark:border-card-dark" />
               </div>
             </div>
             {(displayTask.financial_value != null || displayTask.finance_type) && isCreator && (
@@ -1058,68 +1152,6 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
-            {/* User Progress Analytics - Design timeline */}
-            <section className="bg-card-light dark:bg-card-dark rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-              <h3 className="text-xs font-bold text-task-primary uppercase tracking-widest mb-8">User Progress Analytics</h3>
-              <div className="space-y-0 pl-2">
-                <style>{`
-                  .timeline-line { position: absolute; left: 7px; top: 24px; bottom: -8px; width: 2px; }
-                  .timeline-item:last-child .timeline-line { display: none; }
-                `}</style>
-                <div className="relative timeline-item pb-10">
-                  <div className="timeline-line bg-slate-200 dark:bg-slate-700"></div>
-                  <div className={`absolute left-0 w-4 h-4 rounded-full border-4 border-white dark:border-card-dark z-10 ${timelineStep === 'start' ? 'bg-task-primary' : 'bg-slate-400'}`}></div>
-                  <div className="pl-8 -mt-1">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Start Date</p>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{formatDate(displayTask.start_date)}</p>
-                  </div>
-                </div>
-                <div className="relative timeline-item pb-10">
-                  <div className="timeline-line bg-slate-200 dark:bg-slate-700"></div>
-                  <div className={`absolute left-0 w-4 h-4 rounded-full z-10 ${timelineStep === 'in_progress' ? 'bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.4)] animate-pulse' : 'bg-slate-400 border-4 border-white dark:border-card-dark'}`}></div>
-                  <div className="pl-8 -mt-1">
-                    <p className={`text-sm font-bold ${timelineStep === 'in_progress' ? 'text-amber-500' : 'text-slate-500'}`}>In Progress</p>
-                  </div>
-                </div>
-                <div className="relative timeline-item pb-10">
-                  <div className="timeline-line bg-slate-200 dark:bg-slate-700"></div>
-                  <div className={`absolute left-0 w-4 h-4 rounded-full border-4 border-white dark:border-card-dark z-10 ${timelineStep === 'target' ? 'bg-task-primary' : 'bg-slate-400'}`}></div>
-                  <div className="pl-8 -mt-1">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Target Date</p>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{formatDate(displayTask.target_date)}</p>
-                  </div>
-                </div>
-                <div className="relative timeline-item pb-10">
-                  <div className="timeline-line bg-slate-200 dark:bg-slate-700"></div>
-                  <div className={`absolute left-0 w-4 h-4 rounded-full border-2 z-10 ${timelineStep === 'due_soon' ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20' : 'border-slate-300 bg-white dark:bg-slate-800'}`}></div>
-                  <div className="pl-8 -mt-1">
-                    <p className={`text-sm font-medium ${timelineStep === 'due_soon' ? 'text-amber-500' : 'text-slate-500'}`}>Due Soon</p>
-                  </div>
-                </div>
-                <div className="relative timeline-item pb-10">
-                  <div className="timeline-line bg-slate-200 dark:bg-slate-700"></div>
-                  <div className={`absolute left-0 w-4 h-4 rounded-full border-4 border-white dark:border-card-dark z-10 ${timelineStep === 'due_date' ? 'bg-task-primary' : 'bg-slate-400'}`}></div>
-                  <div className="pl-8 -mt-1">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Due Date</p>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{formatDate(displayTask.due_date)}</p>
-                  </div>
-                </div>
-                <div className="relative timeline-item pb-10">
-                  <div className="timeline-line bg-slate-200 dark:bg-slate-700"></div>
-                  <div className={`absolute left-0 w-4 h-4 rounded-full border-2 z-10 ${timelineStep === 'overdue' ? 'border-rose-500 bg-rose-50 dark:bg-rose-900/20' : 'border-slate-300 bg-white dark:bg-slate-800'}`}></div>
-                  <div className="pl-8 -mt-1">
-                    <p className={`text-sm font-medium ${timelineStep === 'overdue' ? 'text-rose-500' : 'text-slate-400'}`}>Overdue</p>
-                  </div>
-                </div>
-                <div className="relative timeline-item">
-                  <div className={`absolute left-0 w-4 h-4 rounded-full border-2 z-10 ${timelineStep === 'completed' ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300 bg-white dark:bg-slate-800'}`}></div>
-                  <div className="pl-8 -mt-1">
-                    <p className={`text-sm font-medium ${timelineStep === 'completed' ? 'text-emerald-500' : 'text-slate-400'}`}>Completed</p>
-                  </div>
-                </div>
-              </div>
-            </section>
-
             {/* Description Card */}
             {displayTask.description && (
               <section className="bg-card-light dark:bg-card-dark rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
@@ -1602,8 +1634,29 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
                   <span>Reject</span>
                 </button>
               )}
-              {canMarkComplete && (
+              {canOwnerForceCompleteTask && (
                 <button
+                  type="button"
+                  onClick={handleOwnerCompleteTask}
+                  disabled={processing}
+                  className="px-12 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20 active:scale-95 disabled:opacity-50"
+                >
+                  {processing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-xl">check_circle</span>
+                      <span>Complete task</span>
+                    </>
+                  )}
+                </button>
+              )}
+              {canMarkCompleteAsAssignee && (
+                <button
+                  type="button"
                   onClick={handleMarkComplete}
                   disabled={processing}
                   className="px-12 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20 active:scale-95 disabled:opacity-50"

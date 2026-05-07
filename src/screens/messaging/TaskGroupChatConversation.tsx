@@ -30,6 +30,7 @@ import { VoiceRecorder } from '../../components/messaging/VoiceRecorder';
 import { LocationPicker } from '../../components/messaging/LocationPicker';
 import { extractUploadedMedia } from '../../utils/chatMedia';
 import { isTaskDeleted } from '../../utils/taskUtils';
+import { getTaskStatusCategoryFromTask } from '../../utils/taskStatus';
 import { Avatar } from '../../components/shared';
 
 interface TaskGroupChatConversationProps {
@@ -71,7 +72,6 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [typing, setTyping] = useState(false);
-  const [conversationFilter, setConversationFilter] = useState<'All' | 'Direct' | 'Task Groups'>('All');
   const [conversationSearchQuery, setConversationSearchQuery] = useState('');
   const [showMessageSearch, setShowMessageSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1393,6 +1393,10 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const [acceptRejectProcessing, setAcceptRejectProcessing] = useState(false);
   const [hasAcceptedLocally, setHasAcceptedLocally] = useState(false);
   const [resolvedExitRequestIds, setResolvedExitRequestIds] = useState<Set<string>>(new Set());
+  const [showRequestDeleteModal, setShowRequestDeleteModal] = useState(false);
+  const [requestDeleteReason, setRequestDeleteReason] = useState('');
+  const [showExitRequestModal, setShowExitRequestModal] = useState(false);
+  const [exitRequestComment, setExitRequestComment] = useState('');
 
   // Get current user assignee (EXACT mobile logic) — must be before canAccept/canReject
   const currentUserAssignee = React.useMemo(() => {
@@ -1403,9 +1407,9 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     });
   }, [task?.assignees, currentUserId]);
 
-  // Accept / Reject (assignee who has not yet accepted); hide after local accept
-  const canAccept = !isTaskCreator() && !!currentUserAssignee && !(currentUserAssignee.accepted_at || currentUserAssignee.has_accepted) && !hasAcceptedLocally;
-  const canReject = canAccept;
+  // No separate acceptance step.
+  const canAccept = false;
+  const canReject = false;
 
   // On web, task group chat should always be accessible. Accept is used only to send an acknowledgement message.
   const canAccessChat = true;
@@ -1486,20 +1490,30 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     }
   };
 
-  // Check if current user can mark complete. After verify, task.status is 'completed' but creator still needs to mark complete — show button for creator.
-  const canMarkComplete = React.useMemo(() => {
-    if (!currentUserAssignee || !task) return false;
+  // Owner: complete task for everyone. Assignee: mark own part only (pending verification).
+  const canOwnerForceCompleteChat = React.useMemo(() => {
+    if (!task || !currentUserId) return false;
+    const taskOwnerId = task.created_by ?? task.creator_id;
+    const creator = !!taskOwnerId && String(taskOwnerId) === String(currentUserId);
+    if (!creator) return false;
+    const s = String(task.status || '').toLowerCase();
+    return s !== 'completed' && s !== 'deleted' && s !== 'rejected';
+  }, [task, currentUserId]);
+
+  const canMarkAssigneeCompleteChat = React.useMemo(() => {
+    if (!currentUserAssignee || !task || !currentUserId) return false;
+    const taskOwnerId = task.created_by ?? task.creator_id;
+    if (!!taskOwnerId && String(taskOwnerId) === String(currentUserId)) return false;
     const hasAccepted = currentUserAssignee.accepted_at || currentUserAssignee.has_accepted;
     const hasCompleted =
       !!currentUserAssignee.completed_at ||
       currentUserAssignee.completion_status === 'completed' ||
       currentUserAssignee.status === 'completed';
-    const taskOwnerId = task.created_by ?? task.creator_id;
-    const isCreator = !!taskOwnerId && !!currentUserId && String(taskOwnerId) === String(currentUserId);
-    return (isCreator || hasAccepted) && !hasCompleted && (task.status !== 'completed' || isCreator);
+    const s = String(task.status || '').toLowerCase();
+    return hasAccepted && !hasCompleted && s !== 'completed';
   }, [currentUserAssignee, task, currentUserId]);
 
-  // Mark member complete mutation - sends to backend (EXACT mobile flow)
+  // Mark member complete mutation (assignees only)
   const markCompleteMutation = useMutation(
     () => {
       if (!taskId || !currentUserId) {
@@ -1521,10 +1535,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         // Send chat message (mirror mobile)
         try {
           const socket = await waitForSocketConnection();
-          const text =
-            data?.taskCompleted || isTaskCreator()
-              ? '✓ I have completed my part. Task is now completed!'
-              : 'I have completed my part of the task. Please verify.';
+          const text = 'I have completed my part of the task. Please verify.';
           socket.emit('send_message', {
             conversationId,
             text,
@@ -1533,10 +1544,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         } catch (e) {
           console.warn('Socket send after mark complete:', e);
         }
-        const message =
-          data?.taskCompleted
-            ? 'Task completed. The entire task has been marked as completed.'
-            : 'Your completion has been marked and sent for approval.';
+        const message = 'Your completion has been marked and sent for approval.';
         toast.success(message);
 
         // Navigate back to dashboard and animate In Progress → Completed
@@ -1562,22 +1570,311 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     }
   );
 
+  const ownerCompleteMutation = useMutation(() => taskService.ownerCompleteTask(taskId!), {
+    onSuccess: async (data: any) => {
+      queryClient.invalidateQueries(['task', taskId]);
+      queryClient.invalidateQueries(['tasks']);
+      queryClient.invalidateQueries(['conversations', 'task']);
+      queryClient.invalidateQueries(['dashboard']);
+      queryClient.invalidateQueries(['dashboard-statistics']);
+      if (user?.role === 'admin') {
+        queryClient.invalidateQueries(['admin-dashboard']);
+        queryClient.invalidateQueries(['admin-dashboard-statistics']);
+      }
+      if (!data?.already_completed) {
+        try {
+          const socket = await waitForSocketConnection();
+          socket.emit('send_message', {
+            conversationId,
+            text: '✓ I have completed my part. Task is now completed!',
+            messageType: 'text',
+          });
+        } catch (e) {
+          console.warn('Socket send after owner complete:', e);
+        }
+      }
+      const message = data?.already_completed
+        ? 'This task is already marked completed.'
+        : 'Task completed. The entire task has been marked as completed.';
+      toast.success(message);
+
+      const dashboardPath = user?.role === 'admin' ? '/admin' : '/dashboard';
+      navigate(dashboardPath, {
+        state: {
+          animateTaskTransition: true,
+          taskId,
+          fromStatus: 'inprogress',
+          toStatus: 'completed',
+          taskSection: 'self',
+        },
+      });
+    },
+    onError: (error: any) => {
+      toast.error(
+        error?.response?.data?.error || error?.message || 'Failed to complete task'
+      );
+    },
+  });
+
+  const handleOwnerCompleteTask = () => {
+    if (!taskId) return;
+    toast.confirm(
+      'This will mark the task completed for everyone, even if members have not finished their part. Continue?',
+      {
+        onConfirm: async () => {
+          try {
+            setIsCompleting(true);
+            await ownerCompleteMutation.mutateAsync();
+          } finally {
+            setIsCompleting(false);
+          }
+        },
+        confirmLabel: 'Yes',
+        cancelLabel: 'Cancel',
+      }
+    );
+  };
+
   const handleMarkComplete = () => {
     if (!taskId || !currentUserId) return;
-    const confirmMessage = isTaskCreator()
-      ? 'As the creator, marking complete will complete the entire task for everyone. Continue?'
-      : 'Have you completed your part of this task? Your completion will need to be verified.';
-    toast.confirm(confirmMessage, {
+    toast.confirm(
+      'Have you completed your part of this task? Your completion will need to be verified.',
+      {
+        onConfirm: async () => {
+          try {
+            setIsCompleting(true);
+            await markCompleteMutation.mutateAsync();
+          } finally {
+            setIsCompleting(false);
+          }
+        },
+        confirmLabel: 'Yes',
+        cancelLabel: 'Cancel',
+      }
+    );
+  };
+
+  const isAssignedMember = !!currentUserAssignee;
+  const hasAcceptedForActions = !!(
+    currentUserAssignee?.accepted_at ||
+    currentUserAssignee?.has_accepted ||
+    (task as any)?.current_user_status?.has_accepted ||
+    hasAcceptedLocally
+  );
+  const hasRejectedForActions = !!(
+    currentUserAssignee?.has_rejected ||
+    (task as any)?.current_user_status?.has_rejected
+  );
+
+  const globalViewerStatus = React.useMemo(
+    () => (task ? getTaskStatusCategoryFromTask(task, 3, currentUserId) : null),
+    [task, currentUserId]
+  );
+
+  const isAdminOrSuperUser = user?.role === 'admin' || user?.role === 'super_admin';
+  const canDirectDeleteTask = isTaskCreator() || isAdminOrSuperUser;
+  const taskActiveForActions = !!task && String(task?.status || '').toLowerCase() !== 'rejected';
+  const canRequestTaskDeleteAction =
+    !!task &&
+    !!taskId &&
+    taskActiveForActions &&
+    !canDirectDeleteTask &&
+    (isAssignedMember || !!(task as any)?.current_user_status);
+
+  const canExitWithCommentsAction =
+    !!task &&
+    !!taskId &&
+    isAssignedMember &&
+    !isTaskCreator() &&
+    hasAcceptedForActions &&
+    String(task?.status || '').toLowerCase() !== 'rejected';
+
+  const canMarkInProgressAction =
+    !!taskId &&
+    isAssignedMember &&
+    !hasRejectedForActions &&
+    globalViewerStatus === 'todo';
+
+  /** Owner / admin / super_admin — same as Task Details direct delete */
+  const canDeleteTaskDirectly =
+    !!taskId && !!task && canDirectDeleteTask && taskActiveForActions;
+
+  const showTaskParticipantActionBar =
+    !taskDeleted &&
+    !taskNotFound &&
+    (canOwnerForceCompleteChat ||
+      canMarkAssigneeCompleteChat ||
+      canRequestTaskDeleteAction ||
+      canExitWithCommentsAction ||
+      canMarkInProgressAction ||
+      canDeleteTaskDirectly);
+
+  const markInProgressMutation = useMutation(
+    () => taskService.updateTaskStatus(taskId!, 'in_progress'),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['conversations', 'task']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        if (user?.role === 'admin') {
+          queryClient.invalidateQueries(['admin-dashboard']);
+          queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        }
+        toast.success('Task moved to In Progress.');
+        const assigneeIds = (task?.assignees || []).map((a: any) => a?.id || a?.user_id || a?.userId).filter(Boolean);
+        const hasOtherAssignees =
+          !!currentUserId && assigneeIds.some((id: any) => String(id) !== String(currentUserId));
+        const taskSection: 'self' | 'assigned' = isTaskCreator() && hasOtherAssignees ? 'assigned' : 'self';
+        const dashboardPath = isAdmin ? '/admin' : '/dashboard';
+        navigate(dashboardPath, {
+          state: {
+            animateTaskTransition: true,
+            taskId,
+            fromStatus: 'todo',
+            toStatus: 'inprogress',
+            taskSection,
+          },
+        });
+      },
+      onError: (error: any) => {
+        toast.error(
+          error?.response?.data?.error || error?.message || 'Failed to move task to In Progress'
+        );
+      },
+    }
+  );
+
+  const requestTaskDeleteMutation = useMutation(
+    (reason: string) => taskService.requestTaskDelete(taskId!, reason),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['conversations', 'task']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        queryClient.invalidateQueries(['messages', conversationId]);
+        queryClient.invalidateQueries(['conversation', conversationId]);
+        if (user?.role === 'admin') {
+          queryClient.invalidateQueries(['admin-dashboard']);
+          queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        }
+        toast.success(
+          'Your deletion request was sent to the task owner. It will also appear in the task group chat.'
+        );
+        setShowRequestDeleteModal(false);
+        setRequestDeleteReason('');
+        loadMessages();
+      },
+      onError: (error: any) => {
+        toast.error(error?.response?.data?.error || error?.message || 'Failed to send delete request');
+      },
+    }
+  );
+
+  const createExitRequestMutation = useMutation(
+    (comment: string) => taskService.createExitRequest(taskId!, comment),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['task', taskId]);
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['conversations', 'task']);
+        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        queryClient.invalidateQueries(['messages', conversationId]);
+        queryClient.invalidateQueries(['conversation', conversationId]);
+        if (user?.role === 'admin') {
+          queryClient.invalidateQueries(['admin-dashboard']);
+          queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        }
+        toast.success('Exit request submitted');
+        setShowExitRequestModal(false);
+        setExitRequestComment('');
+        loadMessages();
+      },
+      onError: (error: any) => {
+        toast.error(error?.response?.data?.error || error?.message || 'Failed to submit exit request');
+      },
+    }
+  );
+
+  const handleSubmitRequestDeleteFromChat = async () => {
+    const r = requestDeleteReason.trim();
+    if (!r || !taskId) {
+      toast.error('Please enter a reason for the deletion request.');
+      return;
+    }
+    try {
+      await requestTaskDeleteMutation.mutateAsync(r);
+    } catch {
+      // handled in mutation
+    }
+  };
+
+  const handleSubmitExitRequestFromChat = async () => {
+    const comment = exitRequestComment.trim();
+    if (!comment || !taskId) {
+      toast.error('Please enter a comment for your exit request.');
+      return;
+    }
+    try {
+      await createExitRequestMutation.mutateAsync(comment);
+    } catch {
+      // handled in mutation
+    }
+  };
+
+  const deleteTaskMutation = useMutation(
+    () => taskService.deleteTask(taskId!),
+    {
+      onSuccess: () => {
+        const deletedId = taskId!;
+        queryClient.removeQueries(['task', deletedId]);
+        queryClient.setQueryData('tasks', (old: any) =>
+          Array.isArray(old) ? old.filter((t: any) => t?.id !== deletedId) : old
+        );
+        queryClient.invalidateQueries(['tasks']);
+        queryClient.invalidateQueries(['conversations']);
+        queryClient.invalidateQueries(['conversations', 'task']);
+        queryClient.invalidateQueries(['conversation-details']);
+        queryClient.invalidateQueries(['dashboard']);
+        queryClient.invalidateQueries(['dashboard-statistics']);
+        queryClient.invalidateQueries(['admin-dashboard']);
+        queryClient.invalidateQueries(['admin-dashboard-statistics']);
+        if (conversationId) {
+          queryClient.invalidateQueries(['messages', conversationId]);
+          queryClient.invalidateQueries(['conversation', conversationId]);
+        }
+        void queryClient.refetchQueries({ queryKey: ['admin-dashboard'] });
+        void queryClient.refetchQueries({ queryKey: ['admin-dashboard-statistics'] });
+        void queryClient.refetchQueries({ queryKey: ['dashboard'] });
+        void queryClient.refetchQueries({ queryKey: ['dashboard-statistics'] });
+        toast.success('Task deleted successfully');
+        navigate(isAdmin ? '/admin/tasks' : '/tasks');
+      },
+      onError: (error: any) => {
+        toast.error(
+          error?.response?.data?.error || error?.message || 'Failed to delete task'
+        );
+      },
+    }
+  );
+
+  const handleDeleteTaskFromChat = () => {
+    if (!taskId || !canDeleteTaskDirectly) return;
+    toast.confirm('Are you sure you want to delete this task? This action cannot be undone.', {
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
       onConfirm: async () => {
         try {
-          setIsCompleting(true);
-          await markCompleteMutation.mutateAsync();
-        } finally {
-          setIsCompleting(false);
+          await deleteTaskMutation.mutateAsync();
+        } catch {
+          // handled in mutation onError
         }
       },
-      confirmLabel: 'Yes',
-      cancelLabel: 'Cancel',
     });
   };
 
@@ -2072,9 +2369,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     <ConversationList
       conversations={conversations}
       currentConversationId={conversationId}
-      filter={conversationFilter}
       searchQuery={conversationSearchQuery}
-      onFilterChange={setConversationFilter}
       onSearchChange={setConversationSearchQuery}
       onCreateNew={() => setShowNewChatModal(true)}
       hideHeader={!isAdmin}
@@ -2297,26 +2592,127 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         </div>
       )}
 
-      {/* Mark My Task Complete Section - EXACT mobile logic (assignee completion sends to backend) */}
-      {canMarkComplete && (
-        <div className="bg-emerald-50 dark:bg-emerald-900/20 border-b border-emerald-200 dark:border-emerald-800 px-6 py-4">
-          <button
-            onClick={handleMarkComplete}
-            disabled={isCompleting}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
-          >
-            {isCompleting ? (
-              <>
-                <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
-                <span>Marking complete...</span>
-              </>
-            ) : (
-              <>
-                <span className="material-symbols-outlined">check_circle</span>
-                <span>Mark My Task Complete</span>
-              </>
-            )}
-          </button>
+      {/* Task participant actions (aligned with Task Details: in progress, complete, request delete, exit) */}
+      {showTaskParticipantActionBar && (
+        <div className="border-b border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 px-4 py-3">
+          <div className="mx-auto w-full max-w-4xl">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Task Actions
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {canMarkInProgressAction && (
+            <button
+              type="button"
+              disabled={markInProgressMutation.isLoading}
+              onClick={() => {
+                if (!taskId || markInProgressMutation.isLoading) return;
+                markInProgressMutation.mutate();
+              }}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
+            >
+              {markInProgressMutation.isLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                  <span>Moving to In Progress…</span>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[20px]">play_arrow</span>
+                  <span>Mark as In Progress</span>
+                </>
+              )}
+            </button>
+          )}
+          {canOwnerForceCompleteChat && (
+            <button
+              type="button"
+              onClick={handleOwnerCompleteTask}
+              disabled={isCompleting}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
+            >
+              {isCompleting ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                  <span>Completing…</span>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                  <span>Complete task</span>
+                </>
+              )}
+            </button>
+          )}
+          {canMarkAssigneeCompleteChat && (
+            <button
+              type="button"
+              onClick={handleMarkComplete}
+              disabled={isCompleting}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
+            >
+              {isCompleting ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                  <span>Marking complete...</span>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                  <span>Mark My Task Complete</span>
+                </>
+              )}
+            </button>
+          )}
+          {canRequestTaskDeleteAction && (
+            <button
+              type="button"
+              onClick={() => {
+                setRequestDeleteReason('');
+                setShowRequestDeleteModal(true);
+              }}
+              disabled={requestTaskDeleteMutation.isLoading}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 bg-white dark:bg-slate-800/80 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[20px]">outgoing_mail</span>
+              <span>Request Delete</span>
+            </button>
+          )}
+          {canExitWithCommentsAction && (
+            <button
+              type="button"
+              onClick={() => {
+                setExitRequestComment('');
+                setShowExitRequestModal(true);
+              }}
+              disabled={createExitRequestMutation.isLoading}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border border-indigo-300 dark:border-indigo-700 text-indigo-800 dark:text-indigo-200 bg-white dark:bg-slate-800/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[20px]">logout</span>
+              <span>Exit with Comments</span>
+            </button>
+          )}
+          {canDeleteTaskDirectly && (
+            <button
+              type="button"
+              onClick={handleDeleteTaskFromChat}
+              disabled={deleteTaskMutation.isLoading}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 bg-white dark:bg-slate-800/80 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+            >
+              {deleteTaskMutation.isLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-rose-600 border-t-transparent" />
+                  <span>Deleting…</span>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[20px]">delete_outline</span>
+                  <span>Delete task</span>
+                </>
+              )}
+            </button>
+          )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -2907,6 +3303,96 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         }
         documentAttachment={createTaskAttachment || undefined}
       />
+
+      {showRequestDeleteModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="task-chat-request-delete-title"
+        >
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700">
+            <h2 id="task-chat-request-delete-title" className="text-lg font-bold text-slate-900 dark:text-white mb-2">
+              Request task deletion
+            </h2>
+            <p className="text-slate-600 dark:text-slate-400 text-sm mb-4">
+              Only the task owner can delete this task. Send a request with a short reason — the owner is notified and it appears in the task group chat.
+            </p>
+            <textarea
+              value={requestDeleteReason}
+              onChange={(e) => setRequestDeleteReason(e.target.value)}
+              placeholder="Reason (required)..."
+              rows={4}
+              className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-500 focus:ring-2 focus:ring-primary focus:border-transparent"
+            />
+            <div className="flex gap-3 mt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRequestDeleteModal(false);
+                  setRequestDeleteReason('');
+                }}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-700/50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitRequestDeleteFromChat}
+                disabled={requestTaskDeleteMutation.isLoading || !requestDeleteReason.trim()}
+                className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-medium disabled:opacity-50"
+              >
+                {requestTaskDeleteMutation.isLoading ? 'Sending...' : 'Send request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showExitRequestModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="task-chat-exit-request-title"
+        >
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700">
+            <h2 id="task-chat-exit-request-title" className="text-lg font-bold text-slate-900 dark:text-white mb-2">
+              Exit with comments
+            </h2>
+            <p className="text-slate-600 dark:text-slate-400 text-sm mb-4">
+              Share why you are requesting to exit this task. The task owner will review it in task chat.
+            </p>
+            <textarea
+              value={exitRequestComment}
+              onChange={(e) => setExitRequestComment(e.target.value)}
+              placeholder="Comment (required)..."
+              rows={4}
+              className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-500 focus:ring-2 focus:ring-primary focus:border-transparent"
+            />
+            <div className="flex gap-3 mt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExitRequestModal(false);
+                  setExitRequestComment('');
+                }}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-700/50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitExitRequestFromChat}
+                disabled={createExitRequestMutation.isLoading || !exitRequestComment.trim()}
+                className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium disabled:opacity-50"
+              >
+                {createExitRequestMutation.isLoading ? 'Sending...' : 'Send request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 

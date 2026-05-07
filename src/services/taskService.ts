@@ -117,6 +117,11 @@ export const taskService = {
     const response = await api.post(`/tasks/${taskId}/verify`);
     return response.data;
   },
+  /** Task owner completes the entire task for all assignees in one step. */
+  ownerCompleteTask: async (taskId: string) => {
+    const response = await api.post(`/tasks/${taskId}/owner-complete`);
+    return response.data;
+  },
   rejectTaskCompletion: async (taskId: string, reason: string) => {
     const response = await api.post(`/tasks/${taskId}/reject-completion`, { reason });
     return response.data;

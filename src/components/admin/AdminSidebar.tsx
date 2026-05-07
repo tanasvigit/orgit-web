@@ -1,12 +1,22 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { showLogoutConfirm } from '../../utils/logoutConfirm';
 
 interface NavItem {
   path: string;
   icon: string;
   label: string;
 }
+
+const collapsedLabelMap: Record<string, string> = {
+  Dashboard: 'Dash board',
+  Chats: 'Chats',
+  'Task Management': 'Tasks',
+  'Document Management': "Docs",
+  Settings: 'Settings',
+};
 
 const navItems: NavItem[] = [
   { path: '/admin', icon: 'grid_view', label: 'Dashboard' },
@@ -25,7 +35,8 @@ interface AdminSidebarProps {
 export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
+  const { toast } = useToast();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
@@ -231,7 +242,11 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
     location.pathname === '/admin/services' || location.pathname.startsWith('/admin/services/') ||
     location.pathname === '/admin/entities' || location.pathname.startsWith('/admin/entities/') ||
     location.pathname === '/admin/settings/organisation-structure' || location.pathname.startsWith('/admin/settings/departments') ||
-    location.pathname.startsWith('/admin/settings/designations') || location.pathname.startsWith('/admin/settings/reporting-hierarchy');
+    location.pathname.startsWith('/admin/settings/designations') || location.pathname.startsWith('/admin/settings/reporting-hierarchy') ||
+    location.pathname === '/admin/settings/user-config' ||
+    location.pathname.startsWith('/admin/settings/reminder-config') ||
+    location.pathname.startsWith('/admin/settings/auto-escalation') ||
+    location.pathname.startsWith('/admin/settings/recurring-tasks');
 
   useEffect(() => {
     if (isSettingsActive && !isCollapsed) {
@@ -256,6 +271,11 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
             </div>
           )}
         </div>
+        {isCollapsed && (
+          <p className="text-[9px] leading-tight text-slate-500 text-center -mt-5 mb-2 max-[1366px]:text-[8px]">
+            ORGIT
+          </p>
+        )}
       </div>
       <nav className={`flex-1 overflow-y-auto overflow-x-visible pb-2 flex flex-col gap-1 max-[1366px]:gap-0 ${isCollapsed ? 'px-3 max-[1366px]:px-1.5' : 'px-3 md:px-6 max-[1366px]:px-3'}`}>
         {navItems.map((item) => {
@@ -276,7 +296,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                 }
               }}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
-                isCollapsed ? 'justify-center' : ''
+                isCollapsed ? 'justify-center flex-col gap-0.5 py-2' : ''
               } ${
                 isActive
                   ? 'bg-primary text-white shadow-md shadow-primary/20'
@@ -293,7 +313,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
               >
                 {item.icon}
               </span>
-              {!isCollapsed && <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0 max-[1366px]:text-xs">{item.label}</span>}
+              {isCollapsed ? (
+                <span className="text-[9px] leading-tight text-center whitespace-nowrap max-[1366px]:text-[8px]">
+                  {collapsedLabelMap[item.label] || item.label}
+                </span>
+              ) : (
+                <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0 max-[1366px]:text-xs">{item.label}</span>
+              )}
             </Link>
           );
         })}
@@ -302,7 +328,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
         <div className="relative">
           <div
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
-              isCollapsed ? 'justify-center' : ''
+              isCollapsed ? 'justify-center flex-col gap-0.5 py-2' : ''
             } ${
               isSettingsActive
                 ? 'bg-primary text-white shadow-md shadow-primary/20'
@@ -312,11 +338,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
             <button
               type="button"
               onClick={() => {
-                navigate('/admin/settings');
+                navigate('/admin/entity-master');
                 if (window.innerWidth < 768) setIsMobileOpen(false);
               }}
-              className={`flex items-center gap-3 min-w-0 flex-1 text-left ${isCollapsed ? 'justify-center' : ''}`}
-              title={isCollapsed ? 'Settings' : 'Settings'}
+              className={`flex min-w-0 flex-1 text-left ${
+                isCollapsed ? 'flex-col items-center justify-center gap-0.5' : 'items-center gap-3'
+              }`}
+              title={isCollapsed ? collapsedLabelMap.Settings : 'Settings'}
             >
               <span
                 className={`material-symbols-outlined text-[22px] shrink-0 max-[1366px]:text-xl ${
@@ -325,7 +353,11 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
               >
                 settings
               </span>
-              {!isCollapsed && (
+              {isCollapsed ? (
+                <span className="text-[9px] leading-tight text-center whitespace-nowrap max-[1366px]:text-[8px]">
+                  {collapsedLabelMap.Settings}
+                </span>
+              ) : (
                 <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0 flex-1 max-[1366px]:text-xs">Settings</span>
               )}
             </button>
@@ -432,6 +464,22 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                 <span className="material-symbols-outlined text-lg shrink-0">account_tree</span>
                 <span className="font-medium text-sm whitespace-nowrap">Organisation Structure</span>
               </Link>
+              <Link
+                to="/admin/settings/user-config"
+                onClick={() => {
+                  if (window.innerWidth < 768) {
+                    setIsMobileOpen(false);
+                  }
+                }}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
+                  location.pathname === '/admin/settings/user-config'
+                    ? 'bg-primary/10 text-primary font-semibold'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg shrink-0">tune</span>
+                <span className="font-medium text-sm whitespace-nowrap">User configuration</span>
+              </Link>
             </div>
           )}
         </div>
@@ -458,11 +506,11 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
         </button>
         <button
           onClick={() => {
-            logout();
-            navigate('/login');
-            if (window.innerWidth < 768) {
-              setIsMobileOpen(false);
-            }
+            showLogoutConfirm(toast, logout, navigate, {
+              onAfterConfirm: () => {
+                if (window.innerWidth < 768) setIsMobileOpen(false);
+              },
+            });
           }}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
             isCollapsed ? 'justify-center' : ''

@@ -1,5 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from 'react-query';
+import {
+  getTaskCreationUserConfig,
+  taskCreationUserConfigQueryKey,
+} from '../../services/userTaskCreationConfigService';
+import {
+  computeTaskTimelineFromStart,
+  FALLBACK_TASK_CREATION_USER_CONFIG,
+} from '../../utils/taskCreationUserConfig';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { conversationService } from '../../services/conversationService';
@@ -34,6 +42,8 @@ type UserLike = {
   name: string;
   mobile?: string;
   phone?: string;
+  organization_id?: string;
+  organizationId?: string;
 };
 
 type TaskUnitSection = {
@@ -82,6 +92,8 @@ const normalizeUser = (u: any): UserLike => ({
   name: u?.name || 'Unknown',
   mobile: u?.mobile,
   phone: u?.phone,
+  organization_id: u?.organization_id ?? u?.organizationId,
+  organizationId: u?.organizationId ?? u?.organization_id,
 });
 
 export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
@@ -118,6 +130,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [basicInfoConfirmed, setBasicInfoConfirmed] = useState(false);
 
   const [isRecurring, setIsRecurring] = useState(false);
+  const [taskRolloutType, setTaskRolloutType] = useState<'cycle_start' | 'start_date'>('cycle_start');
   const [taskFrequency, setTaskFrequency] = useState<'daily' | 'weekly' | 'monthly' | 'custom'>('weekly');
   const [taskEnds, setTaskEnds] = useState<'never' | 'specific_date' | 'after_occurrences'>('never');
   const [recurrenceEndDate, setRecurrenceEndDate] = useState(addDays(baseDate, 30));
@@ -142,12 +155,22 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
 
   const [addFinancialValue, setAddFinancialValue] = useState(false);
   const [financialValue, setFinancialValue] = useState('');
-  const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium');
 
   const [showUserModal, setShowUserModal] = useState(false);
   const [userModalMode, setUserModalMode] = useState<'owner' | 'assignees' | 'escalation'>('assignees');
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [createTaskLoading, setCreateTaskLoading] = useState(false);
+
+  const { data: tcUserConfig } = useQuery(
+    taskCreationUserConfigQueryKey,
+    getTaskCreationUserConfig,
+    {
+      staleTime: 5 * 60 * 1000,
+      enabled: visible,
+      initialData: FALLBACK_TASK_CREATION_USER_CONFIG,
+      retry: 1,
+    }
+  );
 
   const { data: usersData } = useQuery('task-create-users-redesign', () => conversationService.getAllUsers(), {
     enabled: visible,
@@ -186,7 +209,12 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     { enabled: visible }
   );
 
-  const users = useMemo(() => (usersData || []).map(normalizeUser).filter((u) => !!u.id), [usersData]);
+  const currentOrgId = String((user as any)?.organizationId || (user as any)?.organization_id || '');
+  const users = useMemo(() => {
+    const normalized = (usersData || []).map(normalizeUser).filter((u) => !!u.id);
+    if (!currentOrgId) return normalized;
+    return normalized.filter((u: any) => String(u?.organization_id || u?.organizationId || '') === currentOrgId);
+  }, [usersData, currentOrgId]);
   const services = useMemo(() => (Array.isArray(serviceData) ? serviceData : []), [serviceData]);
   const clients = useMemo(() => (Array.isArray(clientMatrixData) ? clientMatrixData : []), [clientMatrixData]);
   const taskUnitSections = useMemo<TaskUnitSection[]>(() => {
@@ -224,10 +252,27 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   }, [taskOwnerId, users, currentUserId, currentUserName]);
 
   const resetForm = () => {
+    const cfg = tcUserConfig ?? FALLBACK_TASK_CREATION_USER_CONFIG;
     const now = new Date();
     now.setHours(9, 0, 0, 0);
-    const dueDefault = initialDueDate ? new Date(initialDueDate) : addDays(now, 10);
-    dueDefault.setHours(9, 0, 0, 0);
+
+    let startD = new Date(now);
+    let targetD: Date;
+    let dueD: Date;
+
+    if (initialDueDate) {
+      dueD = new Date(initialDueDate);
+      dueD.setHours(9, 0, 0, 0);
+      targetD = new Date(dueD);
+      targetD.setDate(targetD.getDate() - cfg.targetDaysBeforeDue);
+      targetD.setHours(9, 0, 0, 0);
+      if (targetD < startD) targetD = new Date(startD);
+    } else {
+      const t = computeTaskTimelineFromStart(now, cfg);
+      startD = t.start;
+      targetD = t.target;
+      dueD = t.due;
+    }
 
     setTitle(initialTitle || '');
     setDescription(initialDescription || '');
@@ -240,24 +285,24 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     setShowTagSuggestions(false);
     setBasicInfoConfirmed(false);
     setIsRecurring(false);
+    setTaskRolloutType('cycle_start');
     setTaskFrequency('weekly');
     setTaskEnds('never');
     setRecurrenceEndDate(addDays(now, 30));
     setOccurrenceCount('10');
     setSetTimelines(true);
-    setStartDate(now);
-    setTargetDate(addDays(now, 7));
-    setDueDate(dueDefault);
+    setStartDate(startD);
+    setTargetDate(targetD);
+    setDueDate(dueD);
     setAssignPeople(true);
     setTaskOwnerId(currentUserId);
     setSelectedAssignees([]);
     setAutoEscalation(false);
-    setEscalationTrigger('target_date');
+    setEscalationTrigger(cfg.autoEscalateTrigger);
     setEscalationTiming('1');
     setEscalationContacts([]);
     setAddFinancialValue(false);
     setFinancialValue('');
-    setPriority('medium');
     setUserSearchQuery('');
   };
 
@@ -266,7 +311,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       resetForm();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, initialTitle, initialDescription, initialDueDate, currentUserId]);
+  }, [visible, initialTitle, initialDescription, initialDueDate, currentUserId, tcUserConfig]);
 
   useEffect(() => {
     const loadDocument = async () => {
@@ -343,6 +388,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       toast.error('Please enter valid occurrences count');
       return false;
     }
+    if (isRecurring && !setTimelines && taskRolloutType !== 'cycle_start') {
+      toast.error('Recurring tasks without timelines require Cycle start rollout');
+      return false;
+    }
     if (assignPeople && !taskOwnerId) {
       toast.error('Please select a task owner');
       return false;
@@ -397,6 +446,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         description: taskDescription || null,
         task_type: isRecurring ? 'recurring' : 'one_time',
         recurrence_type: recurrenceType,
+        task_rollout_type: isRecurring ? taskRolloutType : undefined,
         recurrence_end_type: isRecurring ? taskEnds : null,
         recurrence_end_date: isRecurring && taskEnds === 'specific_date' ? recurrenceEndDate.toISOString() : null,
         recurrence_after_occurrences:
@@ -415,7 +465,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
           assignPeople && autoEscalation ? Number.parseInt(escalationTiming || '0', 10) || 0 : null,
         escalation_contact_ids: assignPeople && autoEscalation ? escalationContacts.map((u) => u.id) : [],
         financial_value: addFinancialValue ? Number.parseFloat(financialValue || '0') || null : null,
-        priority: addFinancialValue ? priority : null,
         task_unit: taskUnit.trim() || null,
         tags: taskTags,
         compliance_id: complianceId || undefined,
@@ -685,6 +734,29 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                   ))}
                 </div>
 
+                <label className={`${labelClass} mt-3`}>Task rollout</label>
+                <p className="mb-2 text-xs text-[#6B7280]">
+                  How each recurrence cycle lines up with dates (required for recurring tasks without timelines—use
+                  Cycle start).
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {(
+                    [
+                      { key: 'cycle_start' as const, label: 'Cycle start' },
+                      { key: 'start_date' as const, label: 'Start date' },
+                    ] as const
+                  ).map((o) => (
+                    <button
+                      key={o.key}
+                      type="button"
+                      onClick={() => setTaskRolloutType(o.key)}
+                      className={`${optionBaseClass} ${taskRolloutType === o.key ? optionActiveClass : ''}`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+
                 <label className={`${labelClass} mt-3`}>Task Ends</label>
                 <div className="flex flex-wrap gap-2">
                   {([
@@ -849,20 +921,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                   placeholder="Enter amount"
                   className={inputClass}
                 />
-
-                <label className={`${labelClass} mt-3`}>Task Priority</label>
-                <div className="flex flex-wrap gap-2">
-                  {(['high', 'medium', 'low'] as const).map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setPriority(p)}
-                      className={`${optionBaseClass} ${priority === p ? optionActiveClass : ''}`}
-                    >
-                      {p.charAt(0).toUpperCase() + p.slice(1)}
-                    </button>
-                  ))}
-                </div>
               </>
             ) : null}
           </ChatSection>

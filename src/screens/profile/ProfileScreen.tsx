@@ -5,13 +5,16 @@ import { useToast } from '../../context/ToastContext';
 import { authService } from '../../services/authService';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
+import { SuperAdminLayout } from '../../components/super-admin/SuperAdminLayout';
 import { Avatar } from '../../components/shared';
+import { showLogoutConfirm } from '../../utils/logoutConfirm';
 
 export const ProfileScreen: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout, updateUser } = useAuth();
   const { toast } = useToast();
   const isAdmin = user?.role === 'admin';
+  const isSuperAdmin = user?.role === 'super_admin';
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState(user?.name || '');
@@ -182,14 +185,7 @@ export const ProfileScreen: React.FC = () => {
   };
 
   const handleLogout = () => {
-    toast.confirm('Are you sure you want to log out?', {
-      onConfirm: async () => {
-        await logout();
-        navigate('/login');
-      },
-      confirmLabel: 'Log out',
-      cancelLabel: 'Cancel',
-    });
+    showLogoutConfirm(toast, logout, navigate);
   };
 
   const content = (
@@ -393,6 +389,10 @@ export const ProfileScreen: React.FC = () => {
       </div>
     </div>
   );
+
+  if (isSuperAdmin) {
+    return <SuperAdminLayout>{content}</SuperAdminLayout>;
+  }
 
   if (isAdmin) {
     return <AdminLayout>{content}</AdminLayout>;

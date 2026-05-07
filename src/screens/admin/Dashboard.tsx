@@ -5,6 +5,8 @@ import { TaskCard } from '../../components/shared';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { dashboardService } from '../../services/dashboardService';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { showLogoutConfirm } from '../../utils/logoutConfirm';
 import { taskService } from '../../services/taskService';
 import { conversationService } from '../../services/conversationService';
 import { mergeTaskWithFinancial } from '../../utils/taskFinancialStorage';
@@ -13,21 +15,33 @@ import { useTaskTransitionAnimation } from '../../hooks/useTaskTransitionAnimati
 import { TaskTransitionAnimation } from '../../components/dashboard/TaskTransitionAnimation';
 import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
 import { waitForSocketConnection } from '../../services/socketService';
+import { getTaskCreationUserConfig } from '../../services/userTaskCreationConfigService';
+
+type CalendarDaySnapshot = {
+  date: string;
+  count: number;
+};
 
 export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const { toast } = useToast();
   const queryClient = useQueryClient();
   const prevPathRef = useRef<string>(location.pathname);
   // Expand/collapse state for D.M. and C.M. sections (combined for both self and assigned)
   const [expandedDM, setExpandedDM] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
   // const [expandedCM, setExpandedCM] = useState(false);
   const [taskDetails, setTaskDetails] = useState<Record<string, any>>({});
   const [showAssignedMemberFilter, setShowAssignedMemberFilter] = useState(false);
   const [assignedMemberSearch, setAssignedMemberSearch] = useState('');
   const [selectedAssignedMemberIds, setSelectedAssignedMemberIds] = useState<string[]>([]);
+  const [financialPeriodFilter, setFinancialPeriodFilter] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('weekly');
   const assignedMemberFilterRef = useRef<HTMLDivElement>(null);
+  const [selfCalendarMonth, setSelfCalendarMonth] = useState(() => new Date());
+  const [assignedCalendarMonth, setAssignedCalendarMonth] = useState(() => new Date());
 
   // Refs for task transition animation (Self Tasks section)
   const selfTasksToDoIconRef = useRef<HTMLDivElement>(null);
@@ -56,6 +70,16 @@ export const AdminDashboard: React.FC = () => {
 
   const selfTasks = dashboardData?.data?.selfTasks;
   const assignedTasks = dashboardData?.data?.assignedTasks;
+  const { data: selfCalendarData, isLoading: isSelfCalendarLoading } = useQuery(
+    ['admin-dashboard-calendar', 'self', selfCalendarMonth.getFullYear(), selfCalendarMonth.getMonth() + 1],
+    () => dashboardService.getMonthlyCalendar('self', selfCalendarMonth.getFullYear(), selfCalendarMonth.getMonth() + 1),
+    { staleTime: 30000 }
+  );
+  const { data: assignedCalendarData, isLoading: isAssignedCalendarLoading } = useQuery(
+    ['admin-dashboard-calendar', 'assigned', assignedCalendarMonth.getFullYear(), assignedCalendarMonth.getMonth() + 1],
+    () => dashboardService.getMonthlyCalendar('assigned', assignedCalendarMonth.getFullYear(), assignedCalendarMonth.getMonth() + 1),
+    { staleTime: 30000 }
+  );
   const { data: taskConversations = [] } = useQuery(
     ['dashboard-task-conversations', 'admin'],
     () => conversationService.getConversations('task'),
@@ -64,6 +88,53 @@ export const AdminDashboard: React.FC = () => {
       refetchOnMount: 'always',
     }
   );
+  const { data: dashboardEvents = [], refetch: refetchDashboardEvents } = useQuery(
+    ['dashboard-events', 'admin'],
+    () => dashboardService.getEvents(30),
+    { staleTime: 60_000 }
+  );
+  const { data: allUsers = [] } = useQuery(['dashboard-event-users', 'admin'], () => conversationService.getAllUsers(), {
+    staleTime: 5 * 60_000,
+  });
+  const [showEventForm, setShowEventForm] = useState(false);
+  const [eventTitle, setEventTitle] = useState('');
+  const [eventType, setEventType] = useState<'event' | 'meeting'>('event');
+  const [eventDateTime, setEventDateTime] = useState('');
+  const [selectedEventUsers, setSelectedEventUsers] = useState<string[]>([]);
+  const [showEventParticipantsPicker, setShowEventParticipantsPicker] = useState(false);
+  const currentOrgId = (user as any)?.organizationId || (user as any)?.organization_id;
+  const orgUsers = useMemo(
+    () =>
+      (allUsers as any[]).filter(
+        (u: any) => String(u.organization_id ?? u.organizationId ?? '') === String(currentOrgId ?? '')
+      ),
+    [allUsers, currentOrgId]
+  );
+  const [savingEvent, setSavingEvent] = useState(false);
+  const handleCreateDashboardEvent = async () => {
+    try {
+      setSavingEvent(true);
+      await dashboardService.createEvent({
+        title: eventTitle.trim(),
+        type: eventType,
+        startsAtIso: new Date(eventDateTime).toISOString(),
+        participantIds: selectedEventUsers,
+      });
+      setShowEventForm(false);
+      setEventTitle('');
+      setEventDateTime('');
+      setSelectedEventUsers([]);
+      setShowEventParticipantsPicker(false);
+      await Promise.all([refetchDashboardEvents(), refetchDashboard()]);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || e?.message || 'Failed to create event');
+    } finally {
+      setSavingEvent(false);
+    }
+  };
+  const { data: userTaskConfig } = useQuery(['task-creation-user-config-dashboard'], getTaskCreationUserConfig, {
+    staleTime: 60_000,
+  });
 
   // Animation hook (driven by navigation state from Task Details)
   const { shouldAnimate, taskId, fromStatus, toStatus, taskSection, clearAnimationState } = useTaskTransitionAnimation();
@@ -197,6 +268,17 @@ export const AdminDashboard: React.FC = () => {
       prevPathRef.current = pathname;
     }
   }, [location.pathname, refetchAdminDashboard]);
+
+  useEffect(() => {
+    const onOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (profileMenuRef.current && !profileMenuRef.current.contains(target)) {
+        setShowProfileMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onOutsideClick);
+    return () => document.removeEventListener('mousedown', onOutsideClick);
+  }, []);
 
   useEffect(() => {
     const onOutsideClick = (event: MouseEvent) => {
@@ -549,6 +631,26 @@ export const AdminDashboard: React.FC = () => {
           const isCreator = (merged.created_by || merged.creator_id) === currentUserId;
           const convId = String(merged.conversation_id || merged.conversationId || '').trim();
 
+          const resolveTaskUnitDisplay = (taskLike: any, preference: string) => {
+            const map: Record<string, { label: string; keys: string[] }> = {
+              cost_centre: {
+                label: 'Cost centre',
+                keys: ['cost_centre_name', 'costCentreName', 'cost_center_name', 'costCenterName', 'cost_centre', 'costCentre'],
+              },
+              department: { label: 'Department', keys: ['department_name', 'departmentName', 'department'] },
+              depot: { label: 'Depot', keys: ['depot_name', 'depotName', 'depot'] },
+              branch: { label: 'Branch', keys: ['branch_name', 'branchName', 'branch'] },
+              entity: { label: 'Entity', keys: ['entity_name', 'entityName', 'client_name', 'clientName'] },
+              warehouse: { label: 'Warehouse', keys: ['warehouse_name', 'warehouseName', 'warehouse'] },
+              project: { label: 'Project', keys: ['project_name', 'projectName', 'project'] },
+              factory: { label: 'Factory', keys: ['factory_name', 'factoryName', 'factory'] },
+            };
+            const chosen = map[preference] || map.cost_centre;
+            const value = chosen.keys.map((k) => taskLike?.[k]).find((v) => typeof v === 'string' && v.trim()) || '-';
+            return { unitType: chosen.label, unitName: String(value) };
+          };
+          const unitPref = userTaskConfig?.taskUnitPreference || 'cost_centre';
+          const chosenUnit = resolveTaskUnitDisplay(merged, unitPref);
           return (
             <TaskCard
               key={task.id}
@@ -563,6 +665,16 @@ export const AdminDashboard: React.FC = () => {
               progress={cardStatus === 'inprogress' ? progress : undefined}
               finance={hasFinance && isCreator ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
               unreadCount={convId ? unreadCountByConversationId[convId] ?? 0 : 0}
+              taskPeriod={(() => {
+                const start = merged.start_date || merged.startDate;
+                if (!start) return '';
+                const d = new Date(start);
+                if (Number.isNaN(d.getTime())) return '';
+                return d.toLocaleString('en-US', { month: 'short' });
+              })()}
+              frequency={String(merged.recurrence_type || merged.frequency || merged.task_frequency || ((merged.task_type === 'recurring' || merged.taskType === 'recurring' || merged.task_type === 'recurring_instance' || merged.taskType === 'recurring_instance') ? 'Recurring' : 'One-Time'))}
+              taskUnitType={chosenUnit.unitType}
+              taskUnitName={chosenUnit.unitName}
               onClick={() => navigate(`/admin/tasks/${task.id}`)}
             />
           );
@@ -669,7 +781,7 @@ export const AdminDashboard: React.FC = () => {
               <span className="material-symbols-outlined text-[18px] max-[1366px]:text-base">today</span>
             </div>
             <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
-              {getStatusCount('todo', viewType) + getToDoTasks(viewType).length}
+              {getStatusCount('todo', viewType)}
             </span>
             <span className="text-xs font-medium uppercase tracking-wide text-gray-600 dark:text-gray-400">
               TO DO
@@ -748,19 +860,160 @@ export const AdminDashboard: React.FC = () => {
     );
   };
 
+  const renderCalendarSection = (
+    title: string,
+    monthDate: Date,
+    onShiftMonth: (delta: number) => void,
+    selfDaysRaw: CalendarDaySnapshot[] | undefined,
+    assignedDaysRaw: CalendarDaySnapshot[] | undefined,
+    loading: boolean
+  ) => {
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth();
+    const firstWeekday = new Date(year, month, 1).getDay();
+    const selfDays = Array.isArray(selfDaysRaw) ? selfDaysRaw : [];
+    const assignedDays = Array.isArray(assignedDaysRaw) ? assignedDaysRaw : [];
+    const assignedByDate = new Map<string, number>();
+    assignedDays.forEach((d) => {
+      assignedByDate.set(d.date, typeof d.count === 'number' ? d.count : 0);
+    });
+    const days = selfDays.map((d) => ({
+      date: d.date,
+      selfCount: typeof d.count === 'number' ? d.count : 0,
+      assignedCount: assignedByDate.get(d.date) || 0,
+    }));
+    const cells: Array<CalendarDaySnapshot | null> = [];
+    for (let i = 0; i < firstWeekday; i += 1) cells.push(null);
+    days.forEach((d: any) => cells.push(d));
+    while (cells.length % 7 !== 0) cells.push(null);
+    const monthLabel = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(monthDate);
+
+    const dueDayBox = (day: any) => {
+      const selfCount = day.selfCount || 0;
+      const assignedCount = day.assignedCount || 0;
+      const hasAnyCount = selfCount > 0 || assignedCount > 0;
+      if (!hasAnyCount) return null;
+
+      return (
+        <div className="mt-1 rounded-md border border-primary/30 bg-primary/5 px-1 py-1 dark:bg-primary/10">
+          <div className="mb-0.5 grid grid-cols-2 gap-1 text-[8px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <div className="text-center">Self</div>
+            <div className="text-center">Assigned</div>
+          </div>
+          <div className="grid grid-cols-2 gap-1">
+            <div className="text-center text-[11px] font-bold text-primary dark:text-indigo-300">
+              {selfCount > 0 ? selfCount : ''}
+            </div>
+            <div className="text-center text-[11px] font-bold text-primary dark:text-indigo-300">
+              {assignedCount > 0 ? assignedCount : ''}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800/95 p-3">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
+            <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+              By due date · Self + Assigned (0 hidden)
+            </p>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button type="button" onClick={() => onShiftMonth(-1)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
+              <span className="material-icons-outlined text-base">chevron_left</span>
+            </button>
+            <span className="text-xs font-medium text-gray-700 dark:text-gray-300 min-w-[120px] text-center">{monthLabel}</span>
+            <button type="button" onClick={() => onShiftMonth(1)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
+              <span className="material-icons-outlined text-base">chevron_right</span>
+            </button>
+          </div>
+        </div>
+        {loading ? (
+          <div className="text-xs text-gray-500 dark:text-gray-400 py-4">Loading calendar...</div>
+        ) : (
+          <div className="grid grid-cols-7 gap-1">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((w) => (
+              <div key={w} className="text-[10px] text-center font-semibold text-gray-500 dark:text-gray-400">{w}</div>
+            ))}
+            {cells.map((day: any, idx) => (
+              <div
+                key={`${day?.date || 'blank'}-${idx}`}
+                className={`min-h-[62px] rounded border p-1 ${day ? 'border-gray-200 dark:border-gray-700' : 'border-transparent'}`}
+              >
+                {day ? (
+                  <>
+                    <div className="text-[10px] font-bold text-gray-700 dark:text-gray-200">{new Date(day.date + 'T12:00:00').getDate()}</div>
+                    {dueDayBox(day)}
+                  </>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <AdminLayout>
       <div className="min-h-screen w-full max-w-7xl flex-1 space-y-6 bg-gray-50 px-4 py-6 dark:bg-gray-900 sm:px-5 md:px-6 md:py-7 max-[1366px]:space-y-4 max-[1366px]:px-2.5 max-[1366px]:py-4">
         {/* Welcome Header */}
         <div className="mb-4 max-[1366px]:mb-3">
           <div className="mb-2 flex items-center justify-between max-[1366px]:mb-1.5">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-semibold text-gray-900 dark:text-white">
-                Welcome, {user?.name || 'Admin'}
-              </h1>
-              <p className="mt-1 text-xs text-gray-600 dark:text-gray-400 md:text-sm max-[1366px]:mt-0.5 max-[1366px]:text-[11px]">
-                Here's an overview of your tasks and progress
-              </p>
+            <div className="relative" ref={profileMenuRef}>
+              <button
+                type="button"
+                onClick={() => setShowProfileMenu((prev) => !prev)}
+                className="flex items-center gap-3 text-left"
+              >
+                {user?.profilePhotoUrl || (user as any)?.profile_photo || (user as any)?.profile_photo_url ? (
+                  <img
+                    src={(user as any)?.profilePhotoUrl || (user as any)?.profile_photo || (user as any)?.profile_photo_url}
+                    alt={user?.name || 'Admin'}
+                    className="h-11 w-11 rounded-full object-cover border border-gray-200 dark:border-gray-700"
+                  />
+                ) : (
+                  <div className="h-11 w-11 rounded-full bg-primary text-white flex items-center justify-center font-semibold">
+                    {String(user?.name || 'A').trim().charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <h1 className="text-2xl md:text-3xl font-semibold text-gray-900 dark:text-white">
+                    Hello {user?.name || 'Admin'}
+                  </h1>
+                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-400 md:text-sm max-[1366px]:mt-0.5 max-[1366px]:text-[11px]">
+                    Here's an overview of your tasks and progress
+                  </p>
+                </div>
+              </button>
+
+              {showProfileMenu && (
+                <div className="absolute left-0 top-full mt-2 w-64 rounded-xl border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-slate-800 z-20">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      navigate('/profile');
+                    }}
+                    className="w-full px-4 py-3 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-slate-700"
+                  >
+                    View/Edit Profile
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      showLogoutConfirm(toast, logout, navigate);
+                    }}
+                    className="w-full px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                  >
+                    Logout
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -772,6 +1025,151 @@ export const AdminDashboard: React.FC = () => {
           
           {/* Assigned Tasks Row */}
           {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks', assignedTasksToDoIconRef, assignedTasksInProgressIconRef, assignedTasksCompletedIconRef)}
+          {renderCalendarSection(
+            'Tasks (by due date)',
+            selfCalendarMonth,
+            (delta) => {
+              setSelfCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
+              setAssignedCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
+            },
+            selfCalendarData?.days,
+            assignedCalendarData?.days,
+            isSelfCalendarLoading || isAssignedCalendarLoading
+          )}
+
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800/95 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-900 dark:text-white">Events & Meetings</h3>
+              <button
+                type="button"
+                onClick={() => setShowEventForm((v) => !v)}
+                className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white"
+              >
+                {showEventForm ? 'Close' : 'Add'}
+              </button>
+            </div>
+            {showEventForm && (
+              <div className="mb-4 overflow-hidden rounded-2xl border border-[#E5E7EB]">
+                <div className="flex items-center justify-between bg-primary px-4 py-3">
+                  <h4 className="text-sm font-bold text-white">Create Event / Meeting</h4>
+                  <span className="text-[11px] font-semibold text-white/90">Task-create style</span>
+                </div>
+                <div className="space-y-3 bg-[#F9FAFB] p-4">
+                  <div className="rounded-xl border border-[#E7D9FF] bg-[#F8F5FF] px-4 py-4">
+                    <div className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">Basic Info</div>
+                    <label className="mb-1 mt-3 block text-sm font-semibold text-[#1F2937]">Title</label>
+                    <input
+                      value={eventTitle}
+                      onChange={(e) => setEventTitle(e.target.value)}
+                      placeholder="Event/Meeting title"
+                      className="w-full rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5 text-sm text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    />
+                    <label className="mb-1 mt-3 block text-sm font-semibold text-[#1F2937]">Date & Time</label>
+                    <input
+                      type="datetime-local"
+                      value={eventDateTime}
+                      onChange={(e) => setEventDateTime(e.target.value)}
+                      className="w-full rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5 text-sm text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    />
+                  </div>
+
+                  <div className="rounded-xl border border-[#E7D9FF] bg-[#F8F5FF] px-4 py-4">
+                    <div className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">Type & Participants</div>
+                    <label className="mb-1 mt-3 block text-sm font-semibold text-[#1F2937]">Type</label>
+                    <div className="flex flex-wrap gap-2">
+                      {(['event', 'meeting'] as const).map((type) => (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={() => setEventType(type)}
+                          className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                            eventType === type
+                              ? 'border-primary bg-primary text-white'
+                              : 'border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280] hover:bg-[#F3F4F6]'
+                          }`}
+                        >
+                          {type === 'event' ? 'Event' : 'Meeting'}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowEventParticipantsPicker((v) => !v)}
+                      className="mt-3 w-full rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5 text-left text-sm text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    >
+                      Participants: {selectedEventUsers.length > 0 ? `${selectedEventUsers.length} selected` : 'Select users'}
+                    </button>
+                    {selectedEventUsers.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {orgUsers
+                          .filter((u: any) => selectedEventUsers.includes(String(u.id)))
+                          .map((u: any) => (
+                            <span
+                              key={u.id}
+                              className="inline-flex items-center gap-1 rounded-full border border-[#DDD6FE] bg-[#F3E8FF] px-2.5 py-1 text-xs font-semibold text-primary"
+                            >
+                              {u.name || u.mobile}
+                            </span>
+                          ))}
+                      </div>
+                    )}
+                    {showEventParticipantsPicker && (
+                      <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-[#E5E7EB] bg-white">
+                        {orgUsers.map((u: any) => {
+                          const uid = String(u.id);
+                          const checked = selectedEventUsers.includes(uid);
+                          return (
+                            <label
+                              key={uid}
+                              className="flex cursor-pointer items-center justify-between border-b border-[#F3F4F6] px-3 py-2 text-sm last:border-b-0"
+                            >
+                              <span className="text-[#1F2937]">{u.name || u.mobile}</span>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) =>
+                                  setSelectedEventUsers((prev) =>
+                                    e.target.checked ? [...prev, uid] : prev.filter((id) => id !== uid)
+                                  )
+                                }
+                                className="h-4 w-4 rounded border-[#C4B5FD] accent-primary"
+                              />
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={!eventTitle.trim() || !eventDateTime || savingEvent}
+                    onClick={handleCreateDashboardEvent}
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+                  >
+                    {savingEvent ? 'Saving...' : 'Create Event'}
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="space-y-2">
+              {(dashboardEvents as any[]).length === 0 ? (
+                <p className="text-xs text-gray-500 dark:text-gray-400">No upcoming events or meetings.</p>
+              ) : (
+                (dashboardEvents as any[]).map((ev: any) => (
+                  <div key={ev.id} className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">{ev.title}</p>
+                      <span className="text-[11px] uppercase text-primary font-semibold">{ev.type}</span>
+                    </div>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                      {new Date(ev.starts_at).toLocaleString()}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
 
           {/* Document Management Section - Combined for both self and assigned */}
           {isLoading ? (
@@ -848,24 +1246,51 @@ export const AdminDashboard: React.FC = () => {
             });
 
             if (!financialTasks.length) return null;
+            const now = new Date();
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const endOfToday = new Date(startOfToday);
+            endOfToday.setDate(endOfToday.getDate() + 1);
+            const startOfWeek = new Date(startOfToday);
+            startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            const startOfYear = new Date(now.getFullYear(), 0, 1);
 
-            const formatDate = (dateString?: string) => {
-              if (!dateString) return '';
-              const date = new Date(dateString);
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-              const due = new Date(date);
-              due.setHours(0, 0, 0, 0);
-              const diffTime = due.getTime() - today.getTime();
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-              if (diffDays < 0) {
-                if (diffDays === -1) return 'Yesterday';
-                return `${Math.abs(diffDays)} days ago`;
-              }
-              if (diffDays === 0) return 'Today';
-              if (diffDays === 1) return 'Tomorrow';
-              if (diffDays <= 3) return `In ${diffDays} days`;
-              return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+            const rows = financialTasks
+              .map((task: any) => {
+                const rawAmount = Number(task.financial_value || 0);
+                if (!Number.isFinite(rawAmount) || rawAmount === 0) return null;
+                const signedAmount =
+                  (task.finance_type || '').toLowerCase() === 'expense'
+                    ? -Math.abs(rawAmount)
+                    : Math.abs(rawAmount);
+                const baseDate = new Date(task.due_date || task.dueDate || task.created_at || task.createdAt || Date.now());
+                if (Number.isNaN(baseDate.getTime())) return null;
+                return {
+                  id: task.id,
+                  title: task.title || 'Untitled task',
+                  values: {
+                    daily: baseDate >= startOfToday && baseDate < endOfToday ? signedAmount : 0,
+                    weekly: baseDate >= startOfWeek ? signedAmount : 0,
+                    monthly: baseDate >= startOfMonth ? signedAmount : 0,
+                    yearly: baseDate >= startOfYear ? signedAmount : 0,
+                  },
+                  total: signedAmount,
+                };
+              })
+              .filter(Boolean) as Array<{
+                id: string;
+                title: string;
+                values: Record<'daily' | 'weekly' | 'monthly' | 'yearly', number>;
+                total: number;
+              }>;
+
+            const filteredRows = rows.map((row) => ({ ...row, periodAmount: row.values[financialPeriodFilter] || 0 }));
+            const periodTotal = filteredRows.reduce((sum, row) => sum + row.periodAmount, 0);
+            const overallTotal = filteredRows.reduce((sum, row) => sum + row.total, 0);
+
+            const formatAmount = (value: number) => {
+              const sign = value < 0 ? '-' : '';
+              return `${sign}${Math.abs(value).toFixed(2)}`;
             };
 
             return (
@@ -873,142 +1298,53 @@ export const AdminDashboard: React.FC = () => {
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-1 h-8 bg-emerald-500 rounded-full"></div>
                   <h2 className="text-xl md:text-2xl font-semibold text-gray-900 dark:text-white">
-                    Financial Report 
+                    Income and Expenses overview for Week, Month, Quarter, Year
                   </h2>
                 </div>
-                <div className="bg-white dark:bg-slate-800/95 rounded-xl border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-emerald-500 shadow-sm divide-y divide-gray-100 dark:divide-gray-700">
-                  {financialTasks.map((task: any) => {
-                    const amount = Number(task.financial_value || 0);
-                    const type = task.finance_type;
-                    const isIncome = type === 'income';
-                    const isExpense = type === 'expense';
-                    if (!amount && !type) return null;
-                    return (
-                      <div
-                        key={task.id}
-                        className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-                      >
-                        <div className="min-w-0 pr-4 flex items-center gap-3">
-                          <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                            isIncome 
-                              ? 'bg-emerald-50 dark:bg-emerald-900/20' 
-                              : 'bg-red-50 dark:bg-red-900/20'
-                          }`}>
-                            <span className={`material-icons-outlined text-base ${
-                              isIncome 
-                                ? 'text-emerald-600 dark:text-emerald-400' 
-                                : 'text-red-600 dark:text-red-400'
-                            }`}>
-                              {isIncome ? 'trending_up' : 'trending_down'}
-                            </span>
-                          </div>
-                          <div>
-                            <div className="font-medium text-gray-900 dark:text-white truncate text-sm">
-                              {task.title}
-                            </div>
-                            {task.due_date && (
-                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                {formatDate(task.due_date)}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-right space-y-1 flex-shrink-0">
-                          {amount ? (
-                            <div
-                              className={`text-base font-semibold ${
-                                isIncome
-                                  ? 'text-emerald-600 dark:text-emerald-400'
-                                  : isExpense
-                                  ? 'text-red-600 dark:text-red-400'
-                                  : 'text-gray-900 dark:text-white'
-                              }`}
-                            >
-                              {isExpense ? '-' : '+'}
-                              {amount.toFixed(2)}
-                            </div>
-                          ) : null}
-                          {type && (
-                            <div className={`text-xs font-medium uppercase tracking-wide px-2 py-0.5 rounded ${
-                              isIncome
-                                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300'
-                                : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
-                            }`}>
-                              {type === 'income'
-                                ? 'Income'
-                                : type === 'expense'
-                                ? 'Expense'
-                                : type}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="flex flex-wrap gap-2">
+                  {(['daily', 'weekly', 'monthly', 'yearly'] as const).map((period) => (
+                    <button
+                      key={period}
+                      type="button"
+                      onClick={() => setFinancialPeriodFilter(period)}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                        financialPeriodFilter === period
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      {period.charAt(0).toUpperCase() + period.slice(1)}
+                    </button>
+                  ))}
                 </div>
-              </div>
-            );
-          })()}
-
-          {/* To-Do List for Recurring Tasks (Self) - top 5, navigate to Task Chat if conversation_id else Task Detail */}
-          {(() => {
-            const todoSelf = getToDoTasks('self').slice(0, 5);
-            if (!todoSelf.length) return null;
-            return (
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-1 h-8 bg-blue-500 rounded-full"></div>
-                  <h2 className="text-xl md:text-2xl font-semibold text-gray-900 dark:text-white">
-                    To-Do (Today&apos;s Recurring Tasks)
-                  </h2>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {todoSelf.map((task: any) => {
-                    const full = taskDetails[task.id];
-                    const merged = mergeTaskWithFinancial(full ? { ...task, ...full } : task);
-                    const convId = merged.conversation_id || merged.conversationId;
-                    const normalizedConvId = String(convId || '').trim();
-                    const assignees = Array.isArray(merged?.assignees) ? merged.assignees : [];
-                    const totalMembers = assignees.length;
-                    const verifiedCompleted = assignees.filter((a: any) => !!a?.verified_at).length;
-                    const progress =
-                      totalMembers > 0 ? Math.round((verifiedCompleted / totalMembers) * 100) : 0;
-                    const cardAssignees = assignees
-                      .map((a: any) => ({
-                        id: a.id || a.user_id || a.userId,
-                        name: a.name || a.mobile || a.phone || 'User',
-                        photoUrl:
-                          a.profile_photo_url ||
-                          a.profile_photo ||
-                          a.profilePhotoUrl ||
-                          a.photoUrl,
-                      }))
-                      .filter((a: any) => !!a.id);
-
-                    const hasFinance = merged.financial_value != null || merged.finance_type;
-                    const isCreator = (merged.created_by || merged.creator_id) === currentUserId;
-                    return (
-                      <TaskCard
-                        key={task.id}
-                        id={task.id}
-                        title={merged.title}
-                        clientName={merged.client_name || merged.clientName}
-                        description={merged.description}
-                        status="inprogress"
-                        dueDate={merged.due_date || merged.dueDate}
-                        category={merged.category}
-                        assignees={cardAssignees}
-                        progress={progress}
-                        finance={hasFinance && isCreator ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
-                        unreadCount={normalizedConvId ? unreadCountByConversationId[normalizedConvId] ?? 0 : 0}
-                        onClick={() =>
-                          convId
-                            ? navigate(`/admin/tasks/task-group/${convId}`)
-                            : navigate(`/admin/tasks/${task.id}`)
-                        }
-                      />
-                    );
-                  })}
+                <div className="bg-white dark:bg-slate-800/95 rounded-xl border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-emerald-500 shadow-sm overflow-x-auto">
+                  <table className="min-w-[640px] w-full text-sm">
+                    <thead className="bg-gray-50 dark:bg-slate-900/50">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-300">Task</th>
+                        <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">
+                          {financialPeriodFilter.charAt(0).toUpperCase() + financialPeriodFilter.slice(1)}
+                        </th>
+                        <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                      {filteredRows.map((row) => (
+                        <tr key={row.id}>
+                          <td className="px-4 py-3 text-gray-900 dark:text-white">{row.title}</td>
+                          <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-200">{formatAmount(row.periodAmount)}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">{formatAmount(row.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-gray-50 dark:bg-slate-900/50">
+                      <tr>
+                        <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">Total</td>
+                        <td className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">{formatAmount(periodTotal)}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">{formatAmount(overallTotal)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
               </div>
             );

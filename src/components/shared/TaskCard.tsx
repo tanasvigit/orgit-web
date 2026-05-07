@@ -18,6 +18,10 @@ interface TaskCardProps {
   /** Optional finance info (amount + type) to show a small row; mirrors mobile semantics. */
   finance?: { amount?: number | null; type?: 'income' | 'expense' | string | null };
   unreadCount?: number;
+  taskPeriod?: string;
+  frequency?: string;
+  taskUnitType?: string;
+  taskUnitName?: string;
   onClick?: () => void;
 }
 
@@ -34,6 +38,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   progress,
   finance,
   unreadCount = 0,
+  taskPeriod,
+  frequency,
+  taskUnitType,
+  taskUnitName,
   onClick,
 }) => {
   // Status color mapping with full Tailwind classes (required for build-time class detection)
@@ -58,6 +66,31 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     return formatTaskDueLabel(date);
   };
 
+  const periodLabel = (taskPeriod || '').toLowerCase();
+  const statusIcon =
+    status === 'overdue'
+      ? 'priority_high'
+      : status === 'duesoon'
+      ? 'schedule'
+      : status === 'completed'
+      ? 'task_alt'
+      : status === 'scheduled'
+      ? 'event_upcoming'
+      : 'pending_actions';
+  const tagOrClient = (() => {
+    const tagText = Array.isArray(tags) ? tags.filter(Boolean).join(', ') : typeof tags === 'string' ? tags : '';
+    return (tagText || clientName || '').trim() || '';
+  })();
+  const dueText = formatDueDate(dueDate || '') || 'No due date';
+  const frequencyLabel = (frequency || 'One-time').replace(/_/g, ' ');
+  const unitTypeLabel = taskUnitType || 'Task unit';
+  const unitNameLabel = taskUnitName || '';
+  const normalizedTitle = String(title || '').trim();
+  const monthSuffixRegex = /\s(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)$/i;
+  const titleAlreadyHasMonth = monthSuffixRegex.test(normalizedTitle);
+  const displayTitle =
+    periodLabel && !titleAlreadyHasMonth ? `${normalizedTitle}-${periodLabel}` : normalizedTitle;
+
   return (
     <div
       className={`group relative bg-white dark:bg-slate-800/80 rounded-2xl overflow-hidden cursor-pointer
@@ -68,104 +101,32 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         ${status === 'completed' ? 'opacity-75 hover:opacity-100' : ''}`}
       onClick={onClick}
     >
-      <div className={`absolute left-0 top-0 bottom-0 w-2 rounded-l-2xl ${statusColorClasses[status]} shadow-sm`} />
       <div className="p-5 pl-6">
-        <div className="flex justify-between items-start mb-2">
-          <StatusBadge status={status} />
+        <div className="flex justify-between items-start mb-2 gap-2">
+          <h4
+            className={`text-text-main dark:text-white font-bold text-base ${
+              status === 'completed' ? 'line-through decoration-gray-400 text-gray-500' : ''
+            }`}
+          >
+            {displayTitle}
+          </h4>
+        </div>
+        <div className="flex justify-between items-center mb-3">
+          <div className="inline-flex items-center gap-2">
+            <StatusBadge status={status} />
+            <span className={`material-symbols-outlined text-[18px] ${statusTextColorClasses[status]}`}>{statusIcon}</span>
+          </div>
           <div className="flex items-center gap-2">
             {unreadCount > 0 && (
               <span className="inline-flex min-w-[20px] h-5 px-1.5 items-center justify-center rounded-full bg-primary text-white text-[10px] font-bold">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
-            <button
-              className="text-gray-400 hover:text-primary transition-colors"
-              onClick={(e) => {
-                e.stopPropagation();
-                // Handle menu
-              }}
-            >
-              <span className="material-symbols-outlined text-[20px]">more_horiz</span>
-            </button>
           </div>
         </div>
-        <h4
-          className={`text-text-main dark:text-white font-bold text-base mb-1 ${
-            status === 'completed' ? 'line-through decoration-gray-400 text-gray-500' : ''
-          }`}
-        >
-          {title}
-        </h4>
-        {(() => {
-          const tagText = Array.isArray(tags)
-            ? tags.filter(Boolean).join(', ')
-            : typeof tags === 'string'
-            ? tags
-            : '';
-          const cleanDescription = (description || '').replace(/^tags:\s*/i, '').trim();
-          const metaText = (tagText || cleanDescription || clientName || '').trim();
-          if (!metaText) return null;
-          return (
-            <p className="text-text-muted dark:text-white/60 text-sm mb-3">
-              {category && `${category} • `}
-              {metaText}
-            </p>
-          );
-        })()}
-        {finance && (finance.amount != null || finance.type) && (
-          <div className="flex items-center justify-between gap-2 text-sm mb-3">
-            {finance.type && (
-              <span className="text-text-muted dark:text-white/60 uppercase tracking-wide text-xs">
-                {finance.type === 'income' ? 'Income' : finance.type === 'expense' ? 'Expense' : finance.type}
-              </span>
-            )}
-            {finance.amount != null && (
-              <span
-                className={`font-bold text-sm ${
-                  finance.type === 'income'
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : finance.type === 'expense'
-                    ? 'text-rose-600 dark:text-rose-400'
-                    : 'text-text-main dark:text-white'
-                }`}
-              >
-                {finance.type === 'expense' ? '-' : '+'}
-                {Number(finance.amount).toFixed(2)}
-              </span>
-            )}
-          </div>
-        )}
-        {progress !== undefined && status === 'inprogress' && (
-          <div className="w-full bg-slate-100 dark:bg-slate-600/30 rounded-full h-2 mb-4">
-            <div
-              className={`${statusColorClasses[status]} h-2 rounded-full transition-all duration-300`}
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        )}
-        <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-600/50 pt-3 mt-1">
-          <div className={`flex items-center gap-2 ${statusTextColorClasses[status]}`}>
-            {dueDate && (
-              <>
-                <span className="material-symbols-outlined text-[16px]">
-                  {status === 'overdue' ? 'event_busy' : status === 'duesoon' ? 'schedule' : 'calendar_today'}
-                </span>
-                <span className="text-xs font-semibold">{formatDueDate(dueDate)}</span>
-              </>
-            )}
-          </div>
-          {assignees.length > 0 && (
-            <div className="flex -space-x-2">
-              {assignees.slice(0, 3).map((assignee) => (
-                <Avatar
-                  key={assignee.id}
-                  src={assignee.photoUrl}
-                  alt={assignee.name}
-                  size="sm"
-                />
-              ))}
-            </div>
-          )}
+        <div className="space-y-1 text-xs text-slate-700 dark:text-slate-300">
+          <p>{`${tagOrClient} | ${dueText}`}</p>
+          <p>{`${frequencyLabel} | ${unitTypeLabel} | ${unitNameLabel}`}</p>
         </div>
       </div>
     </div>

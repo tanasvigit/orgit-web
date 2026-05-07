@@ -48,5 +48,26 @@ export const dashboardService = {
     const data = response.data;
     return data?.data ?? data;
   },
+
+  getMonthlyCalendar: async (view: 'self' | 'assigned', year: number, month: number) => {
+    const response = await api.get(`/dashboard/calendar?view=${view}&year=${year}&month=${month}`);
+    return response.data?.data ?? response.data;
+  },
+
+  getEvents: async (lookAheadDays = 14) => {
+    const response = await api.get(`/dashboard/events?lookAheadDays=${lookAheadDays}`);
+    return response.data?.data ?? [];
+  },
+
+  createEvent: async (payload: {
+    title: string;
+    type: 'event' | 'meeting';
+    startsAtIso: string;
+    participantIds: string[];
+    notes?: string;
+  }) => {
+    const response = await api.post('/dashboard/events', payload);
+    return response.data?.data ?? response.data;
+  },
 };
 

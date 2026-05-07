@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from 'react-query';
 import { conversationService } from '../../services/conversationService';
 import { waitForSocketConnection } from '../../services/socketService';
@@ -8,16 +9,21 @@ import { AdminLayout } from '../../components/admin/AdminLayout';
 import { ConversationList } from '../../components/messaging/ConversationList';
 import { NewChatModal } from '../../components/messaging/NewChatModal';
 
-type FilterType = 'All' | 'Direct';
-
 export const MainMessagingScreen: React.FC = () => {
   const { user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<FilterType>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const socketRef = useRef<any>(null);
   const isAdmin = user?.role === 'admin';
+
+  useEffect(() => {
+    if (!(location.state as any)?.openNewChatModal) return;
+    setShowNewChatModal(true);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.pathname, location.state, navigate]);
 
   // Fetch conversations
   const { data: conversations = [] } = useQuery(
@@ -28,19 +34,12 @@ export const MainMessagingScreen: React.FC = () => {
     }
   );
 
-  // Filter conversations based on filter type
+  // Filter conversations to direct chats only
   const filteredConversations = React.useMemo(() => {
-    let filtered = conversations;
-
-    // Apply type filter
-    if (filter === 'Direct') {
-      // Show only direct chats (not groups, not task groups)
-      filtered = filtered.filter(conv => 
-        (conv.type === 'direct' || (!conv.is_group && !conv.is_task_group)) && 
-        !(conv.isTaskGroup || conv.is_task_group)
-      );
-    }
-    // For 'All', show everything (no filter applied)
+    let filtered = conversations.filter(conv =>
+      (conv.type === 'direct' || (!conv.is_group && !conv.is_task_group)) &&
+      !(conv.isTaskGroup || conv.is_task_group)
+    );
 
     // Apply search filter
     if (searchQuery.trim()) {
@@ -66,7 +65,7 @@ export const MainMessagingScreen: React.FC = () => {
       const bTime = new Date(b.lastMessageTime || b.last_message_time || 0).getTime();
       return bTime - aTime;
     });
-  }, [conversations, filter, searchQuery]);
+  }, [conversations, searchQuery]);
 
   // Update conversation with new message (matching mobile pattern)
   const updateConversationWithNewMessage = (message: any) => {
@@ -268,9 +267,7 @@ export const MainMessagingScreen: React.FC = () => {
     <ConversationList
       conversations={filteredConversations}
       currentConversationId={undefined}
-      filter={filter}
       searchQuery={searchQuery}
-      onFilterChange={setFilter}
       onSearchChange={setSearchQuery}
       onCreateNew={() => setShowNewChatModal(true)}
       hideHeader={!isAdmin}

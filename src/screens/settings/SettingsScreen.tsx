@@ -34,6 +34,13 @@ export const SettingsScreen: React.FC = () => {
       screen: '/settings/change-password',
       color: 'red'
     },
+    {
+      icon: 'tune',
+      title: 'User configuration',
+      subtitle: 'Default task timelines (start, target, due) and auto-escalation trigger for new tasks',
+      screen: isAdmin ? '/admin/settings/user-config' : '/settings/user-config',
+      color: 'indigo'
+    },
   ];
 
   // Eight sections: Entity Master Data, Employees, Departments, Designations, Organisation Structure, Service List, Entity List, Automation & Configurations

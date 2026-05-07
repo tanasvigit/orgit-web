@@ -19,11 +19,12 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({
   const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const currentOrgId = (user as any)?.organizationId || (user as any)?.organization_id;
   const [query, setQuery] = useState('');
 
   const { data, isFetching } = useQuery(
-    ['chat-users', query],
-    () => chatUserService.searchUsers(query),
+    ['chat-users', query, currentOrgId],
+    () => chatUserService.searchUsers(query, currentOrgId),
     {
       enabled: visible && query.trim().length > 0,
     }

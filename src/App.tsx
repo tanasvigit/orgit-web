@@ -50,6 +50,9 @@ const UserProfileScreen = lazy(() => import('./screens/profile/UserProfileScreen
 const _ProfileSettings = lazy(() => import('./screens/settings/ProfileSettings').then(m => ({ default: m.ProfileSettings })));
 const ChangePassword = lazy(() => import('./screens/settings/ChangePassword').then(m => ({ default: m.ChangePassword })));
 const ThemeSettings = lazy(() => import('./screens/settings/ThemeSettings').then(m => ({ default: m.ThemeSettings })));
+const UserTaskConfigScreen = lazy(() =>
+  import('./screens/settings/UserTaskConfigScreen').then(m => ({ default: m.UserTaskConfigScreen }))
+);
 const SettingsScreen = lazy(() => import('./screens/settings/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
 const Departments = lazy(() => import('./screens/admin/settings/Departments').then(m => ({ default: m.Departments })));
 const Designations = lazy(() => import('./screens/admin/settings/Designations').then(m => ({ default: m.Designations })));
@@ -355,6 +358,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Suspense fallback={<RouteFallback />}><ThemeSettings /></Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings/user-config"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<RouteFallback />}><UserTaskConfigScreen /></Suspense>
                 </ProtectedRoute>
               }
             />
@@ -743,6 +754,14 @@ function App() {
               element={
                 <AdminProtectedRoute>
                   <Suspense fallback={<RouteFallback />}><RecurringTaskSettings /></Suspense>
+                </AdminProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/settings/user-config"
+              element={
+                <AdminProtectedRoute>
+                  <Suspense fallback={<RouteFallback />}><UserTaskConfigScreen /></Suspense>
                 </AdminProtectedRoute>
               }
             />

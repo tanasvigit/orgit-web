@@ -17,6 +17,7 @@ import { taskBulkService } from '../../services/taskBulkService';
 import { isTaskDeleted } from '../../utils/taskUtils';
 import { formatChatListTimestamp, timestampToMs } from '../../utils/chatTime';
 import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
+import { getTaskCreationUserConfig } from '../../services/userTaskCreationConfigService';
 
 type TaskDashboardStatus = TaskStatusCategory;
 
@@ -26,7 +27,6 @@ const STATUS_LABELS: Record<Exclude<StatusFilter, 'all'>, string> = {
   duesoon: 'Due Soon',
   overdue: 'Overdue',
   completed: 'Completed',
-  scheduled: 'Scheduled',
 };
 const STATUS_ICONS: Record<Exclude<StatusFilter, 'all'>, string> = {
   todo: 'today',
@@ -34,7 +34,6 @@ const STATUS_ICONS: Record<Exclude<StatusFilter, 'all'>, string> = {
   duesoon: 'schedule',
   overdue: 'priority_high',
   completed: 'task_alt',
-  scheduled: 'event',
 };
 const STATUS_COLORS: Record<Exclude<StatusFilter, 'all'>, string> = {
   todo: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
@@ -42,7 +41,6 @@ const STATUS_COLORS: Record<Exclude<StatusFilter, 'all'>, string> = {
   duesoon: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
   overdue: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300',
   completed: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
-  scheduled: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300',
 };
 
 export type StatusFilter = 'all' | TaskDashboardStatus;
@@ -82,6 +80,9 @@ export const TaskDashboardScreen: React.FC = () => {
   // Track first successful fetch instead of fetch transition (prevents showing stale cache on first paint).
   const [hasConversationsFetchedSinceMount, setHasConversationsFetchedSinceMount] = useState(false);
   const [hasTasksFetchedSinceMount, setHasTasksFetchedSinceMount] = useState(false);
+  const { data: userTaskConfig } = useQuery(['task-creation-user-config-dashboard'], getTaskCreationUserConfig, {
+    staleTime: 60_000,
+  });
 
   // Scheduled indicator must come from backend lifecycle fields (DB),
   // not from client-side date comparisons.
@@ -89,6 +90,26 @@ export const TaskDashboardScreen: React.FC = () => {
     if (!task) return null;
     const currentUserId = user?.id || (user as any)?.userId;
     return getTaskStatusCategoryFromTask(task, 3, currentUserId);
+  };
+
+  const resolveTaskUnitDisplay = (taskLike: any) => {
+    const preference = userTaskConfig?.taskUnitPreference || 'cost_centre';
+    const map: Record<string, { label: string; keys: string[] }> = {
+      cost_centre: {
+        label: 'Cost centre',
+        keys: ['cost_centre_name', 'costCentreName', 'cost_center_name', 'costCenterName', 'cost_centre', 'costCentre'],
+      },
+      department: { label: 'Department', keys: ['department_name', 'departmentName', 'department'] },
+      depot: { label: 'Depot', keys: ['depot_name', 'depotName', 'depot'] },
+      branch: { label: 'Branch', keys: ['branch_name', 'branchName', 'branch'] },
+      entity: { label: 'Entity', keys: ['entity_name', 'entityName', 'client_name', 'clientName'] },
+      warehouse: { label: 'Warehouse', keys: ['warehouse_name', 'warehouseName', 'warehouse'] },
+      project: { label: 'Project', keys: ['project_name', 'projectName', 'project'] },
+      factory: { label: 'Factory', keys: ['factory_name', 'factoryName', 'factory'] },
+    };
+    const chosen = map[preference] || map.cost_centre;
+    const value = chosen.keys.map((k) => taskLike?.[k]).find((v) => typeof v === 'string' && v.trim());
+    return value ? `${chosen.label}: ${String(value)}` : null;
   };
 
   // Fetch all task services (recurring + one_time) for search suggestions
@@ -190,8 +211,8 @@ export const TaskDashboardScreen: React.FC = () => {
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
     const v = (statusFromUrl || '').toLowerCase();
-    if (v === 'todo' || v === 'overdue' || v === 'duesoon' || v === 'inprogress' || v === 'completed' || v === 'scheduled') return v as StatusFilter;
-    return 'all';
+    if (v === 'todo' || v === 'overdue' || v === 'duesoon' || v === 'inprogress' || v === 'completed') return v as StatusFilter;
+    return 'todo';
   });
 
   const [viewFilter, setViewFilter] = useState<ViewFilter>(() => {
@@ -205,16 +226,12 @@ export const TaskDashboardScreen: React.FC = () => {
     const statusParam = (searchParams.get('status') || '').toLowerCase();
     const viewParam = (searchParams.get('view') || '').toLowerCase();
 
-    if (statusParam === 'todo' || statusParam === 'overdue' || statusParam === 'duesoon' || statusParam === 'inprogress' || statusParam === 'completed' || statusParam === 'scheduled') {
+    if (statusParam === 'todo' || statusParam === 'overdue' || statusParam === 'duesoon' || statusParam === 'inprogress' || statusParam === 'completed') {
       setStatusFilter(statusParam as StatusFilter);
-    } else {
-      setStatusFilter('all');
     }
 
     if (viewParam === 'self' || viewParam === 'assigned') {
       setViewFilter(viewParam as ViewFilter);
-    } else {
-      setViewFilter('all');
     }
   }, [searchParams]);
 
@@ -237,6 +254,7 @@ export const TaskDashboardScreen: React.FC = () => {
       staleTime: 30000,
     }
   );
+
 
   const dashboardTaskIdsForView = useMemo(() => {
     if (!dashboardData?.data) return null;
@@ -899,7 +917,7 @@ export const TaskDashboardScreen: React.FC = () => {
       <div className="p-3 pb-2 border-b border-border-light dark:border-border-dark bg-white dark:bg-surface-dark/50 backdrop-blur-sm sticky top-0 z-10">
         {/* Header with Title and Create Button */}
         <div className="flex items-center justify-between mb-2.5">
-          <h1 className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">Task Groups</h1>
+          <h1 className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">Tasks</h1>
           <button
             onClick={() => setShowTaskCreateModal(true)}
             className="w-9 h-9 bg-primary hover:bg-primary/90 text-white rounded-lg flex items-center justify-center shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all duration-200 hover:scale-105 active:scale-95"
@@ -1111,19 +1129,43 @@ export const TaskDashboardScreen: React.FC = () => {
 
         {/* Status Filters - Enhanced Design */}
         <div className="space-y-2">
+          <div className="flex flex-nowrap gap-1 w-full overflow-x-auto pb-1 -mx-3 px-3">
+            {([
+              { key: 'all', label: 'All' },
+              { key: 'self', label: 'Self Tasks' },
+              { key: 'assigned', label: 'Assigned Tasks' },
+            ] as const).map(({ key, label }) => {
+              const isActive = viewFilter === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    setViewFilter(key as ViewFilter);
+                  }}
+                  className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-semibold border transition-all duration-200 ${
+                    isActive
+                      ? 'bg-slate-700 text-white border-slate-700'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
           <div className="flex items-center gap-2 mb-2">
             <span className="material-icons-outlined text-sm text-gray-500 dark:text-gray-400"></span>
             <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide"></span>
           </div>
           <div className="flex flex-nowrap gap-1 w-full overflow-x-auto pb-1 -mx-3 px-3">
               {([
-                { key: 'all', label: 'All', color: 'gray' },
                 { key: 'todo', label: 'To Do', color: 'blue' },
                 { key: 'inprogress', label: 'In Progress', color: 'purple' },
                 { key: 'duesoon', label: 'Due Soon', color: 'orange' },
                 { key: 'overdue', label: 'Overdue', color: 'red' },
                 { key: 'completed', label: 'Completed', color: 'green' },
-                { key: 'scheduled', label: 'Scheduled', color: 'indigo' },
+                { key: 'all', label: 'All', color: 'gray' },
               ] as const).map(({ key, label, color }) => {
                 const isActive = statusFilter === key;
                 const colorClasses = {
@@ -1196,14 +1238,13 @@ export const TaskDashboardScreen: React.FC = () => {
         </div>
       )}
 
-      {/* Task Groups List */}
       <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 space-y-3">
         {/* Loading state to avoid flicker / incorrect default actions */}
         {isTaskGroupsLoading && (
           <div>
             <h3 className="flex items-center text-[11px] font-bold text-primary uppercase tracking-wider mb-2 px-1">
               <span className="material-icons-round text-sm mr-1">groups</span>
-              Task Groups
+              Tasks
             </h3>
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
@@ -1226,7 +1267,7 @@ export const TaskDashboardScreen: React.FC = () => {
           <div>
             <h3 className="flex items-center text-[11px] font-bold text-primary uppercase tracking-wider mb-2 px-1">
               <span className="material-icons-round text-sm mr-1">groups</span>
-              Task Groups ({filteredTaskGroups.length})
+              Tasks ({filteredTaskGroups.length})
             </h3>
             <div className="space-y-1">
               {filteredTaskGroups.map((conv) => {
@@ -1306,12 +1347,26 @@ export const TaskDashboardScreen: React.FC = () => {
                           ? task.tags
                           : '';
                         const rawDescription = typeof task?.description === 'string' ? task.description : '';
-                        const cleanDescription = rawDescription.replace(/^tags:\s*/i, '').trim();
+                        const cleanDescription = rawDescription
+                          .replace(/^tags:\s*/i, '')
+                          .replace(/\bclient\s*:\s*[^|,\n]+/gi, '')
+                          .replace(/\s{2,}/g, ' ')
+                          .replace(/\s+,/g, ',')
+                          .trim();
                         const cardMeta = (tagText || cleanDescription || '').trim();
                         if (!cardMeta) return null;
                         return (
                           <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
                             {cardMeta}
+                          </p>
+                        );
+                      })()}
+                      {(() => {
+                        const taskUnitLabel = resolveTaskUnitDisplay(task);
+                        if (!taskUnitLabel) return null;
+                        return (
+                          <p className="text-[11px] font-medium text-gray-700 dark:text-gray-300 truncate">
+                            <span className="font-semibold">{taskUnitLabel}</span>
                           </p>
                         );
                       })()}
@@ -1397,12 +1452,26 @@ export const TaskDashboardScreen: React.FC = () => {
                           ? task.tags
                           : '';
                         const rawDescription = typeof task?.description === 'string' ? task.description : '';
-                        const cleanDescription = rawDescription.replace(/^tags:\s*/i, '').trim();
+                        const cleanDescription = rawDescription
+                          .replace(/^tags:\s*/i, '')
+                          .replace(/\bclient\s*:\s*[^|,\n]+/gi, '')
+                          .replace(/\s{2,}/g, ' ')
+                          .replace(/\s+,/g, ',')
+                          .trim();
                         const cardMeta = (tagText || cleanDescription || '').trim();
                         if (!cardMeta) return null;
                         return (
                           <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
                             {cardMeta.length > 80 ? `${cardMeta.substring(0, 80)}...` : cardMeta}
+                          </p>
+                        );
+                      })()}
+                      {(() => {
+                        const taskUnitLabel = resolveTaskUnitDisplay(task);
+                        if (!taskUnitLabel) return null;
+                        return (
+                          <p className="text-[11px] font-medium text-gray-700 dark:text-gray-300 truncate">
+                            <span className="font-semibold">{taskUnitLabel}</span>
                           </p>
                         );
                       })()}
@@ -1483,9 +1552,9 @@ export const TaskDashboardScreen: React.FC = () => {
         <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
           <span className="material-icons-outlined text-5xl text-primary dark:text-primary/80">task_alt</span>
         </div>
-        <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">No Task Group Selected</h2>
+        <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">No Task Selected</h2>
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-sm">
-          Select a task group from the list to view details and manage tasks
+          Select a task from the list to view details and manage tasks
         </p>
             <button
               onClick={() => setShowTaskCreateModal(true)}

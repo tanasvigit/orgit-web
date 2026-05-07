@@ -7,9 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 interface ConversationListProps {
   conversations: Conversation[];
   currentConversationId?: string;
-  filter: 'All' | 'Direct';
   searchQuery: string;
-  onFilterChange: (filter: 'All' | 'Direct') => void;
   onSearchChange: (query: string) => void;
   onCreateNew: () => void;
   hideHeader?: boolean;
@@ -21,9 +19,7 @@ interface ConversationListProps {
 export const ConversationList: React.FC<ConversationListProps> = ({
   conversations,
   currentConversationId,
-  filter,
   searchQuery,
-  onFilterChange,
   onSearchChange,
   onCreateNew,
   hideHeader = false,
@@ -86,14 +82,11 @@ export const ConversationList: React.FC<ConversationListProps> = ({
   const filteredConversations = React.useMemo(() => {
     let filtered = conversations;
 
-    if (filter === 'Direct') {
-      // Show only direct chats (not groups, not task groups)
-      filtered = filtered.filter(conv => 
-        (conv.type === 'direct' || (!conv.is_group && !conv.is_task_group)) && 
-        !(conv.isTaskGroup || conv.is_task_group)
-      );
-    }
-    // For 'All', show everything (no filter applied)
+    // Show only direct chats (not groups, not task groups)
+    filtered = filtered.filter(conv =>
+      (conv.type === 'direct' || (!conv.is_group && !conv.is_task_group)) &&
+      !(conv.isTaskGroup || conv.is_task_group)
+    );
 
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -117,7 +110,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({
       const bTime = new Date(b.lastMessageTime || b.last_message_time || 0).getTime();
       return bTime - aTime;
     });
-  }, [conversations, filter, searchQuery]);
+  }, [conversations, searchQuery]);
 
   // Single list: all conversations (pinned first, then by time) – no "Priority & Tasks" section
   const allConversations = filteredConversations;
@@ -150,21 +143,6 @@ export const ConversationList: React.FC<ConversationListProps> = ({
               <span className="material-icons-outlined">edit</span>
             </button>
           </div>
-          <div className="bg-white dark:bg-surface-dark p-1 rounded-xl flex shadow-sm mb-4">
-            {(['All', 'Direct'] as const).map((filterType) => (
-              <button
-                key={filterType}
-                onClick={() => onFilterChange(filterType)}
-                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
-                  filter === filterType
-                    ? 'bg-primary text-white shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'
-                }`}
-              >
-                {filterType}
-              </button>
-            ))}
-          </div>
         </div>
       )}
       {hideHeader && !hideSearchAndFilters && (
@@ -189,21 +167,6 @@ export const ConversationList: React.FC<ConversationListProps> = ({
             >
               <span className="material-icons-outlined">edit</span>
             </button>
-          </div>
-          <div className="bg-white dark:bg-surface-dark p-1 rounded-xl flex shadow-sm">
-            {(['All', 'Direct'] as const).map((filterType) => (
-              <button
-                key={filterType}
-                onClick={() => onFilterChange(filterType)}
-                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
-                  filter === filterType
-                    ? 'bg-primary text-white shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'
-                }`}
-              >
-                {filterType}
-              </button>
-            ))}
           </div>
         </div>
       )}

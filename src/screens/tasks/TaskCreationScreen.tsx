@@ -1,7 +1,15 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from 'react-query';
 import { taskService } from '../../services/taskService';
+import {
+  getTaskCreationUserConfig,
+  taskCreationUserConfigQueryKey,
+} from '../../services/userTaskCreationConfigService';
+import {
+  computeTaskTimelineFromStart,
+  FALLBACK_TASK_CREATION_USER_CONFIG,
+} from '../../utils/taskCreationUserConfig';
 import { setTaskFinancial } from '../../utils/taskFinancialStorage';
 import { conversationService } from '../../services/conversationService';
 import { masterDataService } from '../../services/masterDataService';
@@ -22,9 +30,21 @@ export const TaskCreationScreen: React.FC = () => {
   const [financialValue, setFinancialValue] = useState<string>('');
   const [financeType, setFinanceType] = useState<'income' | 'expense'>('income');
   const [selectedAssignees, setSelectedAssignees] = useState<any[]>([]);
-  const [startDate, setStartDate] = useState(new Date());
-  const [targetDate, setTargetDate] = useState(new Date());
-  const [dueDate, setDueDate] = useState(new Date());
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setHours(9, 0, 0, 0);
+    return d;
+  });
+  const [targetDate, setTargetDate] = useState(() => {
+    const d = new Date();
+    d.setHours(9, 0, 0, 0);
+    return d;
+  });
+  const [dueDate, setDueDate] = useState(() => {
+    const d = new Date();
+    d.setHours(9, 0, 0, 0);
+    return d;
+  });
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showTargetPicker, setShowTargetPicker] = useState(false);
   const [showDuePicker, setShowDuePicker] = useState(false);
@@ -34,6 +54,7 @@ export const TaskCreationScreen: React.FC = () => {
   const [titleHighlightedIndex, setTitleHighlightedIndex] = useState(-1);
   const titleSuggestionsRef = useRef<HTMLDivElement>(null);
   const [recurrenceType, setRecurrenceType] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>('weekly');
+  const [taskRolloutType, setTaskRolloutType] = useState<'cycle_start' | 'start_date'>('cycle_start');
   const [autoEscalate, setAutoEscalate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [reportingMemberId, setReportingMemberId] = useState<string | null>(null);
@@ -75,25 +96,42 @@ export const TaskCreationScreen: React.FC = () => {
     () => conversationService.getAllUsers()
   );
 
+  const { data: tcUserConfig, isFetched } = useQuery(
+    taskCreationUserConfigQueryKey,
+    getTaskCreationUserConfig,
+    {
+      staleTime: 5 * 60 * 1000,
+      retry: 1,
+    }
+  );
+
+  const timelineAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!isFetched || timelineAppliedRef.current) return;
+    timelineAppliedRef.current = true;
+    const cfg = tcUserConfig ?? FALLBACK_TASK_CREATION_USER_CONFIG;
+    const { start, target, due } = computeTaskTimelineFromStart(new Date(), cfg);
+    setStartDate(start);
+    setTargetDate(target);
+    setDueDate(due);
+  }, [isFetched, tcUserConfig]);
+
   const allUsers = usersData || [];
   const currentOrgId = user?.organizationId || (user as any)?.organization_id;
   const displayUsers = React.useMemo(() => {
+    const orgUsers = currentOrgId
+      ? allUsers.filter((u: any) => (u.organization_id || u.organizationId) === currentOrgId)
+      : allUsers;
     const hasSearch = (assigneeSearchQuery || '').trim().length > 0;
     const q = assigneeSearchQuery.trim().toLowerCase();
     if (hasSearch) {
-      return allUsers.filter(
+      return orgUsers.filter(
         (u: any) =>
           (u.name || '').toLowerCase().includes(q) ||
           (u.mobile || u.phone || '').toString().toLowerCase().includes(q)
       );
     }
-    if (currentOrgId) {
-      const sameOrg = allUsers.filter(
-        (u: any) => (u.organization_id || u.organizationId) === currentOrgId
-      );
-      return sameOrg.length > 0 ? sameOrg : allUsers;
-    }
-    return allUsers;
+    return orgUsers;
   }, [allUsers, assigneeSearchQuery, currentOrgId]);
 
   // Check if form has any data entered by user
@@ -189,6 +227,7 @@ export const TaskCreationScreen: React.FC = () => {
         due_date: dueDate.toISOString(),
         recurrence_type: taskType === 'recurring' ? recurrenceType : null,
         recurrence_interval: 1,
+        task_rollout_type: taskType === 'recurring' ? taskRolloutType : undefined,
         auto_escalate: autoEscalate,
         reporting_member_id: reportingMemberId || undefined,
         metadata: {
@@ -469,24 +508,55 @@ export const TaskCreationScreen: React.FC = () => {
 
         {/* Recurrence Type (if recurring) */}
         {taskType === 'recurring' && (
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Recurrence
-            </label>
-            <div className="flex gap-2">
-              {(['weekly', 'monthly', 'quarterly', 'yearly'] as const).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setRecurrenceType(type)}
-                  className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                    recurrenceType === type
-                      ? 'bg-primary text-white'
-                      : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                  }`}
-                >
-                  {type.charAt(0).toUpperCase() + type.slice(1)}
-                </button>
-              ))}
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                Recurrence
+              </label>
+              <div className="flex gap-2">
+                {(['weekly', 'monthly', 'quarterly', 'yearly'] as const).map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setRecurrenceType(type)}
+                    className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                      recurrenceType === type
+                        ? 'bg-primary text-white'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                    }`}
+                  >
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                Task rollout
+              </label>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                Cycle start: each cycle follows the recurrence pattern. Start date: anchor from the task start date.
+              </p>
+              <div className="flex gap-2">
+                {(
+                  [
+                    { key: 'cycle_start' as const, label: 'Cycle start' },
+                    { key: 'start_date' as const, label: 'Start date' },
+                  ] as const
+                ).map((o) => (
+                  <button
+                    key={o.key}
+                    type="button"
+                    onClick={() => setTaskRolloutType(o.key)}
+                    className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                      taskRolloutType === o.key
+                        ? 'bg-primary text-white'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}

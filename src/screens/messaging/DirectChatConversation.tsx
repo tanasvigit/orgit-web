@@ -1826,7 +1826,6 @@ export const DirectChatConversation: React.FC = () => {
     );
   };
 
-  const [conversationFilter, setConversationFilter] = useState<'All' | 'Direct' | 'Task Groups'>('All');
   const [conversationSearchQuery, setConversationSearchQuery] = useState('');
 
   // Right sidebar content for task groups (normal style, no special icons/labels)
@@ -1896,9 +1895,7 @@ export const DirectChatConversation: React.FC = () => {
     <ConversationList
       conversations={conversations}
       currentConversationId={conversationId}
-      filter={conversationFilter}
       searchQuery={conversationSearchQuery}
-      onFilterChange={setConversationFilter}
       onSearchChange={setConversationSearchQuery}
       onCreateNew={() => setShowNewChatModal(true)}
       hideHeader={!isAdmin}

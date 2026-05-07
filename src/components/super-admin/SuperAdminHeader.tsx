@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { showLogoutConfirm } from '../../utils/logoutConfirm';
 
 interface BreadcrumbItem {
   label: string;
@@ -23,6 +25,7 @@ export const SuperAdminHeader: React.FC<SuperAdminHeaderProps> = ({
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { toast } = useToast();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
@@ -41,8 +44,7 @@ export const SuperAdminHeader: React.FC<SuperAdminHeaderProps> = ({
   }, []);
 
   const handleLogout = () => {
-    logout();
-    navigate('/login');
+    showLogoutConfirm(toast, logout, navigate);
   };
 
   // Generate breadcrumbs from path if not provided

@@ -1,12 +1,22 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { showLogoutConfirm } from '../../utils/logoutConfirm';
 
 interface NavItem {
   path: string;
   icon: string;
   label: string;
 }
+
+const collapsedLabelMap: Record<string, string> = {
+  Dashboard: 'Dash board',
+  Chats: 'Chats',
+  'Task Management': 'Tasks',
+  'Document Management': "Docs",
+  Settings: 'Settings',
+};
 
 const navItems: NavItem[] = [
   { path: '/dashboard', icon: 'grid_view', label: 'Dashboard' },
@@ -26,6 +36,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { toast } = useToast();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
@@ -273,6 +284,11 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
             </div>
           )}
         </div>
+        {isCollapsed && (
+          <p className="text-[9px] leading-tight text-slate-500 dark:text-gray-400 text-center mt-1 max-[1366px]:text-[8px]">
+            ORGIT
+          </p>
+        )}
       </div>
 
       {/* Navigation */}
@@ -290,7 +306,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
                 }
               }}
               className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
-                isCollapsed ? 'justify-center' : ''
+                isCollapsed ? 'justify-center flex-col gap-0.5 py-2' : ''
               } ${
                 active
                   ? 'bg-primary text-white shadow-md shadow-primary/20'
@@ -301,7 +317,11 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
               <span className={`material-icons-outlined text-2xl shrink-0 max-[1366px]:text-xl ${active ? '' : 'group-hover:text-primary'}`}>
                 {item.icon}
               </span>
-              {!isCollapsed && (
+              {isCollapsed ? (
+                <span className="text-[9px] leading-tight text-center whitespace-nowrap max-[1366px]:text-[8px]">
+                  {collapsedLabelMap[item.label] || item.label}
+                </span>
+              ) : (
                 <span className="font-medium text-sm whitespace-nowrap max-[1366px]:text-xs">{item.label}</span>
               )}
             </Link>
@@ -326,14 +346,18 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
                 if (window.innerWidth < 768) setIsMobileOpen(false);
               }}
               className={`flex items-center gap-3 min-w-0 flex-1 text-left ${
-                isCollapsed ? 'justify-center' : ''
+                isCollapsed ? 'justify-center flex-col gap-0.5' : ''
               }`}
               title={isCollapsed ? 'Settings' : ''}
             >
               <span className={`material-icons-outlined text-2xl shrink-0 max-[1366px]:text-xl ${isSettingsActive ? '' : 'group-hover:text-primary'}`}>
                 settings
               </span>
-              {!isCollapsed && (
+              {isCollapsed ? (
+                <span className="text-[9px] leading-tight text-center whitespace-nowrap max-[1366px]:text-[8px]">
+                  Settings
+                </span>
+              ) : (
                 <span className="font-medium text-sm whitespace-nowrap flex-1 max-[1366px]:text-xs">Settings</span>
               )}
             </button>
@@ -405,11 +429,11 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
         </button>
         <button
           onClick={() => {
-            logout();
-            navigate('/login');
-            if (window.innerWidth < 768) {
-              setIsMobileOpen(false);
-            }
+            showLogoutConfirm(toast, logout, navigate, {
+              onAfterConfirm: () => {
+                if (window.innerWidth < 768) setIsMobileOpen(false);
+              },
+            });
           }}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
             isCollapsed ? 'justify-center' : ''
