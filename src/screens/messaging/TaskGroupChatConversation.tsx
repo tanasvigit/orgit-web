@@ -32,6 +32,7 @@ import { extractUploadedMedia } from '../../utils/chatMedia';
 import { isTaskDeleted } from '../../utils/taskUtils';
 import { getTaskStatusCategoryFromTask } from '../../utils/taskStatus';
 import { Avatar } from '../../components/shared';
+import { getTaskCreationUserConfig } from '../../services/userTaskCreationConfigService';
 
 interface TaskGroupChatConversationProps {
   conversationId?: string; // Optional prop to override useParams
@@ -1299,6 +1300,47 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const task = taskData;
   const taskName = task?.title || task?.task_name || conversationName;
   const taskClientName = task?.client_name || task?.clientName;
+
+  const { data: userTaskConfig } = useQuery(['task-creation-user-config-chat-header'], getTaskCreationUserConfig, {
+    staleTime: 60_000,
+  });
+
+  const taskHeaderMeta = useMemo(() => {
+    const startSource =
+      (task as any)?.start_date ||
+      (task as any)?.startDate ||
+      (task as any)?.due_date ||
+      (task as any)?.dueDate ||
+      null;
+    let taskPeriod = '';
+    if (startSource) {
+      const d = new Date(startSource as string);
+      if (!Number.isNaN(d.getTime())) {
+        taskPeriod = d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+      }
+    }
+
+    const unitMap: Record<string, { label: string; keys: string[] }> = {
+      cost_centre: {
+        label: 'Cost centre',
+        keys: ['cost_centre_name', 'costCentreName', 'cost_center_name', 'costCenterName', 'cost_centre', 'costCentre'],
+      },
+      department: { label: 'Department', keys: ['department_name', 'departmentName', 'department'] },
+      depot: { label: 'Depot', keys: ['depot_name', 'depotName', 'depot'] },
+      branch: { label: 'Branch', keys: ['branch_name', 'branchName', 'branch'] },
+      entity: { label: 'Entity', keys: ['entity_name', 'entityName', 'client_name', 'clientName'] },
+      warehouse: { label: 'Warehouse', keys: ['warehouse_name', 'warehouseName', 'warehouse'] },
+      project: { label: 'Project', keys: ['project_name', 'projectName', 'project'] },
+      factory: { label: 'Factory', keys: ['factory_name', 'factoryName', 'factory'] },
+    };
+    const pref = (userTaskConfig as any)?.taskUnitPreference || 'cost_centre';
+    const chosen = unitMap[pref] || unitMap.cost_centre;
+    const lookupKeys = [...chosen.keys, 'task_unit', 'taskUnit', 'task_unit_name', 'taskUnitName'];
+    const unitName =
+      lookupKeys.map((k) => (task as any)?.[k]).find((v) => typeof v === 'string' && v.trim()) || '';
+
+    return { taskPeriod, unitType: chosen.label, unitName: String(unitName) };
+  }, [task, userTaskConfig]);
   const currentUserId = user?.id || (user as any)?.userId;
   const taskDeleted = isTaskDeleted(task);
   const taskNotFound = !!taskId && taskFetchError;
@@ -2425,28 +2467,36 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                 </span>
               )}
             </div>
-            <p className="text-xs text-gray-600 dark:text-gray-300">
-              Task: <span className="font-semibold">{taskName || 'N/A'}</span>
-              {taskClientName ? (
-                <>
-                  {' '}| Client: <span className="font-bold">{taskClientName}</span>
-                </>
-              ) : null}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {isTyping ? (
-                <span className="flex items-center gap-1">
-                  <span>typing</span>
-                  <span className="flex gap-0.5">
-                    <span className="animate-bounce">.</span>
-                    <span className="animate-bounce" style={{ animationDelay: '0.1s' }}>.</span>
-                    <span className="animate-bounce" style={{ animationDelay: '0.2s' }}>.</span>
-                  </span>
+            {(taskHeaderMeta.taskPeriod || taskHeaderMeta.unitName || taskClientName) && (
+              <p className="text-xs text-gray-600 dark:text-gray-300">
+                {taskHeaderMeta.taskPeriod ? (
+                  <>
+                    Period: <span className="font-semibold">{taskHeaderMeta.taskPeriod}</span>
+                  </>
+                ) : null}
+                {taskHeaderMeta.unitName ? (
+                  <>
+                    {taskHeaderMeta.taskPeriod ? ' | ' : ''}
+                    {taskHeaderMeta.unitType}: <span className="font-semibold">{taskHeaderMeta.unitName}</span>
+                  </>
+                ) : taskClientName ? (
+                  <>
+                    {taskHeaderMeta.taskPeriod ? ' | ' : ''}
+                    Client: <span className="font-bold">{taskClientName}</span>
+                  </>
+                ) : null}
+              </p>
+            )}
+            {isTyping && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                <span>typing</span>
+                <span className="flex gap-0.5">
+                  <span className="animate-bounce">.</span>
+                  <span className="animate-bounce" style={{ animationDelay: '0.1s' }}>.</span>
+                  <span className="animate-bounce" style={{ animationDelay: '0.2s' }}>.</span>
                 </span>
-              ) : (
-                `${groupMembers.length} ${groupMembers.length === 1 ? 'member' : 'members'}`
-              )}
-            </p>
+              </p>
+            )}
           </div>
         </button>
         <div className="flex items-center gap-4 text-gray-400" onClick={(e) => e.stopPropagation()}>
@@ -2529,23 +2579,26 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
       {/* Accept / Reject Task (assignee who has not yet accepted) */}
       {(canAccept || canReject) && (
-        <div className="bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800 px-6 py-4">
-          <p className="text-xs font-semibold text-amber-800 dark:text-amber-200 mb-3">Accept or reject this task to continue</p>
-          <div className="flex flex-col sm:flex-row gap-3">
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 dark:border-amber-800 dark:bg-amber-900/20">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="mr-auto w-full shrink-0 text-[11px] font-semibold text-amber-800 dark:text-amber-200 sm:w-auto sm:flex-1">
+              Accept or reject this task to continue
+            </p>
+            <div className="flex w-full shrink-0 flex-nowrap gap-2 overflow-x-auto sm:w-auto sm:justify-end">
             <button
               type="button"
               onClick={handleAccept}
               disabled={acceptRejectProcessing}
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary/90 transition-colors disabled:opacity-50"
+              className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50 sm:text-sm"
             >
               {acceptRejectProcessing && acceptTaskMutation.isLoading ? (
                 <>
-                  <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                   Accepting...
                 </>
               ) : (
                 <>
-                  <span className="material-symbols-outlined text-lg">check</span>
+                  <span className="material-symbols-outlined text-base">check</span>
                   Accept Task
                 </>
               )}
@@ -2554,11 +2607,12 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
               type="button"
               onClick={() => setShowRejectModal(true)}
               disabled={acceptRejectProcessing}
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-red-500/60 px-4 py-2.5 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+              className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-red-500/60 px-3 py-2 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-900/20 sm:text-sm"
             >
-              <span className="material-symbols-outlined text-lg">close</span>
+              <span className="material-symbols-outlined text-base">close</span>
               Reject
             </button>
+            </div>
           </div>
           {showRejectModal && (
             <div className="mt-4 pt-4 border-t border-amber-200 dark:border-amber-800 space-y-2">
@@ -2594,12 +2648,12 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
       {/* Task participant actions (aligned with Task Details: in progress, complete, request delete, exit) */}
       {showTaskParticipantActionBar && (
-        <div className="border-b border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 px-4 py-3">
-          <div className="mx-auto w-full max-w-4xl">
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Task Actions
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        <div className="border-b border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 px-3 py-2">
+          <div className="mx-auto flex w-full max-w-4xl items-center gap-2">
+            <span className="hidden shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 sm:inline">
+              Actions
+            </span>
+            <div className="flex min-w-0 flex-1 flex-nowrap items-stretch gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch]">
           {canMarkInProgressAction && (
             <button
               type="button"
@@ -2608,17 +2662,18 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                 if (!taskId || markInProgressMutation.isLoading) return;
                 markInProgressMutation.mutate();
               }}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
+              title="Mark as In Progress"
+              className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-primary px-2.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2 sm:px-3 sm:text-sm"
             >
               {markInProgressMutation.isLoading ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                  <span>Moving to In Progress…</span>
+                  <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  <span className="hidden sm:inline">Moving…</span>
                 </>
               ) : (
                 <>
-                  <span className="material-symbols-outlined text-[20px]">play_arrow</span>
-                  <span>Mark as In Progress</span>
+                  <span className="material-symbols-outlined shrink-0 text-[18px] sm:text-[20px]">play_arrow</span>
+                  <span>In Progress</span>
                 </>
               )}
             </button>
@@ -2628,17 +2683,18 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
               type="button"
               onClick={handleOwnerCompleteTask}
               disabled={isCompleting}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
+              title="Complete task"
+              className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-2.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2 sm:px-3 sm:text-sm"
             >
               {isCompleting ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                  <span>Completing…</span>
+                  <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  <span className="hidden sm:inline">Completing…</span>
                 </>
               ) : (
                 <>
-                  <span className="material-symbols-outlined text-[20px]">check_circle</span>
-                  <span>Complete task</span>
+                  <span className="material-symbols-outlined shrink-0 text-[18px] sm:text-[20px]">check_circle</span>
+                  <span>Complete</span>
                 </>
               )}
             </button>
@@ -2648,17 +2704,18 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
               type="button"
               onClick={handleMarkComplete}
               disabled={isCompleting}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
+              title="Mark My Task Complete"
+              className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-2.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2 sm:px-3 sm:text-sm"
             >
               {isCompleting ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                  <span>Marking complete...</span>
+                  <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  <span className="hidden sm:inline">Saving…</span>
                 </>
               ) : (
                 <>
-                  <span className="material-symbols-outlined text-[20px]">check_circle</span>
-                  <span>Mark My Task Complete</span>
+                  <span className="material-symbols-outlined shrink-0 text-[18px] sm:text-[20px]">check_circle</span>
+                  <span>My complete</span>
                 </>
               )}
             </button>
@@ -2671,10 +2728,11 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                 setShowRequestDeleteModal(true);
               }}
               disabled={requestTaskDeleteMutation.isLoading}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 bg-white dark:bg-slate-800/80 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+              title="Request Delete"
+              className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-amber-300 bg-white px-2.5 py-2 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-50 disabled:opacity-50 dark:border-amber-700 dark:bg-slate-800/80 dark:text-amber-200 dark:hover:bg-amber-950/30 sm:gap-2 sm:px-3 sm:text-sm"
             >
-              <span className="material-symbols-outlined text-[20px]">outgoing_mail</span>
-              <span>Request Delete</span>
+              <span className="material-symbols-outlined shrink-0 text-[18px] sm:text-[20px]">outgoing_mail</span>
+              <span>Req. delete</span>
             </button>
           )}
           {canExitWithCommentsAction && (
@@ -2685,10 +2743,11 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                 setShowExitRequestModal(true);
               }}
               disabled={createExitRequestMutation.isLoading}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border border-indigo-300 dark:border-indigo-700 text-indigo-800 dark:text-indigo-200 bg-white dark:bg-slate-800/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+              title="Exit with Comments"
+              className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-indigo-300 bg-white px-2.5 py-2 text-xs font-semibold text-indigo-800 transition-colors hover:bg-indigo-50 disabled:opacity-50 dark:border-indigo-700 dark:bg-slate-800/80 dark:text-indigo-200 dark:hover:bg-indigo-950/30 sm:gap-2 sm:px-3 sm:text-sm"
             >
-              <span className="material-symbols-outlined text-[20px]">logout</span>
-              <span>Exit with Comments</span>
+              <span className="material-symbols-outlined shrink-0 text-[18px] sm:text-[20px]">logout</span>
+              <span>Exit</span>
             </button>
           )}
           {canDeleteTaskDirectly && (
@@ -2696,17 +2755,18 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
               type="button"
               onClick={handleDeleteTaskFromChat}
               disabled={deleteTaskMutation.isLoading}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 bg-white dark:bg-slate-800/80 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+              title="Delete task"
+              className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-rose-300 bg-white px-2.5 py-2 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-50 disabled:opacity-50 dark:border-rose-800 dark:bg-slate-800/80 dark:text-rose-300 dark:hover:bg-rose-950/30 sm:gap-2 sm:px-3 sm:text-sm"
             >
               {deleteTaskMutation.isLoading ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-rose-600 border-t-transparent" />
-                  <span>Deleting…</span>
+                  <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-rose-600 border-t-transparent" />
+                  <span className="hidden sm:inline">Deleting…</span>
                 </>
               ) : (
                 <>
-                  <span className="material-symbols-outlined text-[20px]">delete_outline</span>
-                  <span>Delete task</span>
+                  <span className="material-symbols-outlined shrink-0 text-[18px] sm:text-[20px]">delete_outline</span>
+                  <span>Delete</span>
                 </>
               )}
             </button>
@@ -2718,8 +2778,8 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
       {/* Pending Verifications Section - EXACT mobile logic */}
       {pendingVerifications.length > 0 && (
-        <div className="bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800 px-6 py-4">
-          <h3 className="text-sm font-bold text-amber-900 dark:text-amber-300 mb-3">
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 dark:border-amber-800 dark:bg-amber-900/20">
+          <h3 className="mb-2 text-xs font-bold text-amber-900 dark:text-amber-300">
             {isTaskCreator() 
               ? 'Pending Verifications' 
               : isReportingMember() 

@@ -108,7 +108,10 @@ export const TaskDashboardScreen: React.FC = () => {
       factory: { label: 'Factory', keys: ['factory_name', 'factoryName', 'factory'] },
     };
     const chosen = map[preference] || map.cost_centre;
-    const value = chosen.keys.map((k) => taskLike?.[k]).find((v) => typeof v === 'string' && v.trim());
+    // Backend stores the user-entered unit value as a single column (`task_unit`,
+    // legacy `task_unit_name`); type-specific keys above are kept for forward-compat.
+    const lookupKeys = [...chosen.keys, 'task_unit', 'taskUnit', 'task_unit_name', 'taskUnitName'];
+    const value = lookupKeys.map((k) => taskLike?.[k]).find((v) => typeof v === 'string' && v.trim());
     return value ? `${chosen.label}: ${String(value)}` : null;
   };
 

@@ -558,16 +558,6 @@ export const EmployeeDashboard: React.FC = () => {
           const full = taskDetails[task.id];
           const merged = mergeTaskWithFinancial(full ? { ...task, ...full, id: task.id || full.id } : task);
           const derived = (getTaskStatusCategoryFromTask(merged, 3, currentUserId) || 'todo') as TaskStatusCategory;
-          const cardStatus: 'scheduled' | 'overdue' | 'duesoon' | 'inprogress' | 'completed' =
-            derived === 'scheduled'
-              ? 'scheduled'
-              : derived === 'overdue'
-              ? 'overdue'
-              : derived === 'duesoon'
-              ? 'duesoon'
-              : derived === 'completed'
-              ? 'completed'
-              : 'inprogress';
           const assignees = Array.isArray(merged?.assignees) ? merged.assignees : [];
           const totalMembers = assignees.length;
           const verifiedCompleted = assignees.filter((a: any) => !!a?.verified_at).length;
@@ -598,7 +588,10 @@ export const EmployeeDashboard: React.FC = () => {
               factory: { label: 'Factory', keys: ['factory_name', 'factoryName', 'factory'] },
             };
             const chosen = map[preference] || map.cost_centre;
-            const value = chosen.keys.map((k) => taskLike?.[k]).find((v) => typeof v === 'string' && v.trim()) || '-';
+            // Backend stores the user-entered unit value as a single column (`task_unit`,
+            // legacy `task_unit_name`); type-specific keys above are kept for forward-compat.
+            const lookupKeys = [...chosen.keys, 'task_unit', 'taskUnit', 'task_unit_name', 'taskUnitName'];
+            const value = lookupKeys.map((k) => taskLike?.[k]).find((v) => typeof v === 'string' && v.trim()) || '-';
             return { unitType: chosen.label, unitName: String(value) };
           };
           const unitPref = userTaskConfig?.taskUnitPreference || 'cost_centre';
@@ -609,14 +602,17 @@ export const EmployeeDashboard: React.FC = () => {
               id={task.id}
               title={merged.title}
               clientName={merged.client_name || merged.clientName}
+              tags={merged.tags}
               description={merged.description}
-              status={cardStatus}
+              status={derived}
               dueDate={merged.due_date || merged.dueDate}
               category={merged.category}
               assignees={cardAssignees}
-              progress={cardStatus === 'inprogress' ? progress : undefined}
+              progress={derived === 'inprogress' ? progress : undefined}
               finance={hasFinance && isCreator ? { amount: merged.financial_value, type: merged.finance_type } : undefined}
               unreadCount={convId ? unreadCountByConversationId[convId] ?? 0 : 0}
+              hideUserStatus={!!merged.hide_user_status}
+              rawTaskStatus={merged.status}
               taskPeriod={(() => {
                 const start = merged.start_date || merged.startDate;
                 if (!start) return '';
