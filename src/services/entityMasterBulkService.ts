@@ -25,6 +25,19 @@ export interface EntityMasterBulkStatusResponse {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  summary?: {
+    organizations?: number;
+    cost_centres?: number;
+    branches?: number;
+    depots?: number;
+    warehouses?: number;
+    task_services?: number;
+    client_entities?: number;
+    client_entity_services?: number;
+    employees?: number;
+    tasks?: number;
+    totalErrors?: number;
+  };
   errors?: Array<{ sheet?: string; row?: number; message: string }>;
 }
 

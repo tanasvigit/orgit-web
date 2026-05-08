@@ -127,13 +127,20 @@ export const SettingsScreen: React.FC = () => {
         try {
           const status = await entityMasterBulkService.pollUntilDone(data.uploadId);
         if (status.status === 'completed') {
-          toast.success('Settings bulk upload completed.');
+          const s = status.summary;
+          const summaryLine = s
+            ? `Org:${s.organizations ?? 0}, CC:${s.cost_centres ?? 0}, Branch:${s.branches ?? 0}, Depot:${s.depots ?? 0}, Warehouse:${s.warehouses ?? 0}, Services:${s.task_services ?? 0}, Entities:${s.client_entities ?? 0}, Entity services:${s.client_entity_services ?? 0}, Employees:${s.employees ?? 0}, Tasks:${s.tasks ?? 0}`
+            : null;
+          toast.success(summaryLine ? `Settings bulk upload completed. ${summaryLine}` : 'Settings bulk upload completed.');
         } else {
           toast.info('Bulk upload finished with errors.');
         }
           if (status.errors?.length) {
-            status.errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
-            if (status.errors.length > 5) toast.error(`… and ${status.errors.length - 5} more errors`);
+            status.errors.slice(0, 8).forEach((e: any) => {
+              const prefix = `${e.sheet ? `[${e.sheet}]` : '[Sheet?]'}${typeof e.row === 'number' ? ` Row ${e.row}` : ''}`;
+              toast.error(`${prefix}: ${e.message || 'Unknown error'}`);
+            });
+            if (status.errors.length > 8) toast.error(`… and ${status.errors.length - 8} more errors`);
           }
         } catch (err: any) {
           toast.error(err?.message || 'Failed to get upload status');
