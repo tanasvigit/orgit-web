@@ -63,8 +63,40 @@ const optionBaseClass =
   'rounded-lg border px-3 py-2 text-sm font-medium transition-colors border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280] hover:bg-[#F3F4F6]';
 const optionActiveClass = 'border-primary bg-primary text-white hover:bg-primary';
 
-const chatCheckboxClass =
-  'h-4 w-4 cursor-pointer rounded border-[#C4B5FD] accent-primary focus:ring-2 focus:ring-primary/40';
+const YesNoToggle: React.FC<{
+  value: boolean;
+  onChange: (next: boolean) => void;
+  ariaLabel: string;
+}> = ({ value, onChange, ariaLabel }) => {
+  const baseSegment =
+    'px-3 py-1 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40';
+  const activeSegment = 'bg-primary text-white';
+  const inactiveSegment = 'bg-transparent text-[#6B7280] hover:bg-[#EEF2FF]';
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className="inline-flex overflow-hidden rounded-full border border-[#E5E7EB] bg-white"
+    >
+      <button
+        type="button"
+        aria-pressed={value === true}
+        onClick={() => onChange(true)}
+        className={`${baseSegment} ${value ? activeSegment : inactiveSegment}`}
+      >
+        Yes
+      </button>
+      <button
+        type="button"
+        aria-pressed={value === false}
+        onClick={() => onChange(false)}
+        className={`${baseSegment} ${!value ? activeSegment : inactiveSegment}`}
+      >
+        No
+      </button>
+    </div>
+  );
+};
 
 const ChatSection: React.FC<{ question: string; questionAction?: React.ReactNode; children: React.ReactNode }> = ({
   question,
@@ -546,10 +578,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         </div>
 
         <div className="max-h-[calc(92vh-72px)] space-y-4 overflow-y-auto bg-[#F9FAFB] p-4">
-          <div className="w-fit max-w-[88%] text-[13px] font-semibold text-[#6B7280]">
-            Hi! I will help you create a task. Please answer one field at a time.
-          </div>
-
           <div className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">Basic Info</div>
           <ChatSection question="Basic Info">
             <label className={labelClass}>Task Title *</label>
@@ -709,12 +737,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
           <ChatSection
             question="Is this task recurring?"
             questionAction={
-              <input
-                type="checkbox"
-                checked={isRecurring}
-                onChange={(e) => setIsRecurring(e.target.checked)}
-                className={chatCheckboxClass}
-                aria-label="Is this task recurring?"
+              <YesNoToggle
+                value={isRecurring}
+                onChange={setIsRecurring}
+                ariaLabel="Is this task recurring?"
               />
             }
           >
@@ -800,12 +826,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
           <ChatSection
             question="Do you want to set timelines?"
             questionAction={
-              <input
-                type="checkbox"
-                checked={setTimelines}
-                onChange={(e) => setSetTimelines(e.target.checked)}
-                className={chatCheckboxClass}
-                aria-label="Set timelines"
+              <YesNoToggle
+                value={setTimelines}
+                onChange={setSetTimelines}
+                ariaLabel="Do you want to set timelines?"
               />
             }
           >
@@ -830,12 +854,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
           <ChatSection
             question="Do you want to assign people?"
             questionAction={
-              <input
-                type="checkbox"
-                checked={assignPeople}
-                onChange={(e) => setAssignPeople(e.target.checked)}
-                className={chatCheckboxClass}
-                aria-label="Assign people"
+              <YesNoToggle
+                value={assignPeople}
+                onChange={setAssignPeople}
+                ariaLabel="Do you want to assign people?"
               />
             }
           >
@@ -849,13 +871,11 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                 </button>
 
                 <div className="mt-3 flex items-center justify-between rounded-lg border border-[#E5E7EB] bg-white px-3 py-2">
-                  <label className="text-sm font-semibold text-[#1F2937]">Auto Escalation</label>
-                  <input
-                    type="checkbox"
-                    checked={autoEscalation}
-                    onChange={(e) => setAutoEscalation(e.target.checked)}
-                    className={chatCheckboxClass}
-                    aria-label="Auto escalation"
+                  <span className="text-sm font-semibold text-[#1F2937]">Auto Escalation</span>
+                  <YesNoToggle
+                    value={autoEscalation}
+                    onChange={setAutoEscalation}
+                    ariaLabel="Auto escalation"
                   />
                 </div>
 
@@ -902,12 +922,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
           <ChatSection
             question="Do you want to add financial details?"
             questionAction={
-              <input
-                type="checkbox"
-                checked={addFinancialValue}
-                onChange={(e) => setAddFinancialValue(e.target.checked)}
-                className={chatCheckboxClass}
-                aria-label="Add financial value"
+              <YesNoToggle
+                value={addFinancialValue}
+                onChange={setAddFinancialValue}
+                ariaLabel="Do you want to add financial details?"
               />
             }
           >

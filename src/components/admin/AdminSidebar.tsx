@@ -338,7 +338,8 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
             <button
               type="button"
               onClick={() => {
-                navigate('/admin/entity-master');
+                setIsSettingsOpen(true);
+                navigate('/admin/settings');
                 if (window.innerWidth < 768) setIsMobileOpen(false);
               }}
               className={`flex min-w-0 flex-1 text-left ${
