@@ -460,7 +460,6 @@ export const AdminDashboard: React.FC = () => {
       flattenedSelfTasksForUser.forEach((task: any) => {
         const full = taskDetails[task.id];
         const merged = full ? { ...task, ...full } : task;
-        if (isBeforeStartDate(merged)) return;
         const bucket = (getTaskStatusCategoryFromTask(merged, 3, currentUserId) || 'todo') as TaskStatusCategory;
         counts[bucket] = (counts[bucket] ?? 0) + 1;
       });
@@ -485,7 +484,6 @@ export const AdminDashboard: React.FC = () => {
       const full = taskDetails[task.id];
       const merged = full ? { ...task, ...full } : task;
       if (!matchesAssignedMemberFilter(merged)) return;
-      if (isBeforeStartDate(merged)) return;
       const bucket = (getTaskStatusCategoryFromTask(merged, 3, currentUserId) || 'todo') as TaskStatusCategory;
       counts[bucket] = (counts[bucket] ?? 0) + 1;
     });

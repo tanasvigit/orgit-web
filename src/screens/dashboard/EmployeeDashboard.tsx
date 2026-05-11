@@ -399,6 +399,7 @@ export const EmployeeDashboard: React.FC = () => {
     () => {
       const counts: Record<TaskStatusCategory, number> = {
         todo: 0,
+        scheduled: 0,
         overdue: 0,
         duesoon: 0,
         inprogress: 0,
@@ -409,7 +410,6 @@ export const EmployeeDashboard: React.FC = () => {
       flattenedSelfTasksForUser.forEach((task: any) => {
         const full = taskDetails[task.id];
         const merged = full ? { ...task, ...full } : task;
-        if (isBeforeStartDate(merged)) return;
         const bucket = (getTaskStatusCategoryFromTask(merged, 3, currentUserId) || 'todo') as TaskStatusCategory;
         counts[bucket] = (counts[bucket] ?? 0) + 1;
       });
@@ -423,6 +423,7 @@ export const EmployeeDashboard: React.FC = () => {
   const assignedUserStatusCounts = useMemo(() => {
     const counts: Record<TaskStatusCategory, number> = {
       todo: 0,
+      scheduled: 0,
       overdue: 0,
       duesoon: 0,
       inprogress: 0,
@@ -433,7 +434,6 @@ export const EmployeeDashboard: React.FC = () => {
     flattenedAssignedTasksForUser.forEach((task: any) => {
       const full = taskDetails[task.id];
       const merged = full ? { ...task, ...full } : task;
-      if (isBeforeStartDate(merged)) return;
       const bucket = (getTaskStatusCategoryFromTask(merged, 3, currentUserId) || 'todo') as TaskStatusCategory;
       counts[bucket] = (counts[bucket] ?? 0) + 1;
     });
@@ -527,7 +527,10 @@ export const EmployeeDashboard: React.FC = () => {
     });
   };
 
-  const getStatusCount = (status: 'todo' | 'overdue' | 'duesoon' | 'inprogress' | 'completed', view: 'self' | 'assigned') => {
+  const getStatusCount = (
+    status: 'todo' | 'scheduled' | 'overdue' | 'duesoon' | 'inprogress' | 'completed',
+    view: 'self' | 'assigned'
+  ) => {
     // Use per-user lifecycle buckets from getTaskStatusCategoryFromTask (match mobile).
     if (view === 'self') {
       return selfUserStatusCounts[status] ?? 0;
@@ -539,6 +542,7 @@ export const EmployeeDashboard: React.FC = () => {
     const counts = view === 'self' ? selfUserStatusCounts : assignedUserStatusCounts;
     return (
       (counts.todo ?? 0) +
+      (counts.scheduled ?? 0) +
       (counts.overdue ?? 0) +
       (counts.duesoon ?? 0) +
       (counts.inprogress ?? 0) +

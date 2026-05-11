@@ -1546,13 +1546,17 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     if (!currentUserAssignee || !task || !currentUserId) return false;
     const taskOwnerId = task.created_by ?? task.creator_id;
     if (!!taskOwnerId && String(taskOwnerId) === String(currentUserId)) return false;
-    const hasAccepted = currentUserAssignee.accepted_at || currentUserAssignee.has_accepted;
+    const viewerStatus = getTaskStatusCategoryFromTask(task, 3, currentUserId);
     const hasCompleted =
       !!currentUserAssignee.completed_at ||
       currentUserAssignee.completion_status === 'completed' ||
       currentUserAssignee.status === 'completed';
     const s = String(task.status || '').toLowerCase();
-    return hasAccepted && !hasCompleted && s !== 'completed';
+    return (
+      (viewerStatus === 'inprogress' || viewerStatus === 'duesoon' || viewerStatus === 'overdue') &&
+      !hasCompleted &&
+      s !== 'completed'
+    );
   }, [currentUserAssignee, task, currentUserId]);
 
   // Mark member complete mutation (assignees only)

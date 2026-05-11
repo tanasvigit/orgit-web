@@ -273,7 +273,7 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
     return formatted || 'Not set';
   };
 
-  const category = getTaskStatusCategoryFromTask(displayTask) as TaskStatusCategory;
+  const category = getTaskStatusCategoryFromTask(displayTask, 3, currentUserId) as TaskStatusCategory;
 
   const primaryStatusLabel: string = (() => {
     switch (category) {

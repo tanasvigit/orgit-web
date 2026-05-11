@@ -345,9 +345,11 @@ export const TaskGroupDetailsModal: React.FC<TaskGroupDetailsModalProps> = ({
                   <div>
                     <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Status</label>
                     {(() => {
-                      const category = getTaskStatusCategoryFromTask(task) as TaskStatusCategory;
+                      const category = getTaskStatusCategoryFromTask(task, 3, currentUserId) as TaskStatusCategory;
                       const label = (() => {
                         switch (category) {
+                          case 'scheduled':
+                            return 'Scheduled';
                           case 'todo':
                             return 'TODO';
                           case 'inprogress':

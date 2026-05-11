@@ -82,7 +82,7 @@ export const TaskChatScreen: React.FC = () => {
             animateTaskTransition: true,
             taskId: taskId,
             fromStatus: 'todo',
-            toStatus: 'inprogress',
+            toStatus: 'todo',
             taskSection: isCreator ? 'self' : 'assigned',
           },
         });

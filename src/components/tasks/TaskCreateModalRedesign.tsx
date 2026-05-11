@@ -52,15 +52,14 @@ type TaskUnitSection = {
   units: string[];
 };
 
-const questionBubbleClass =
-  'w-fit max-w-[88%] rounded-xl border border-[#E5E7EB] bg-[#F3F4F6] px-3 py-2 text-[13px] font-medium text-[#1F2937]';
-const answerBubbleClass =
-  'w-full self-end rounded-2xl border border-[#E7D9FF] bg-[#F8F5FF] px-4 py-4 sm:w-[92%]';
-const labelClass = 'mb-1 block text-sm font-semibold text-[#1F2937]';
+const introMessageClass =
+  'w-fit max-w-full rounded-xl border border-[#E5E7EB] bg-[#F3F4F6] px-3 py-2 text-sm font-medium text-[#1F2937]';
+const requiredLabelClass = 'mb-0.5 block text-xs font-medium text-[#6B7280]';
 const inputClass =
-  'w-full rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5 text-sm text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-primary/40';
+  'w-full rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-sm text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-primary/40';
+const sectionClass = 'space-y-2 rounded-xl border border-[#E5E7EB] bg-white p-3';
 const optionBaseClass =
-  'rounded-lg border px-3 py-2 text-sm font-medium transition-colors border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280] hover:bg-[#F3F4F6]';
+  'rounded-lg border px-2 py-1 text-xs font-medium transition-colors border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280] hover:bg-[#F3F4F6]';
 const optionActiveClass = 'border-primary bg-primary text-white hover:bg-primary';
 
 const YesNoToggle: React.FC<{
@@ -98,17 +97,15 @@ const YesNoToggle: React.FC<{
   );
 };
 
-const ChatSection: React.FC<{ question: string; questionAction?: React.ReactNode; children: React.ReactNode }> = ({
-  question,
-  questionAction,
-  children,
-}) => (
-  <div className="flex flex-col gap-2">
-    <div className={`${questionBubbleClass} flex items-center justify-between gap-3`}>
-      <span>{question}</span>
-      {questionAction}
-    </div>
-    <div className={answerBubbleClass}>{children}</div>
+const ToggleRow: React.FC<{
+  label: string;
+  value: boolean;
+  onChange: (next: boolean) => void;
+  ariaLabel: string;
+}> = ({ label, value, onChange, ariaLabel }) => (
+  <div className="flex items-center justify-between gap-2">
+    <span className="text-xs font-medium text-[#4B5563]">{label}</span>
+    <YesNoToggle value={value} onChange={onChange} ariaLabel={ariaLabel} />
   </div>
 );
 
@@ -577,10 +574,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
           </button>
         </div>
 
-        <div className="max-h-[calc(92vh-72px)] space-y-4 overflow-y-auto bg-[#F9FAFB] p-4">
-          <div className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">Basic Info</div>
-          <ChatSection question="Basic Info">
-            <label className={labelClass}>Task Title *</label>
+        <div className="max-h-[calc(92vh-72px)] space-y-2 overflow-y-auto bg-[#F9FAFB] p-3">
+          <p className={introMessageClass}>Hey, create a task here.</p>
+          <div className={sectionClass}>
+            <label className={requiredLabelClass}>Task title *</label>
             <div className="relative">
               <input
                 value={title}
@@ -615,7 +612,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
               ) : null}
             </div>
 
-            <label className={`${labelClass} mt-3`}>Task Tag</label>
             <div className="relative flex gap-2">
               <input
                 value={tagInput}
@@ -666,7 +662,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                 ))}
               </div>
             ) : null}
-            <label className={`${labelClass} mt-3`}>Task Unit</label>
             {taskUnitSections.length > 0 ? (
               <div className="space-y-2">
                 <select
@@ -717,7 +712,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                 className={inputClass}
               />
             )}
-            <div className="mt-3 flex justify-end">
+            <div className="mt-2 flex justify-end">
               <button
                 type="button"
                 onClick={confirmBasicInfo}
@@ -730,23 +725,12 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                 Next
               </button>
             </div>
-          </ChatSection>
+          </div>
 
-          <div className={`pt-1 ${!basicInfoConfirmed ? 'pointer-events-none opacity-45' : ''}`}>
-          <div className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">Recurrence</div>
-          <ChatSection
-            question="Is this task recurring?"
-            questionAction={
-              <YesNoToggle
-                value={isRecurring}
-                onChange={setIsRecurring}
-                ariaLabel="Is this task recurring?"
-              />
-            }
-          >
+          <div className={`${sectionClass} ${!basicInfoConfirmed ? 'pointer-events-none opacity-45' : ''}`}>
+            <ToggleRow label="Recurring" value={isRecurring} onChange={setIsRecurring} ariaLabel="Recurring" />
             {isRecurring ? (
               <>
-                <label className={`${labelClass} mt-2`}>Task Frequency</label>
                 <div className="flex flex-wrap gap-2">
                   {(['daily', 'weekly', 'monthly', 'custom'] as const).map((f) => (
                     <button
@@ -760,11 +744,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                   ))}
                 </div>
 
-                <label className={`${labelClass} mt-3`}>Task rollout</label>
-                <p className="mb-2 text-xs text-[#6B7280]">
-                  How each recurrence cycle lines up with dates (required for recurring tasks without timelines—use
-                  Cycle start).
-                </p>
                 <div className="flex flex-wrap gap-2">
                   {(
                     [
@@ -783,7 +762,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                   ))}
                 </div>
 
-                <label className={`${labelClass} mt-3`}>Task Ends</label>
                 <div className="flex flex-wrap gap-2">
                   {([
                     { key: 'never', label: 'Never' },
@@ -818,21 +796,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                 ) : null}
               </>
             ) : null}
-          </ChatSection>
           </div>
 
-          <div className={`pt-1 ${!basicInfoConfirmed ? 'pointer-events-none opacity-45' : ''}`}>
-          <div className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">Timelines</div>
-          <ChatSection
-            question="Do you want to set timelines?"
-            questionAction={
-              <YesNoToggle
-                value={setTimelines}
-                onChange={setSetTimelines}
-                ariaLabel="Do you want to set timelines?"
-              />
-            }
-          >
+          <div className={`${sectionClass} ${!basicInfoConfirmed ? 'pointer-events-none opacity-45' : ''}`}>
+            <ToggleRow label="Timelines" value={setTimelines} onChange={setSetTimelines} ariaLabel="Timelines" />
             {setTimelines ? (
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <button type="button" onClick={() => setShowStartPicker(true)} className={`${inputClass} text-left`}>
@@ -846,21 +813,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                 </button>
               </div>
             ) : null}
-          </ChatSection>
           </div>
 
-          <div className={`pt-1 ${!basicInfoConfirmed ? 'pointer-events-none opacity-45' : ''}`}>
-          <div className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">Assignment</div>
-          <ChatSection
-            question="Do you want to assign people?"
-            questionAction={
-              <YesNoToggle
-                value={assignPeople}
-                onChange={setAssignPeople}
-                ariaLabel="Do you want to assign people?"
-              />
-            }
-          >
+          <div className={`${sectionClass} ${!basicInfoConfirmed ? 'pointer-events-none opacity-45' : ''}`}>
+            <ToggleRow label="Assign people" value={assignPeople} onChange={setAssignPeople} ariaLabel="Assign people" />
             {assignPeople ? (
               <>
                 <button type="button" onClick={() => openUserModal('owner')} className={`${inputClass} mt-2 text-left`}>
@@ -870,18 +826,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                   Task Assignees: {selectedAssignees.length > 0 ? `${selectedAssignees.length} selected` : 'Select users'}
                 </button>
 
-                <div className="mt-3 flex items-center justify-between rounded-lg border border-[#E5E7EB] bg-white px-3 py-2">
-                  <span className="text-sm font-semibold text-[#1F2937]">Auto Escalation</span>
-                  <YesNoToggle
-                    value={autoEscalation}
-                    onChange={setAutoEscalation}
-                    ariaLabel="Auto escalation"
-                  />
-                </div>
+                <ToggleRow label="Auto escalation" value={autoEscalation} onChange={setAutoEscalation} ariaLabel="Auto escalation" />
 
                 {autoEscalation ? (
                   <>
-                    <label className={`${labelClass} mt-3`}>Trigger</label>
                     <div className="flex flex-wrap gap-2">
                       {([
                         { key: 'target_date', label: 'After Target Date' },
@@ -898,7 +846,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                       ))}
                     </div>
 
-                    <label className={`${labelClass} mt-3`}>Timing (e.g., 1 day before)</label>
                     <input
                       value={escalationTiming}
                       onChange={(e) => setEscalationTiming(e.target.value)}
@@ -914,24 +861,12 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                 ) : null}
               </>
             ) : null}
-          </ChatSection>
           </div>
 
-          <div className={`pt-1 ${!basicInfoConfirmed ? 'pointer-events-none opacity-45' : ''}`}>
-          <div className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">Financial Details</div>
-          <ChatSection
-            question="Do you want to add financial details?"
-            questionAction={
-              <YesNoToggle
-                value={addFinancialValue}
-                onChange={setAddFinancialValue}
-                ariaLabel="Do you want to add financial details?"
-              />
-            }
-          >
+          <div className={`${sectionClass} ${!basicInfoConfirmed ? 'pointer-events-none opacity-45' : ''}`}>
+            <ToggleRow label="Financial value" value={addFinancialValue} onChange={setAddFinancialValue} ariaLabel="Financial value" />
             {addFinancialValue ? (
               <>
-                <label className={`${labelClass} mt-2`}>Financial Value</label>
                 <input
                   value={financialValue}
                   onChange={(e) => setFinancialValue(e.target.value)}
@@ -941,7 +876,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                 />
               </>
             ) : null}
-          </ChatSection>
           </div>
 
           <button

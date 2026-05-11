@@ -10,7 +10,11 @@ import { AdminLayout } from '../../components/admin/AdminLayout';
 import { conversationService } from '../../services/conversationService';
 import { messageService } from '../../services/messageService';
 import { Avatar } from '../../components/shared';
-import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
+import {
+  getTaskStatusCategoryFromTask,
+  normalizeLifecycleStatus,
+  TaskStatusCategory,
+} from '../../utils/taskStatus';
 
 interface TaskDetailsScreenProps {
   /** When true, render only the task details content (no layout). Used when embedding in task group gate view. */
@@ -301,11 +305,6 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     if (member.completed_at || member.completion_status === 'completed' || member.status === 'completed') {
       return 'Completed';
     }
-    if (member.accepted_at || member.has_accepted) {
-      if (daysUntilDue != null && daysUntilDue < 0) return 'Overdue';
-      if (daysUntilDue != null && daysUntilDue >= 0 && daysUntilDue <= 3) return 'Due Soon';
-      return 'In Progress';
-    }
     return 'TODO';
   };
 
@@ -322,11 +321,6 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     if (lane === 'todo') return '#9CA3AF';
     if (member.completed_at || member.completion_status === 'completed' || member.status === 'completed') {
       return '#2E7D32'; // Green for completed
-    }
-    if (member.accepted_at || member.has_accepted) {
-      if (daysUntilDue != null && daysUntilDue < 0) return '#DC2626';
-      if (daysUntilDue != null && daysUntilDue >= 0 && daysUntilDue <= 3) return '#F59E0B';
-      return '#F57C00'; // Orange for in progress
     }
     return '#9CA3AF'; // Gray for pending
   };
@@ -851,60 +845,8 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     return Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   };
 
-  const normalizeLifecycleStatus = (status: any): TaskStatusCategory | 'scheduled' | null => {
-    if (!status) return null;
-    const normalized = String(status).toLowerCase();
-    if (normalized === 'scheduled') return 'scheduled';
-    if (normalized === 'todo' || normalized === 'pending') return 'todo';
-    if (
-      normalized === 'inprogress' ||
-      normalized === 'in_progress' ||
-      normalized === 'pending_verification' ||
-      normalized === 'under_verification' ||
-      normalized === 'awaiting_creator_confirmation'
-    ) {
-      return 'inprogress';
-    }
-    if (normalized === 'completed' || normalized === 'verified' || normalized === 'completed_verified') return 'completed';
-    if (normalized === 'duesoon' || normalized === 'due_soon') return 'duesoon';
-    if (normalized === 'overdue') return 'overdue';
-    return null;
-  };
-
-  const getViewerStatusCategory = (t: any): TaskStatusCategory => {
-    if (!t) return 'todo';
-    // Prefer backend/DB scheduled flag when present
-    if (t?.is_before_start_date === true) return 'scheduled';
-    // Fallback for endpoints that don't include the flag
-    if (isBeforeStartDate(t)) return 'scheduled';
-
-    const cu = t?.current_user_status;
-    const cuAssigneeStatus = normalizeLifecycleStatus(cu?.assignee_status);
-    if (cuAssigneeStatus) return cuAssigneeStatus as TaskStatusCategory;
-
-    const me = Array.isArray(t?.assignees)
-      ? t.assignees.find((a: any) => {
-          const id = a?.id ?? a?.user_id ?? a?.userId;
-          return id != null && currentUserId != null && String(id) === String(currentUserId);
-        })
-      : null;
-    const meAssigneeStatus = normalizeLifecycleStatus(me?.assignee_status);
-    if (meAssigneeStatus) return meAssigneeStatus as TaskStatusCategory;
-
-    // Fall back to acceptance/completion fields (matches member row logic).
-    let base: TaskStatusCategory = 'todo';
-    const meCompleted = !!(me?.completed_at || me?.completion_status === 'completed' || me?.status === 'completed' || me?.verified_at);
-    if (meCompleted) base = 'completed';
-    else {
-      const accepted = !!(me?.accepted_at || me?.has_accepted || cu?.has_accepted);
-      base = accepted ? 'inprogress' : 'todo';
-    }
-
-    const daysUntilDue = getDaysUntilDue(t);
-    if (base !== 'completed' && (String(t?.status || '').toLowerCase() === 'overdue' || (daysUntilDue != null && daysUntilDue < 0))) return 'overdue';
-    if (base !== 'completed' && daysUntilDue != null && daysUntilDue >= 0 && daysUntilDue <= 3) return 'duesoon';
-    return base;
-  };
+  const getViewerStatusCategory = (t: any): TaskStatusCategory =>
+    getTaskStatusCategoryFromTask(t, 3, currentUserId) ?? 'todo';
 
   // Viewer-scoped status category (drives header badge, timeline and controls)
   const globalStatus = getViewerStatusCategory(displayTask) as TaskStatusCategory;
