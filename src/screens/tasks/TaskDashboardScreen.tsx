@@ -92,6 +92,16 @@ export const TaskDashboardScreen: React.FC = () => {
     return getTaskStatusCategoryFromTask(task, 3, currentUserId);
   };
 
+  const resolveTaskClientName = (taskLike: any): string => {
+    if (!taskLike) return '';
+    const raw =
+      taskLike.client_name ??
+      taskLike.clientName ??
+      taskLike.entity_name ??
+      taskLike.entityName;
+    return typeof raw === 'string' ? raw.trim() : '';
+  };
+
   const resolveTaskUnitDisplay = (taskLike: any) => {
     const preference = userTaskConfig?.taskUnitPreference || 'cost_centre';
     const map: Record<string, { label: string; keys: string[] }> = {
@@ -1344,6 +1354,15 @@ export const TaskDashboardScreen: React.FC = () => {
                         </div>
                       </div>
                       {(() => {
+                        const clientName = resolveTaskClientName(task);
+                        if (!clientName) return null;
+                        return (
+                          <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">
+                            {clientName}
+                          </p>
+                        );
+                      })()}
+                      {(() => {
                         const tagText = Array.isArray(task?.tags)
                           ? task.tags.filter(Boolean).join(', ')
                           : typeof task?.tags === 'string'
@@ -1448,6 +1467,15 @@ export const TaskDashboardScreen: React.FC = () => {
                           </span>
                         )}
                       </div>
+                      {(() => {
+                        const clientName = resolveTaskClientName(task);
+                        if (!clientName) return null;
+                        return (
+                          <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">
+                            {clientName}
+                          </p>
+                        );
+                      })()}
                       {(() => {
                         const tagText = Array.isArray(task?.tags)
                           ? task.tags.filter(Boolean).join(', ')

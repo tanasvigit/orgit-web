@@ -166,7 +166,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [occurrenceCount, setOccurrenceCount] = useState('10');
   const [showRecurrenceEndPicker, setShowRecurrenceEndPicker] = useState(false);
 
-  const [setTimelines, setSetTimelines] = useState(true);
+  const [setTimelines, setSetTimelines] = useState(false);
   const [startDate, setStartDate] = useState(baseDate);
   const [targetDate, setTargetDate] = useState(addDays(baseDate, 7));
   const [dueDate, setDueDate] = useState(initialDueDate ? new Date(initialDueDate) : addDays(baseDate, 10));
@@ -319,11 +319,11 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     setTaskEnds('never');
     setRecurrenceEndDate(addDays(now, 30));
     setOccurrenceCount('10');
-    setSetTimelines(true);
+    setSetTimelines(false);
     setStartDate(startD);
     setTargetDate(targetD);
     setDueDate(dueD);
-    setAssignPeople(true);
+    setAssignPeople(false);
     setTaskOwnerId(currentUserId);
     setSelectedAssignees([]);
     setAutoEscalation(false);
