@@ -159,7 +159,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [basicInfoConfirmed, setBasicInfoConfirmed] = useState(false);
 
   const [isRecurring, setIsRecurring] = useState(false);
-  const [taskRolloutType, setTaskRolloutType] = useState<'cycle_start' | 'start_date'>('cycle_start');
   const [taskFrequency, setTaskFrequency] = useState<'daily' | 'weekly' | 'monthly' | 'custom'>('weekly');
   const [taskEnds, setTaskEnds] = useState<'never' | 'specific_date' | 'after_occurrences'>('never');
   const [recurrenceEndDate, setRecurrenceEndDate] = useState(addDays(baseDate, 30));
@@ -314,7 +313,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     setShowTagSuggestions(false);
     setBasicInfoConfirmed(false);
     setIsRecurring(false);
-    setTaskRolloutType('cycle_start');
     setTaskFrequency('weekly');
     setTaskEnds('never');
     setRecurrenceEndDate(addDays(now, 30));
@@ -417,10 +415,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
       toast.error('Please enter valid occurrences count');
       return false;
     }
-    if (isRecurring && !setTimelines && taskRolloutType !== 'cycle_start') {
-      toast.error('Recurring tasks without timelines require Cycle start rollout');
-      return false;
-    }
     if (assignPeople && !taskOwnerId) {
       toast.error('Please select a task owner');
       return false;
@@ -475,7 +469,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         description: taskDescription || null,
         task_type: isRecurring ? 'recurring' : 'one_time',
         recurrence_type: recurrenceType,
-        task_rollout_type: isRecurring ? taskRolloutType : undefined,
+        task_rollout_type: isRecurring ? 'cycle_start' : undefined,
         recurrence_end_type: isRecurring ? taskEnds : null,
         recurrence_end_date: isRecurring && taskEnds === 'specific_date' ? recurrenceEndDate.toISOString() : null,
         recurrence_after_occurrences:
@@ -740,24 +734,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                       className={`${optionBaseClass} ${taskFrequency === f ? optionActiveClass : ''}`}
                     >
                       {f.charAt(0).toUpperCase() + f.slice(1)}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {(
-                    [
-                      { key: 'cycle_start' as const, label: 'Cycle start' },
-                      { key: 'start_date' as const, label: 'Start date' },
-                    ] as const
-                  ).map((o) => (
-                    <button
-                      key={o.key}
-                      type="button"
-                      onClick={() => setTaskRolloutType(o.key)}
-                      className={`${optionBaseClass} ${taskRolloutType === o.key ? optionActiveClass : ''}`}
-                    >
-                      {o.label}
                     </button>
                   ))}
                 </div>

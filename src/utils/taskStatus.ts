@@ -65,6 +65,19 @@ const isDueSoon = (todayMs: number, dueMs: number, dueSoonDays: number): boolean
   return diffDays >= 0 && diffDays <= dueSoonDays;
 };
 
+const isDueSoonEligible = (
+  todayMs: number,
+  startMs: number | null,
+  targetMs: number | null,
+  dueMs: number | null,
+  dueSoonDays: number
+): boolean => {
+  if (dueMs == null || todayMs == null) return false;
+  const gateMs = targetMs ?? startMs;
+  if (gateMs != null && todayMs < gateMs) return false;
+  return isDueSoon(todayMs, dueMs, dueSoonDays);
+};
+
 export const resolveUserLifecycleCategory = (input: {
   assigneeStatus?: string | null;
   verifiedAt?: string | Date | null;
@@ -76,7 +89,9 @@ export const resolveUserLifecycleCategory = (input: {
 }): TaskStatusCategory => {
   const todayMs = toDayStartMs(input.now ?? new Date());
   const startMs = toDayStartMs(input.startDate);
-  const dueMs = toDayStartMs(input.dueDate) ?? toDayStartMs(input.targetDate);
+  const targetMs = toDayStartMs(input.targetDate);
+  const dueMs = toDayStartMs(input.dueDate);
+  const overdueMs = dueMs ?? targetMs;
   const dueSoonDays = input.dueSoonDays ?? 3;
   const rawAssigneeStatus = input.assigneeStatus;
 
@@ -93,7 +108,7 @@ export const resolveUserLifecycleCategory = (input: {
     return 'scheduled';
   }
 
-  if (dueMs != null && todayMs != null && todayMs > dueMs) {
+  if (overdueMs != null && todayMs != null && todayMs > overdueMs) {
     return 'overdue';
   }
 
@@ -105,12 +120,12 @@ export const resolveUserLifecycleCategory = (input: {
     return 'inprogress';
   }
 
-  if (dueMs != null && todayMs != null && isDueSoon(todayMs, dueMs, dueSoonDays)) {
+  if (isDueSoonEligible(todayMs, startMs, targetMs, dueMs, dueSoonDays)) {
     return 'duesoon';
   }
 
   if (fromStatus === 'duesoon') {
-    return 'duesoon';
+    return 'todo';
   }
 
   if (fromStatus === 'scheduled') {

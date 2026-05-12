@@ -54,7 +54,6 @@ export const TaskCreationScreen: React.FC = () => {
   const [titleHighlightedIndex, setTitleHighlightedIndex] = useState(-1);
   const titleSuggestionsRef = useRef<HTMLDivElement>(null);
   const [recurrenceType, setRecurrenceType] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>('weekly');
-  const [taskRolloutType, setTaskRolloutType] = useState<'cycle_start' | 'start_date'>('cycle_start');
   const [autoEscalate, setAutoEscalate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [reportingMemberId, setReportingMemberId] = useState<string | null>(null);
@@ -227,7 +226,7 @@ export const TaskCreationScreen: React.FC = () => {
         due_date: dueDate.toISOString(),
         recurrence_type: taskType === 'recurring' ? recurrenceType : null,
         recurrence_interval: 1,
-        task_rollout_type: taskType === 'recurring' ? taskRolloutType : undefined,
+        task_rollout_type: taskType === 'recurring' ? 'cycle_start' : undefined,
         auto_escalate: autoEscalate,
         reporting_member_id: reportingMemberId || undefined,
         metadata: {
@@ -525,35 +524,6 @@ export const TaskCreationScreen: React.FC = () => {
                     }`}
                   >
                     {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Task rollout
-              </label>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                Cycle start: each cycle follows the recurrence pattern. Start date: anchor from the task start date.
-              </p>
-              <div className="flex gap-2">
-                {(
-                  [
-                    { key: 'cycle_start' as const, label: 'Cycle start' },
-                    { key: 'start_date' as const, label: 'Start date' },
-                  ] as const
-                ).map((o) => (
-                  <button
-                    key={o.key}
-                    type="button"
-                    onClick={() => setTaskRolloutType(o.key)}
-                    className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                      taskRolloutType === o.key
-                        ? 'bg-primary text-white'
-                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                    }`}
-                  >
-                    {o.label}
                   </button>
                 ))}
               </div>
