@@ -22,6 +22,7 @@ import { getTaskCreationUserConfig } from '../../services/userTaskCreationConfig
 type TaskDashboardStatus = TaskStatusCategory;
 
 const STATUS_LABELS: Record<Exclude<StatusFilter, 'all'>, string> = {
+  scheduled: 'Scheduled',
   todo: 'To Do',
   inprogress: 'In Progress',
   duesoon: 'Due Soon',
@@ -29,6 +30,7 @@ const STATUS_LABELS: Record<Exclude<StatusFilter, 'all'>, string> = {
   completed: 'Completed',
 };
 const STATUS_ICONS: Record<Exclude<StatusFilter, 'all'>, string> = {
+  scheduled: 'event_note',
   todo: 'today',
   inprogress: 'pending_actions',
   duesoon: 'schedule',
@@ -36,6 +38,7 @@ const STATUS_ICONS: Record<Exclude<StatusFilter, 'all'>, string> = {
   completed: 'task_alt',
 };
 const STATUS_COLORS: Record<Exclude<StatusFilter, 'all'>, string> = {
+  scheduled: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300',
   todo: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
   inprogress: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
   duesoon: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
@@ -43,6 +46,7 @@ const STATUS_COLORS: Record<Exclude<StatusFilter, 'all'>, string> = {
   completed: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
 };
 const STATUS_ICON_COLORS: Record<Exclude<StatusFilter, 'all'>, string> = {
+  scheduled: 'text-indigo-600 dark:text-indigo-300',
   todo: 'text-blue-600 dark:text-blue-300',
   inprogress: 'text-purple-600 dark:text-purple-300',
   duesoon: 'text-amber-600 dark:text-amber-300',
@@ -263,7 +267,9 @@ export const TaskDashboardScreen: React.FC = () => {
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
     const v = (statusFromUrl || '').toLowerCase();
-    if (v === 'todo' || v === 'overdue' || v === 'duesoon' || v === 'inprogress' || v === 'completed') return v as StatusFilter;
+    if (v === 'scheduled' || v === 'todo' || v === 'overdue' || v === 'duesoon' || v === 'inprogress' || v === 'completed') {
+      return v as StatusFilter;
+    }
     return 'todo';
   });
 
@@ -278,7 +284,14 @@ export const TaskDashboardScreen: React.FC = () => {
     const statusParam = (searchParams.get('status') || '').toLowerCase();
     const viewParam = (searchParams.get('view') || '').toLowerCase();
 
-    if (statusParam === 'todo' || statusParam === 'overdue' || statusParam === 'duesoon' || statusParam === 'inprogress' || statusParam === 'completed') {
+    if (
+      statusParam === 'scheduled' ||
+      statusParam === 'todo' ||
+      statusParam === 'overdue' ||
+      statusParam === 'duesoon' ||
+      statusParam === 'inprogress' ||
+      statusParam === 'completed'
+    ) {
       setStatusFilter(statusParam as StatusFilter);
     }
 
@@ -400,15 +413,19 @@ export const TaskDashboardScreen: React.FC = () => {
     return map;
   }, [taskGroups, detailsResults]);
 
-  // Unique task IDs to fetch task details
-  const uniqueTaskIds = useMemo(
-    () => [...new Set(Object.values(taskIdByConvId).filter(Boolean))],
-    [taskIdByConvId]
-  );
+  // Fetch full task rows for both task-group cards and direct task cards so
+  // fields like Excel-uploaded `task_unit` are available everywhere.
+  const taskDetailIds = useMemo(() => {
+    const conversationTaskIds = Object.values(taskIdByConvId).filter(Boolean).map(String);
+    const directTaskIds = (Array.isArray(directTasks) ? directTasks : [])
+      .map((task: any) => String(task?.id || '').trim())
+      .filter(Boolean);
+    return [...new Set([...conversationTaskIds, ...directTaskIds])];
+  }, [taskIdByConvId, directTasks]);
 
   // Fetch task details for each task (status comes from task details). Do not retry 404 (deleted task).
   const taskDetailsQueries = useQueries(
-    uniqueTaskIds.map((taskId) => ({
+    taskDetailIds.map((taskId) => ({
       queryKey: ['task', taskId],
       queryFn: () => taskService.getTask(taskId),
       enabled: !!taskId,
@@ -437,16 +454,38 @@ export const TaskDashboardScreen: React.FC = () => {
   // Map convId -> task (from task details). Use string keys so lookups work whether conv.id is number or string.
   const taskByConvId = useMemo(() => {
     const taskByTaskId: Record<string, any> = {};
-    uniqueTaskIds.forEach((taskId, i) => {
+    taskDetailIds.forEach((taskId, i) => {
       const data = taskDetailsQueries[i]?.data;
-      if (data) taskByTaskId[taskId] = data;
+      if (data) taskByTaskId[String(taskId)] = data;
     });
     const map: Record<string, any> = {};
     Object.entries(taskIdByConvId).forEach(([convId, taskId]) => {
-      if (taskByTaskId[taskId]) map[String(convId)] = taskByTaskId[taskId];
+      if (taskByTaskId[String(taskId)]) map[String(convId)] = taskByTaskId[String(taskId)];
     });
     return map;
-  }, [taskIdByConvId, uniqueTaskIds, taskDetailsQueries]);
+  }, [taskIdByConvId, taskDetailIds, taskDetailsQueries]);
+
+  const taskDetailsById = useMemo(() => {
+    const map: Record<string, any> = {};
+    taskDetailIds.forEach((taskId, i) => {
+      const data = taskDetailsQueries[i]?.data;
+      if (data) map[String(taskId)] = data;
+    });
+    return map;
+  }, [taskDetailIds, taskDetailsQueries]);
+
+  const mergeTaskWithDetails = (task: any) => {
+    if (!task?.id) return task;
+    const details = taskDetailsById[String(task.id)];
+    if (!details) return task;
+    return {
+      ...task,
+      ...details,
+      id: task.id || details.id,
+      conversation_id: task.conversation_id || details.conversation_id || details.conversationId,
+      conversationId: task.conversationId || details.conversationId || details.conversation_id,
+    };
+  };
 
   const getTaskAssigneeEntries = (task: any) => {
     if (!task) return [] as Array<{ id: string; name: string }>;
@@ -464,7 +503,7 @@ export const TaskDashboardScreen: React.FC = () => {
     const optionsMap = new Map<string, { id: string; name: string }>();
     const allTasks = [
       ...(Object.values(taskByConvId || {}) as any[]),
-      ...(Array.isArray(directTasks) ? directTasks : []),
+      ...(Array.isArray(directTasks) ? directTasks.map(mergeTaskWithDetails) : []),
     ];
 
     allTasks.forEach((task: any) => {
@@ -514,7 +553,7 @@ export const TaskDashboardScreen: React.FC = () => {
     if (!hasTasksFetchedSinceMount) return [];
     if (!Array.isArray(directTasks)) return [];
     const currentUserId = user?.id || (user as any)?.userId;
-    let filtered = directTasks.filter((task: any) => {
+    let filtered = directTasks.map(mergeTaskWithDetails).filter((task: any) => {
       if (!task?.id) return false;
       // Skip if task already has a conversation
       if (tasksWithConversations.has(task.id)) return false;
@@ -588,9 +627,9 @@ export const TaskDashboardScreen: React.FC = () => {
   // Task IDs that failed to load (e.g. 404 = deleted) — exclude those convs from list
   const failedTaskIds = useMemo(
     () => new Set(
-      uniqueTaskIds.filter((_, i) => taskDetailsQueries[i]?.isError === true)
+      taskDetailIds.filter((_, i) => taskDetailsQueries[i]?.isError === true)
     ),
-    [uniqueTaskIds, taskDetailsQueries]
+    [taskDetailIds, taskDetailsQueries]
   );
 
   // Filter task groups by search and by status (using task details). Hide deleted tasks and convs whose task no longer exists (404).

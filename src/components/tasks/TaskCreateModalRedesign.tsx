@@ -219,7 +219,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [basicInfoConfirmed, setBasicInfoConfirmed] = useState(false);
 
   const [isRecurring, setIsRecurring] = useState(false);
-  const [taskFrequency, setTaskFrequency] = useState<'daily' | 'weekly' | 'monthly' | 'custom'>('weekly');
+  const [taskFrequency, setTaskFrequency] = useState<'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'>('weekly');
   const [taskEnds, setTaskEnds] = useState<'never' | 'specific_date' | 'after_occurrences'>('never');
   const [recurrenceEndDate, setRecurrenceEndDate] = useState(addDays(baseDate, 30));
   const [occurrenceCount, setOccurrenceCount] = useState('10');
@@ -833,7 +833,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                 {isRecurring ? (
                   <div className="space-y-2">
                     <div className="flex flex-wrap gap-2">
-                      {(['daily', 'weekly', 'monthly', 'custom'] as const).map((f) => (
+                      {(['daily', 'weekly', 'monthly', 'yearly', 'custom'] as const).map((f) => (
                         <button
                           key={f}
                           type="button"

@@ -53,7 +53,7 @@ function formatTaskDueDate(dateString: string | undefined | null): string {
 function lifecycleIconName(display: TaskStatusCategory | null): string {
   switch (display) {
     case 'scheduled':
-      return 'schedule';
+      return 'event_note';
     case 'todo':
       return 'today';
     case 'inprogress':
