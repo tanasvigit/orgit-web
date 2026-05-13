@@ -42,6 +42,13 @@ const STATUS_COLORS: Record<Exclude<StatusFilter, 'all'>, string> = {
   overdue: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300',
   completed: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
 };
+const STATUS_ICON_COLORS: Record<Exclude<StatusFilter, 'all'>, string> = {
+  todo: 'text-blue-600 dark:text-blue-300',
+  inprogress: 'text-purple-600 dark:text-purple-300',
+  duesoon: 'text-amber-600 dark:text-amber-300',
+  overdue: 'text-red-600 dark:text-red-300',
+  completed: 'text-emerald-600 dark:text-emerald-300',
+};
 
 export type StatusFilter = 'all' | TaskDashboardStatus;
 type ViewFilter = 'all' | 'self' | 'assigned';
@@ -122,7 +129,39 @@ export const TaskDashboardScreen: React.FC = () => {
     // legacy `task_unit_name`); type-specific keys above are kept for forward-compat.
     const lookupKeys = [...chosen.keys, 'task_unit', 'taskUnit', 'task_unit_name', 'taskUnitName'];
     const value = lookupKeys.map((k) => taskLike?.[k]).find((v) => typeof v === 'string' && v.trim());
-    return value ? `${chosen.label}: ${String(value)}` : null;
+    return value ? String(value).trim() : null;
+  };
+
+  const resolveTaskTagOrClient = (taskLike: any): string => {
+    const tagText = Array.isArray(taskLike?.tags)
+      ? taskLike.tags.filter(Boolean).join(', ')
+      : typeof taskLike?.tags === 'string'
+      ? taskLike.tags.trim()
+      : '';
+    return (tagText || resolveTaskClientName(taskLike) || '').trim();
+  };
+
+  const resolveTaskDueDateLabel = (taskLike: any): string => {
+    const source = taskLike?.due_date || taskLike?.dueDate;
+    if (!source) return '';
+    const date = new Date(source);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
+  const resolveTaskFrequencyLabel = (taskLike: any): string => {
+    const isRecurring =
+      taskLike?.task_type === 'recurring' ||
+      taskLike?.taskType === 'recurring' ||
+      taskLike?.task_type === 'recurring_instance' ||
+      taskLike?.taskType === 'recurring_instance' ||
+      !!taskLike?.recurrence_type;
+    return String(
+      taskLike?.recurrence_type ||
+        taskLike?.frequency ||
+        taskLike?.task_frequency ||
+        (isRecurring ? 'Recurring' : 'One-Time')
+    ).replace(/_/g, ' ');
   };
 
   // Fetch all task services (recurring + one_time) for search suggestions
@@ -447,6 +486,22 @@ export const TaskDashboardScreen: React.FC = () => {
     if (selectedTeamMemberIds.length === 0) return true;
     const memberIds = new Set(getTaskAssigneeEntries(task).map((a) => a.id));
     return selectedTeamMemberIds.some((id) => memberIds.has(id));
+  };
+
+  const resolveTaskPeriodLabel = (task: any): string => {
+    const sourceDate = task?.start_date || task?.startDate || task?.due_date || task?.dueDate;
+    if (!sourceDate) return '';
+    const date = new Date(sourceDate);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+  };
+
+  const resolveTaskTitleWithPeriod = (task: any, fallbackTitle: string): string => {
+    const baseTitle = String(task?.title || fallbackTitle || 'Untitled Task').trim();
+    const period = resolveTaskPeriodLabel(task);
+    if (!period) return baseTitle;
+    if (baseTitle.toLowerCase().includes(period.toLowerCase())) return baseTitle;
+    return `${baseTitle} - ${period}`;
   };
 
   // Get task IDs that already have conversations
@@ -1286,127 +1341,57 @@ export const TaskDashboardScreen: React.FC = () => {
               {filteredTaskGroups.map((conv) => {
                 const convId = conv.id ?? conv.conversationId ?? '';
                 const convName = conv.name || 'Task Group';
-                const convPhoto = conv.photoUrl || conv.group_photo || '';
-                const lastMessage = conv.lastMessage || conv.last_message;
-                const lastMessageContent = lastMessage?.content || 'No messages yet';
-                const unreadCount = conv.unreadCount || conv.unread_count || 0;
-                const lastMessageTime = conv.lastMessageTime || conv.last_message_time;
-                
-                const timeDisplay = lastMessageTime ? formatChatListTimestamp(lastMessageTime) : '';
                 const task = convId ? taskByConvId[String(convId)] : undefined;
                 const taskStatusCategory = getTaskStatusForFilter(task);
+                const displayTaskTitle = resolveTaskTitleWithPeriod(task, convName);
+                const taskTagOrClient = resolveTaskTagOrClient(task);
+                const taskDueLabel = resolveTaskDueDateLabel(task);
+                const taskFrequencyLabel = resolveTaskFrequencyLabel(task);
+                const taskUnitLabel = resolveTaskUnitDisplay(task);
                 const isSelected = selectedConversationId === convId;
 
                 return (
                   <div
                     key={convId}
-                    className={`group min-h-[72px] p-1.5 rounded-lg transition-all duration-200 cursor-pointer flex items-center gap-2 hover:bg-white dark:hover:bg-surface-dark hover:shadow-md hover:scale-[1.02] active:scale-[0.98] border ${
+                    className={`group min-h-[112px] rounded-xl border p-3 transition-all duration-200 cursor-pointer hover:bg-white dark:hover:bg-surface-dark hover:shadow-md hover:scale-[1.01] active:scale-[0.99] ${
                       isSelected
                         ? 'bg-primary/10 dark:bg-primary/20 border-primary shadow-md'
-                        : 'border-transparent hover:border-gray-200 dark:hover:border-gray-700'
+                        : 'border-gray-200 dark:border-gray-700'
                     }`}
                     onClick={() => {
                       // Open chat inside Task Dashboard (right panel), do not redirect to Messages module
                       navigate(isAdmin ? `/admin/tasks/task-group/${convId}` : `/tasks/task-group/${convId}`);
                     }}
                   >
-                    <div className="relative flex-shrink-0">
-                      {convPhoto ? (
-                        <img
-                          alt={convName}
-                          className="w-9 h-9 rounded-lg object-cover border-2 border-white dark:border-gray-700 shadow-sm group-hover:shadow-md transition-shadow"
-                          src={convPhoto}
-                        />
-                      ) : (
-                        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow">
-                          <span className="material-icons-round text-white text-2xl">
-                            groups
+                    <div className="grid w-full grid-cols-[minmax(0,2fr)_auto] gap-x-3 gap-y-1.5">
+                      <h4 className="min-w-0 text-xs font-bold text-gray-900 dark:text-white truncate group-hover:text-primary dark:group-hover:text-primary/80 transition-colors">
+                        {displayTaskTitle}
+                      </h4>
+                      <div className="flex justify-end">
+                        {taskStatusCategory ? (
+                          <span className={`material-icons-round text-base ${STATUS_ICON_COLORS[taskStatusCategory]}`} title={STATUS_LABELS[taskStatusCategory]}>
+                            {STATUS_ICONS[taskStatusCategory]}
                           </span>
-                        </div>
-                      )}
-                      {unreadCount > 0 && (
-                        <span className="absolute -top-1 -right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center text-white text-[10px] font-bold shadow-lg border-2 border-white dark:border-gray-800">
-                          {unreadCount > 9 ? '9+' : unreadCount}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0 flex flex-col justify-between gap-0.5">
-                      <div className="flex justify-between items-start gap-2">
-                        <h4 className="text-xs font-bold text-gray-900 dark:text-white truncate group-hover:text-primary dark:group-hover:text-primary/80 transition-colors flex-1 min-w-0">
-                          {convName}
-                        </h4>
-                        <div className="flex flex-col items-end flex-shrink-0">
-                          {timeDisplay && (
-                            <span className="text-[9px] text-gray-400 dark:text-gray-500">{timeDisplay}</span>
-                          )}
-                          {/* Task status indicator - top right of card (from task details) */}
-                          {taskStatusCategory && (
-                            <span
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide mt-0.5 ${STATUS_COLORS[taskStatusCategory]}`}
-                              title={STATUS_LABELS[taskStatusCategory]}
-                            >
-                              <span className="material-icons-outlined" style={{ fontSize: '10px' }}>
-                                {STATUS_ICONS[taskStatusCategory]}
-                              </span>
-                              {STATUS_LABELS[taskStatusCategory]}
-                            </span>
-                          )}
-                        </div>
+                        ) : null}
                       </div>
-                      {(() => {
-                        const clientName = resolveTaskClientName(task);
-                        if (!clientName) return null;
-                        return (
-                          <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">
-                            {clientName}
-                          </p>
-                        );
-                      })()}
-                      {(() => {
-                        const tagText = Array.isArray(task?.tags)
-                          ? task.tags.filter(Boolean).join(', ')
-                          : typeof task?.tags === 'string'
-                          ? task.tags
-                          : '';
-                        const rawDescription = typeof task?.description === 'string' ? task.description : '';
-                        const cleanDescription = rawDescription
-                          .replace(/^tags:\s*/i, '')
-                          .replace(/\bclient\s*:\s*[^|,\n]+/gi, '')
-                          .replace(/\s{2,}/g, ' ')
-                          .replace(/\s+,/g, ',')
-                          .trim();
-                        const cardMeta = (tagText || cleanDescription || '').trim();
-                        if (!cardMeta) return null;
-                        return (
-                          <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
-                            {cardMeta}
-                          </p>
-                        );
-                      })()}
-                      {(() => {
-                        const taskUnitLabel = resolveTaskUnitDisplay(task);
-                        if (!taskUnitLabel) return null;
-                        return (
-                          <p className="text-[11px] font-medium text-gray-700 dark:text-gray-300 truncate">
-                            <span className="font-semibold">{taskUnitLabel}</span>
-                          </p>
-                        );
-                      })()}
-                      <div className="flex items-center gap-1.5">
-                        {lastMessage && (
-                          <>
-                            <span className="material-icons-outlined text-[11px] text-gray-400 dark:text-gray-500 flex-shrink-0">
-                              {lastMessage.message_type === 'image' ? 'image' : lastMessage.message_type === 'file' ? 'attach_file' : 'chat_bubble'}
-                            </span>
-                            <p className="text-[10px] text-gray-600 dark:text-gray-400 truncate flex-1">
-                              {lastMessageContent.length > 50 ? `${lastMessageContent.substring(0, 50)}...` : lastMessageContent}
-                            </p>
-                          </>
-                        )}
-                        {!lastMessage && (
-                          <p className="text-[10px] text-gray-400 dark:text-gray-500 italic">No messages yet</p>
-                        )}
-                      </div>
+
+                      {taskTagOrClient ? (
+                        <p className="min-w-0 text-[11px] text-gray-700 dark:text-gray-300 truncate">{taskTagOrClient}</p>
+                      ) : (
+                        <div />
+                      )}
+                      {taskDueLabel ? (
+                        <p className="text-[11px] text-right text-gray-500 dark:text-gray-400 truncate">{taskDueLabel}</p>
+                      ) : (
+                        <div />
+                      )}
+
+                      <p className="min-w-0 text-[11px] text-gray-500 dark:text-gray-400 truncate">{taskFrequencyLabel}</p>
+                      {taskUnitLabel ? (
+                        <p className="text-[11px] text-right text-gray-500 dark:text-gray-400 truncate">{taskUnitLabel}</p>
+                      ) : (
+                        <div />
+                      )}
                     </div>
                   </div>
                 );
@@ -1422,13 +1407,17 @@ export const TaskDashboardScreen: React.FC = () => {
           <div className="space-y-1">
             {tasksWithoutConversations.map((task: any) => {
               const taskId = task.id;
-              const taskTitle = task.title || 'Untitled Task';
+              const taskTitle = resolveTaskTitleWithPeriod(task, 'Untitled Task');
               const taskStatusCategory = getTaskStatusForFilter(task);
               const taskConversationId = task.conversation_id || task.conversationId;
+              const taskTagOrClient = resolveTaskTagOrClient(task);
+              const taskDueLabel = resolveTaskDueDateLabel(task);
+              const taskFrequencyLabel = resolveTaskFrequencyLabel(task);
+              const taskUnitLabel = resolveTaskUnitDisplay(task);
               return (
                 <div
                   key={taskId}
-                  className="group min-h-[72px] p-1.5 rounded-lg transition-all duration-200 border border-gray-200 dark:border-gray-700 hover:bg-white dark:hover:bg-surface-dark hover:shadow-md cursor-pointer"
+                  className="group min-h-[112px] rounded-xl border border-gray-200 p-3 transition-all duration-200 hover:bg-white dark:border-gray-700 dark:hover:bg-surface-dark hover:shadow-md cursor-pointer"
                   onClick={() => {
                     if (taskConversationId) {
                       // Open chat inside Task Dashboard (right panel)
@@ -1443,70 +1432,35 @@ export const TaskDashboardScreen: React.FC = () => {
                     }
                   }}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0">
-                      <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-500 to-amber-600 dark:from-amber-600 dark:to-amber-700 flex items-center justify-center shadow-sm">
-                        <span className="material-icons-round text-white text-2xl">
-                          assignment
+                  <div className="grid w-full grid-cols-[minmax(0,2fr)_auto] gap-x-3 gap-y-1.5">
+                    <h4 className="min-w-0 text-xs font-bold text-gray-900 dark:text-white truncate">
+                      {taskTitle}
+                    </h4>
+                    <div className="flex justify-end">
+                      {taskStatusCategory ? (
+                        <span className={`material-icons-round text-base ${STATUS_ICON_COLORS[taskStatusCategory]}`} title={STATUS_LABELS[taskStatusCategory]}>
+                          {STATUS_ICONS[taskStatusCategory]}
                         </span>
-                      </div>
+                      ) : null}
                     </div>
-                    <div className="flex-1 min-w-0 flex flex-col justify-between gap-0.5">
-                      <div className="flex justify-between items-start gap-2">
-                        <h4 className="text-xs font-bold text-gray-900 dark:text-white truncate flex-1 min-w-0">
-                          {taskTitle}
-                        </h4>
-                        {taskStatusCategory && (
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${STATUS_COLORS[taskStatusCategory]}`}
-                          >
-                            <span className="material-icons-outlined" style={{ fontSize: '10px' }}>
-                              {STATUS_ICONS[taskStatusCategory]}
-                            </span>
-                            {STATUS_LABELS[taskStatusCategory]}
-                          </span>
-                        )}
-                      </div>
-                      {(() => {
-                        const clientName = resolveTaskClientName(task);
-                        if (!clientName) return null;
-                        return (
-                          <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">
-                            {clientName}
-                          </p>
-                        );
-                      })()}
-                      {(() => {
-                        const tagText = Array.isArray(task?.tags)
-                          ? task.tags.filter(Boolean).join(', ')
-                          : typeof task?.tags === 'string'
-                          ? task.tags
-                          : '';
-                        const rawDescription = typeof task?.description === 'string' ? task.description : '';
-                        const cleanDescription = rawDescription
-                          .replace(/^tags:\s*/i, '')
-                          .replace(/\bclient\s*:\s*[^|,\n]+/gi, '')
-                          .replace(/\s{2,}/g, ' ')
-                          .replace(/\s+,/g, ',')
-                          .trim();
-                        const cardMeta = (tagText || cleanDescription || '').trim();
-                        if (!cardMeta) return null;
-                        return (
-                          <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
-                            {cardMeta.length > 80 ? `${cardMeta.substring(0, 80)}...` : cardMeta}
-                          </p>
-                        );
-                      })()}
-                      {(() => {
-                        const taskUnitLabel = resolveTaskUnitDisplay(task);
-                        if (!taskUnitLabel) return null;
-                        return (
-                          <p className="text-[11px] font-medium text-gray-700 dark:text-gray-300 truncate">
-                            <span className="font-semibold">{taskUnitLabel}</span>
-                          </p>
-                        );
-                      })()}
-                    </div>
+
+                    {taskTagOrClient ? (
+                      <p className="min-w-0 text-[11px] text-gray-700 dark:text-gray-300 truncate">{taskTagOrClient}</p>
+                    ) : (
+                      <div />
+                    )}
+                    {taskDueLabel ? (
+                      <p className="text-[11px] text-right text-gray-500 dark:text-gray-400 truncate">{taskDueLabel}</p>
+                    ) : (
+                      <div />
+                    )}
+
+                    <p className="min-w-0 text-[11px] text-gray-500 dark:text-gray-400 truncate">{taskFrequencyLabel}</p>
+                    {taskUnitLabel ? (
+                      <p className="text-[11px] text-right text-gray-500 dark:text-gray-400 truncate">{taskUnitLabel}</p>
+                    ) : (
+                      <div />
+                    )}
                   </div>
                 </div>
               );

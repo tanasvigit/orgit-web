@@ -56,11 +56,82 @@ const introMessageClass =
   'w-fit max-w-full rounded-xl border border-[#E5E7EB] bg-[#F3F4F6] px-3 py-2 text-sm font-medium text-[#1F2937]';
 const requiredLabelClass = 'mb-0.5 block text-xs font-medium text-[#6B7280]';
 const inputClass =
-  'w-full rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-sm text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-primary/40';
+  'min-h-[42px] w-full rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-sm text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-primary/40';
 const sectionClass = 'space-y-2 rounded-xl border border-[#E5E7EB] bg-white p-3';
+const sectionRowClass = 'flex items-start gap-3';
+const sectionQuestionClass = 'flex w-72 shrink-0 items-center justify-between gap-3 pt-2';
+const sectionContentClass = 'min-w-0 flex-1';
 const optionBaseClass =
   'rounded-lg border px-2 py-1 text-xs font-medium transition-colors border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280] hover:bg-[#F3F4F6]';
 const optionActiveClass = 'border-primary bg-primary text-white hover:bg-primary';
+
+type ComboboxKeyDownParams = {
+  event: React.KeyboardEvent<HTMLInputElement>;
+  showSuggestions: boolean;
+  suggestionsLength: number;
+  highlightedIndex: number;
+  setHighlightedIndex: React.Dispatch<React.SetStateAction<number>>;
+  setShowSuggestions: (show: boolean) => void;
+  onSelect: (index: number) => void;
+  onEnterWithoutSuggestions?: () => void;
+};
+
+const handleComboboxKeyDown = ({
+  event,
+  showSuggestions,
+  suggestionsLength,
+  highlightedIndex,
+  setHighlightedIndex,
+  setShowSuggestions,
+  onSelect,
+  onEnterWithoutSuggestions,
+}: ComboboxKeyDownParams) => {
+  const { key } = event;
+
+  if (key === 'Tab') {
+    if (showSuggestions) {
+      setShowSuggestions(false);
+      setHighlightedIndex(-1);
+    }
+    return;
+  }
+
+  if (!showSuggestions || suggestionsLength === 0) {
+    if (key === 'ArrowDown' || key === 'ArrowUp') {
+      if (suggestionsLength === 0) return;
+      event.preventDefault();
+      setShowSuggestions(true);
+      setHighlightedIndex(key === 'ArrowDown' ? 0 : suggestionsLength - 1);
+    } else if (key === 'Escape') {
+      setShowSuggestions(false);
+      setHighlightedIndex(-1);
+    } else if (key === 'Enter' && onEnterWithoutSuggestions) {
+      event.preventDefault();
+      onEnterWithoutSuggestions();
+    }
+    return;
+  }
+
+  if (key === 'ArrowDown') {
+    event.preventDefault();
+    setHighlightedIndex((index) => (index < suggestionsLength - 1 ? index + 1 : 0));
+  } else if (key === 'ArrowUp') {
+    event.preventDefault();
+    setHighlightedIndex((index) => (index > 0 ? index - 1 : suggestionsLength - 1));
+  } else if (key === 'Enter') {
+    event.preventDefault();
+    onSelect(highlightedIndex >= 0 ? highlightedIndex : 0);
+  } else if (key === 'Escape') {
+    event.preventDefault();
+    setShowSuggestions(false);
+    setHighlightedIndex(-1);
+  }
+};
+
+const suggestionOptionClass = (isHighlighted: boolean) =>
+  `w-full border-b border-[#F3F4F6] px-3 py-2 text-left text-sm text-[#1F2937] hover:bg-[#F9FAFB] ${
+    isHighlighted ? 'bg-primary/10 text-primary' : ''
+  }`;
 
 const YesNoToggle: React.FC<{
   value: boolean;
@@ -68,14 +139,14 @@ const YesNoToggle: React.FC<{
   ariaLabel: string;
 }> = ({ value, onChange, ariaLabel }) => {
   const baseSegment =
-    'px-3 py-1 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40';
+    'inline-flex min-h-[34px] min-w-[54px] items-center justify-center px-3 py-1 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40';
   const activeSegment = 'bg-primary text-white';
   const inactiveSegment = 'bg-transparent text-[#6B7280] hover:bg-[#EEF2FF]';
   return (
     <div
       role="group"
       aria-label={ariaLabel}
-      className="inline-flex overflow-hidden rounded-full border border-[#E5E7EB] bg-white"
+      className="inline-flex shrink-0 overflow-hidden rounded-full border border-[#E5E7EB] bg-white"
     >
       <button
         type="button"
@@ -96,18 +167,6 @@ const YesNoToggle: React.FC<{
     </div>
   );
 };
-
-const ToggleRow: React.FC<{
-  label: string;
-  value: boolean;
-  onChange: (next: boolean) => void;
-  ariaLabel: string;
-}> = ({ label, value, onChange, ariaLabel }) => (
-  <div className="flex items-center justify-between gap-2">
-    <span className="text-xs font-medium text-[#4B5563]">{label}</span>
-    <YesNoToggle value={value} onChange={onChange} ariaLabel={ariaLabel} />
-  </div>
-);
 
 const addDays = (date: Date, days: number) => {
   const next = new Date(date);
@@ -149,13 +208,14 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
 
   const [title, setTitle] = useState(initialTitle);
   const [description, setDescription] = useState(initialDescription);
-  const [taskTags, setTaskTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [taskUnit, setTaskUnit] = useState('');
-  const [selectedTaskUnitSectionKey, setSelectedTaskUnitSectionKey] = useState('');
-  const [selectedTaskUnitName, setSelectedTaskUnitName] = useState('');
   const [showTitleSuggestions, setShowTitleSuggestions] = useState(false);
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+  const [showTaskUnitSuggestions, setShowTaskUnitSuggestions] = useState(false);
+  const [titleHighlightedIndex, setTitleHighlightedIndex] = useState(-1);
+  const [tagHighlightedIndex, setTagHighlightedIndex] = useState(-1);
+  const [taskUnitHighlightedIndex, setTaskUnitHighlightedIndex] = useState(-1);
   const [basicInfoConfirmed, setBasicInfoConfirmed] = useState(false);
 
   const [isRecurring, setIsRecurring] = useState(false);
@@ -262,9 +322,17 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     ];
     return sections.filter((section) => section.units.length > 0);
   }, [orgDataForTaskUnit]);
-  const selectedTaskUnitSection = useMemo(
-    () => taskUnitSections.find((section) => section.key === selectedTaskUnitSectionKey) || null,
-    [taskUnitSections, selectedTaskUnitSectionKey]
+  const taskUnitOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          taskUnitSections
+            .flatMap((section) => section.units)
+            .map((unit) => String(unit || '').trim())
+            .filter(Boolean)
+        )
+      ),
+    [taskUnitSections]
   );
 
   const filteredUsers = useMemo(() => {
@@ -304,13 +372,14 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
 
     setTitle(initialTitle || '');
     setDescription(initialDescription || '');
-    setTaskTags([]);
     setTagInput('');
     setTaskUnit('');
-    setSelectedTaskUnitSectionKey('');
-    setSelectedTaskUnitName('');
     setShowTitleSuggestions(false);
     setShowTagSuggestions(false);
+    setShowTaskUnitSuggestions(false);
+    setTitleHighlightedIndex(-1);
+    setTagHighlightedIndex(-1);
+    setTaskUnitHighlightedIndex(-1);
     setBasicInfoConfirmed(false);
     setIsRecurring(false);
     setTaskFrequency('weekly');
@@ -354,33 +423,20 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     loadDocument();
   }, [visible, documentId, initialTitle, initialDescription]);
 
-  const addCustomTag = () => {
-    const nextTag = tagInput.trim();
-    if (!nextTag) return;
-    if (taskTags.includes(nextTag)) {
-      setTagInput('');
-      return;
-    }
-    setTaskTags((prev) => [...prev, nextTag]);
-    setTagInput('');
-    setBasicInfoConfirmed(false);
-  };
-
-  const addClientTag = (clientName?: string) => {
-    const nextTag = (clientName || tagInput).trim();
-    if (!nextTag) return;
-    if (taskTags.includes(nextTag)) {
-      setTagInput('');
-      return;
-    }
-    setTaskTags((prev) => [...prev, nextTag]);
-    setTagInput('');
+  const applyClientName = (clientName?: string) => {
+    const nextClientName = (clientName || tagInput).trim();
+    setTagInput(nextClientName);
     setShowTagSuggestions(false);
+    setTagHighlightedIndex(-1);
     setBasicInfoConfirmed(false);
   };
 
-  const removeTag = (tag: string) => {
-    setTaskTags((prev) => prev.filter((t) => t !== tag));
+  const applyTaskUnitName = (unitName?: string) => {
+    const nextTaskUnit = (unitName || taskUnit).trim();
+    setTaskUnit(nextTaskUnit);
+    setShowTaskUnitSuggestions(false);
+    setTaskUnitHighlightedIndex(-1);
+    setBasicInfoConfirmed(false);
   };
 
   const openUserModal = (mode: 'owner' | 'assignees' | 'escalation') => {
@@ -446,6 +502,12 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     return clients.filter((c: any) => (c.name || '').toLowerCase().includes(q)).slice(0, 8);
   }, [clients, tagInput]);
 
+  const taskUnitSuggestions = useMemo(() => {
+    const q = taskUnit.trim().toLowerCase();
+    if (!q) return taskUnitOptions.slice(0, 8);
+    return taskUnitOptions.filter((unit) => unit.toLowerCase().includes(q)).slice(0, 8);
+  }, [taskUnitOptions, taskUnit]);
+
   const handleCreateTask = async () => {
     if (!validate()) return;
 
@@ -453,11 +515,6 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     try {
       const recurrenceType = isRecurring ? (taskFrequency === 'custom' ? 'weekly' : taskFrequency) : null;
       let taskDescription = description.trim();
-      if (taskTags.length > 0) {
-        taskDescription = taskDescription
-          ? `${taskDescription}\n\nTags: ${taskTags.join(', ')}`
-          : `Tags: ${taskTags.join(', ')}`;
-      }
       if (documentId) {
         taskDescription = `${taskDescription}\n\n---\n📄 Related Document ID: ${documentId}`.trim();
       } else if (complianceId) {
@@ -489,7 +546,8 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         escalation_contact_ids: assignPeople && autoEscalation ? escalationContacts.map((u) => u.id) : [],
         financial_value: addFinancialValue ? Number.parseFloat(financialValue || '0') || null : null,
         task_unit: taskUnit.trim() || null,
-        tags: taskTags,
+        client_name: tagInput.trim() || null,
+        tags: [],
         compliance_id: complianceId || undefined,
         document_instance_id: documentId || undefined,
       };
@@ -571,288 +629,364 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         <div className="max-h-[calc(92vh-72px)] space-y-2 overflow-y-auto bg-[#F9FAFB] p-3">
           <p className={introMessageClass}>Hey, create a task here.</p>
           <div className={sectionClass}>
-            <label className={requiredLabelClass}>Task title *</label>
-            <div className="relative">
-              <input
-                value={title}
-                onChange={(e) => {
-                  setTitle(e.target.value);
-                  setShowTitleSuggestions(true);
-                  setBasicInfoConfirmed(false);
-                }}
-                onFocus={() => setShowTitleSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowTitleSuggestions(false), 160)}
-                placeholder="Enter task title or choose from org services"
-                className={inputClass}
-              />
-              {showTitleSuggestions && titleSuggestions.length > 0 ? (
-                <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-lg border border-[#E5E7EB] bg-white shadow-lg">
-                  {titleSuggestions.map((s: any) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        setTitle(s.title || '');
+            <div className="flex items-start gap-3">
+              <label className="w-24 shrink-0 pt-2 text-xs font-medium text-[#6B7280]">Task title *</label>
+              <div className="relative min-w-0 flex-1">
+                <input
+                  value={title}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    setShowTitleSuggestions(true);
+                    setTitleHighlightedIndex(-1);
+                    setBasicInfoConfirmed(false);
+                  }}
+                  onFocus={() => setShowTitleSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowTitleSuggestions(false), 160)}
+                  onKeyDown={(e) =>
+                    handleComboboxKeyDown({
+                      event: e,
+                      showSuggestions: showTitleSuggestions,
+                      suggestionsLength: titleSuggestions.length,
+                      highlightedIndex: titleHighlightedIndex,
+                      setHighlightedIndex: setTitleHighlightedIndex,
+                      setShowSuggestions: setShowTitleSuggestions,
+                      onSelect: (index) => {
+                        const item = titleSuggestions[index];
+                        if (!item?.title) return;
+                        setTitle(item.title);
                         setShowTitleSuggestions(false);
+                        setTitleHighlightedIndex(-1);
                         setBasicInfoConfirmed(false);
-                      }}
-                      className="w-full border-b border-[#F3F4F6] px-3 py-2 text-left text-sm text-[#1F2937] hover:bg-[#F9FAFB]"
-                    >
-                      {s.title}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="relative flex gap-2">
-              <input
-                value={tagInput}
-                onChange={(e) => {
-                  setTagInput(e.target.value);
-                  setShowTagSuggestions(true);
-                  setBasicInfoConfirmed(false);
-                }}
-                onFocus={() => setShowTagSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowTagSuggestions(false), 160)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    addCustomTag();
+                      },
+                    })
                   }
-                }}
-                placeholder="Add tag or pick client suggestion"
-                className={inputClass}
-              />
-              {showTagSuggestions && tagSuggestions.length > 0 ? (
-                <div className="absolute left-0 right-[52px] top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-lg border border-[#E5E7EB] bg-white shadow-lg">
-                  {tagSuggestions.map((c: any) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => addClientTag(c.name || '')}
-                      className="w-full border-b border-[#F3F4F6] px-3 py-2 text-left text-sm text-[#1F2937] hover:bg-[#F9FAFB]"
-                    >
-                      {c.name}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            {taskTags.length > 0 ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {taskTags.map((tag) => (
+                  placeholder="Enter task title or choose from org services"
+                  className={inputClass}
+                  autoComplete="off"
+                  role="combobox"
+                  aria-expanded={showTitleSuggestions && titleSuggestions.length > 0}
+                  aria-autocomplete="list"
+                />
+                {showTitleSuggestions && titleSuggestions.length > 0 ? (
                   <div
-                    key={tag}
-                    className="inline-flex items-center gap-1 rounded-full border border-[#DDD6FE] bg-[#F3E8FF] px-2.5 py-1 text-xs font-semibold text-primary"
+                    className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-lg border border-[#E5E7EB] bg-white shadow-lg"
+                    role="listbox"
                   >
-                    <span>{tag}</span>
-                    <button type="button" onClick={() => removeTag(tag)}>
-                      <span className="material-symbols-outlined text-sm">close</span>
-                    </button>
+                    {titleSuggestions.map((s: any, index) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        tabIndex={-1}
+                        role="option"
+                        aria-selected={index === titleHighlightedIndex}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setTitle(s.title || '');
+                          setShowTitleSuggestions(false);
+                          setTitleHighlightedIndex(-1);
+                          setBasicInfoConfirmed(false);
+                        }}
+                        className={suggestionOptionClass(index === titleHighlightedIndex)}
+                      >
+                        {s.title}
+                      </button>
+                    ))}
                   </div>
-                ))}
+                ) : null}
               </div>
-            ) : null}
-            {taskUnitSections.length > 0 ? (
-              <div className="space-y-2">
-                <select
-                  value={selectedTaskUnitSectionKey}
+            </div>
+
+            <div className="flex items-start gap-3">
+              <label className="w-24 shrink-0 pt-2 text-xs font-medium text-[#6B7280]">Task Tag</label>
+              <div className="relative min-w-0 flex-1">
+                <input
+                  value={tagInput}
                   onChange={(e) => {
-                    const nextSectionKey = e.target.value;
-                    setSelectedTaskUnitSectionKey(nextSectionKey);
-                    setSelectedTaskUnitName('');
-                    setTaskUnit('');
+                    setTagInput(e.target.value);
+                    setShowTagSuggestions(true);
+                    setTagHighlightedIndex(-1);
                     setBasicInfoConfirmed(false);
                   }}
+                  onFocus={() => setShowTagSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowTagSuggestions(false), 160)}
+                  onKeyDown={(e) =>
+                    handleComboboxKeyDown({
+                      event: e,
+                      showSuggestions: showTagSuggestions,
+                      suggestionsLength: tagSuggestions.length,
+                      highlightedIndex: tagHighlightedIndex,
+                      setHighlightedIndex: setTagHighlightedIndex,
+                      setShowSuggestions: setShowTagSuggestions,
+                      onSelect: (index) => applyClientName(tagSuggestions[index]?.name || ''),
+                      onEnterWithoutSuggestions: () => applyClientName(),
+                    })
+                  }
+                  placeholder="Select client"
                   className={inputClass}
-                >
-                  <option value="">Select unit section</option>
-                  {taskUnitSections.map((section) => (
-                    <option key={section.key} value={section.key}>
-                      {section.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={selectedTaskUnitName}
-                  onChange={(e) => {
-                    const unitName = e.target.value;
-                    setSelectedTaskUnitName(unitName);
-                    setTaskUnit(unitName);
-                    setBasicInfoConfirmed(false);
-                  }}
-                  className={inputClass}
-                  disabled={!selectedTaskUnitSection}
-                >
-                  <option value="">{selectedTaskUnitSection ? 'Select unit name' : 'Select section first'}</option>
-                  {(selectedTaskUnitSection?.units || []).map((unitName) => (
-                    <option key={unitName} value={unitName}>
-                      {unitName}
-                    </option>
-                  ))}
-                </select>
+                  autoComplete="off"
+                  role="combobox"
+                  aria-expanded={showTagSuggestions && tagSuggestions.length > 0}
+                  aria-autocomplete="list"
+                />
+                {showTagSuggestions && tagSuggestions.length > 0 ? (
+                  <div
+                    className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-lg border border-[#E5E7EB] bg-white shadow-lg"
+                    role="listbox"
+                  >
+                    {tagSuggestions.map((c: any, index) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        tabIndex={-1}
+                        role="option"
+                        aria-selected={index === tagHighlightedIndex}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => applyClientName(c.name || '')}
+                        className={suggestionOptionClass(index === tagHighlightedIndex)}
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-            ) : (
-              <input
-                value={taskUnit}
-                onChange={(e) => {
-                  setTaskUnit(e.target.value);
-                  setBasicInfoConfirmed(false);
-                }}
-                placeholder="e.g., Hours, Items, Visits"
-                className={inputClass}
-              />
-            )}
-            <div className="mt-2 flex justify-end">
-              <button
-                type="button"
-                onClick={confirmBasicInfo}
-                className={`inline-flex min-h-[36px] items-center justify-center rounded-lg border px-4 py-2 text-sm font-semibold ${
-                  basicInfoConfirmed
-                    ? 'border-primary bg-primary text-white'
-                    : 'border-[#C4B5FD] bg-white text-primary'
-                }`}
-              >
-                Next
-              </button>
+            </div>
+            <div className="flex items-start gap-3">
+              <label className="w-24 shrink-0 pt-2 text-xs font-medium text-[#6B7280]">Task Unit</label>
+              <div className="min-w-0 flex-1 flex items-start gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <input
+                    value={taskUnit}
+                    onChange={(e) => {
+                      setTaskUnit(e.target.value);
+                      setShowTaskUnitSuggestions(true);
+                      setTaskUnitHighlightedIndex(-1);
+                      setBasicInfoConfirmed(false);
+                    }}
+                    onFocus={() => setShowTaskUnitSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowTaskUnitSuggestions(false), 160)}
+                    onKeyDown={(e) =>
+                      handleComboboxKeyDown({
+                        event: e,
+                        showSuggestions: showTaskUnitSuggestions,
+                        suggestionsLength: taskUnitSuggestions.length,
+                        highlightedIndex: taskUnitHighlightedIndex,
+                        setHighlightedIndex: setTaskUnitHighlightedIndex,
+                        setShowSuggestions: setShowTaskUnitSuggestions,
+                        onSelect: (index) => applyTaskUnitName(taskUnitSuggestions[index]),
+                        onEnterWithoutSuggestions: () => applyTaskUnitName(),
+                      })
+                    }
+                    placeholder="Select task unit"
+                    className={inputClass}
+                    autoComplete="off"
+                    role="combobox"
+                    aria-expanded={showTaskUnitSuggestions && taskUnitSuggestions.length > 0}
+                    aria-autocomplete="list"
+                  />
+                  {showTaskUnitSuggestions && taskUnitSuggestions.length > 0 ? (
+                    <div
+                      className="absolute left-0 right-12 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-lg border border-[#E5E7EB] bg-white shadow-lg"
+                      role="listbox"
+                    >
+                      {taskUnitSuggestions.map((unit, index) => (
+                        <button
+                          key={unit}
+                          type="button"
+                          tabIndex={-1}
+                          role="option"
+                          aria-selected={index === taskUnitHighlightedIndex}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => applyTaskUnitName(unit)}
+                          className={suggestionOptionClass(index === taskUnitHighlightedIndex)}
+                        >
+                          {unit}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={confirmBasicInfo}
+                  aria-label="Confirm basic task info"
+                  title="Confirm basic task info"
+                  className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border transition-colors ${
+                    basicInfoConfirmed
+                      ? 'border-emerald-600 bg-emerald-600 text-white'
+                      : 'border-[#C4B5FD] bg-white text-primary hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-600'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[20px]">check</span>
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className={`${sectionClass} ${!basicInfoConfirmed ? 'pointer-events-none opacity-45' : ''}`}>
-            <ToggleRow label="Recurring" value={isRecurring} onChange={setIsRecurring} ariaLabel="Recurring" />
-            {isRecurring ? (
-              <>
-                <div className="flex flex-wrap gap-2">
-                  {(['daily', 'weekly', 'monthly', 'custom'] as const).map((f) => (
-                    <button
-                      key={f}
-                      type="button"
-                      onClick={() => setTaskFrequency(f)}
-                      className={`${optionBaseClass} ${taskFrequency === f ? optionActiveClass : ''}`}
-                    >
-                      {f.charAt(0).toUpperCase() + f.slice(1)}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {([
-                    { key: 'never', label: 'Never' },
-                    { key: 'specific_date', label: 'Specific Date' },
-                    { key: 'after_occurrences', label: 'After X occurrences' },
-                  ] as const).map((o) => (
-                    <button
-                      key={o.key}
-                      type="button"
-                      onClick={() => setTaskEnds(o.key)}
-                      className={`${optionBaseClass} ${taskEnds === o.key ? optionActiveClass : ''}`}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-
-                {taskEnds === 'specific_date' ? (
-                  <button type="button" onClick={() => setShowRecurrenceEndPicker(true)} className={`${inputClass} mt-3 text-left`}>
-                    Recurrence end date: {recurrenceEndDate.toLocaleDateString()}
-                  </button>
-                ) : null}
-
-                {taskEnds === 'after_occurrences' ? (
-                  <input
-                    value={occurrenceCount}
-                    onChange={(e) => setOccurrenceCount(e.target.value)}
-                    placeholder="Number of occurrences"
-                    inputMode="numeric"
-                    className={`${inputClass} mt-3`}
-                  />
-                ) : null}
-              </>
-            ) : null}
-          </div>
-
-          <div className={`${sectionClass} ${!basicInfoConfirmed ? 'pointer-events-none opacity-45' : ''}`}>
-            <ToggleRow label="Timelines" value={setTimelines} onChange={setSetTimelines} ariaLabel="Timelines" />
-            {setTimelines ? (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <button type="button" onClick={() => setShowStartPicker(true)} className={`${inputClass} text-left`}>
-                  Start Date: {startDate.toLocaleDateString()}
-                </button>
-                <button type="button" onClick={() => setShowTargetPicker(true)} className={`${inputClass} text-left`}>
-                  Target Date: {targetDate.toLocaleDateString()}
-                </button>
-                <button type="button" onClick={() => setShowDuePicker(true)} className={`${inputClass} text-left`}>
-                  Due Date: {dueDate.toLocaleDateString()}
-                </button>
+          <fieldset disabled={!basicInfoConfirmed} className={`${sectionClass} ${!basicInfoConfirmed ? 'opacity-45' : ''}`}>
+            <div className={sectionRowClass}>
+              <div className={sectionQuestionClass}>
+                <span className="text-xs font-medium text-[#4B5563]">Is this task recurring?</span>
+                <YesNoToggle value={isRecurring} onChange={setIsRecurring} ariaLabel="Is this task recurring?" />
               </div>
-            ) : null}
-          </div>
+              <div className={sectionContentClass}>
+                {isRecurring ? (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      {(['daily', 'weekly', 'monthly', 'custom'] as const).map((f) => (
+                        <button
+                          key={f}
+                          type="button"
+                          onClick={() => setTaskFrequency(f)}
+                          className={`${optionBaseClass} ${taskFrequency === f ? optionActiveClass : ''}`}
+                        >
+                          {f.charAt(0).toUpperCase() + f.slice(1)}
+                        </button>
+                      ))}
+                    </div>
 
-          <div className={`${sectionClass} ${!basicInfoConfirmed ? 'pointer-events-none opacity-45' : ''}`}>
-            <ToggleRow label="Assign people" value={assignPeople} onChange={setAssignPeople} ariaLabel="Assign people" />
-            {assignPeople ? (
-              <>
-                <button type="button" onClick={() => openUserModal('owner')} className={`${inputClass} mt-2 text-left`}>
-                  Task Owner: {ownerLabel}
-                </button>
-                <button type="button" onClick={() => openUserModal('assignees')} className={`${inputClass} mt-2 text-left`}>
-                  Task Assignees: {selectedAssignees.length > 0 ? `${selectedAssignees.length} selected` : 'Select users'}
-                </button>
-
-                <ToggleRow label="Auto escalation" value={autoEscalation} onChange={setAutoEscalation} ariaLabel="Auto escalation" />
-
-                {autoEscalation ? (
-                  <>
                     <div className="flex flex-wrap gap-2">
                       {([
-                        { key: 'target_date', label: 'After Target Date' },
-                        { key: 'due_date', label: 'After Due Date' },
+                        { key: 'never', label: 'Never' },
+                        { key: 'specific_date', label: 'Specific Date' },
+                        { key: 'after_occurrences', label: 'After X occurrences' },
                       ] as const).map((o) => (
                         <button
                           key={o.key}
                           type="button"
-                          onClick={() => setEscalationTrigger(o.key)}
-                          className={`${optionBaseClass} ${escalationTrigger === o.key ? optionActiveClass : ''}`}
+                          onClick={() => setTaskEnds(o.key)}
+                          className={`${optionBaseClass} ${taskEnds === o.key ? optionActiveClass : ''}`}
                         >
                           {o.label}
                         </button>
                       ))}
                     </div>
 
-                    <input
-                      value={escalationTiming}
-                      onChange={(e) => setEscalationTiming(e.target.value)}
-                      inputMode="numeric"
-                      placeholder="1"
-                      className={inputClass}
-                    />
+                    {taskEnds === 'specific_date' ? (
+                      <button type="button" onClick={() => setShowRecurrenceEndPicker(true)} className={`${inputClass} text-left`}>
+                        Recurrence end date: {recurrenceEndDate.toLocaleDateString()}
+                      </button>
+                    ) : null}
 
-                    <button type="button" onClick={() => openUserModal('escalation')} className={`${inputClass} mt-2 text-left`}>
-                      Escalation Contacts: {escalationContacts.length > 0 ? `${escalationContacts.length} selected` : 'Select contacts'}
-                    </button>
-                  </>
+                    {taskEnds === 'after_occurrences' ? (
+                      <input
+                        value={occurrenceCount}
+                        onChange={(e) => setOccurrenceCount(e.target.value)}
+                        placeholder="Number of occurrences"
+                        inputMode="numeric"
+                        className={inputClass}
+                      />
+                    ) : null}
+                  </div>
                 ) : null}
-              </>
-            ) : null}
-          </div>
+              </div>
+            </div>
+          </fieldset>
 
-          <div className={`${sectionClass} ${!basicInfoConfirmed ? 'pointer-events-none opacity-45' : ''}`}>
-            <ToggleRow label="Financial value" value={addFinancialValue} onChange={setAddFinancialValue} ariaLabel="Financial value" />
-            {addFinancialValue ? (
-              <>
-                <input
-                  value={financialValue}
-                  onChange={(e) => setFinancialValue(e.target.value)}
-                  inputMode="decimal"
-                  placeholder="Enter amount"
-                  className={inputClass}
-                />
-              </>
-            ) : null}
-          </div>
+          <fieldset disabled={!basicInfoConfirmed} className={`${sectionClass} ${!basicInfoConfirmed ? 'opacity-45' : ''}`}>
+            <div className={sectionRowClass}>
+              <div className={sectionQuestionClass}>
+                <span className="text-xs font-medium text-[#4B5563]">Do you want to set timelines for this task?</span>
+                <YesNoToggle value={setTimelines} onChange={setSetTimelines} ariaLabel="Do you want to set timelines for this task?" />
+              </div>
+              <div className={sectionContentClass}>
+                {setTimelines ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    <button type="button" onClick={() => setShowStartPicker(true)} className={`${inputClass} text-left`}>
+                      Start Date: {startDate.toLocaleDateString()}
+                    </button>
+                    <button type="button" onClick={() => setShowTargetPicker(true)} className={`${inputClass} text-left`}>
+                      Target Date: {targetDate.toLocaleDateString()}
+                    </button>
+                    <button type="button" onClick={() => setShowDuePicker(true)} className={`${inputClass} text-left`}>
+                      Due Date: {dueDate.toLocaleDateString()}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset disabled={!basicInfoConfirmed} className={`${sectionClass} ${!basicInfoConfirmed ? 'opacity-45' : ''}`}>
+            <div className={sectionRowClass}>
+              <div className={sectionQuestionClass}>
+                <span className="text-xs font-medium text-[#4B5563]">Do you want to assign people to this task?</span>
+                <YesNoToggle value={assignPeople} onChange={setAssignPeople} ariaLabel="Do you want to assign people to this task?" />
+              </div>
+              <div className={sectionContentClass}>
+                {assignPeople ? (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
+                      <button type="button" onClick={() => openUserModal('owner')} className={`${inputClass} text-left`}>
+                        Task Owner: {ownerLabel}
+                      </button>
+                      <button type="button" onClick={() => openUserModal('assignees')} className={`${inputClass} text-left`}>
+                        Assignees: {selectedAssignees.length > 0 ? `${selectedAssignees.length} selected` : 'Select users'}
+                      </button>
+                      <div className={`${inputClass} flex min-w-[220px] items-center justify-between gap-3`}>
+                        <span className="text-xs font-medium text-[#4B5563]">Auto escalation</span>
+                        <YesNoToggle value={autoEscalation} onChange={setAutoEscalation} ariaLabel="Auto escalation" />
+                      </div>
+                    </div>
+
+                    {autoEscalation ? (
+                      <>
+                        <div className="flex flex-wrap gap-2">
+                          {([
+                            { key: 'target_date', label: 'After Target Date' },
+                            { key: 'due_date', label: 'After Due Date' },
+                          ] as const).map((o) => (
+                            <button
+                              key={o.key}
+                              type="button"
+                              onClick={() => setEscalationTrigger(o.key)}
+                              className={`${optionBaseClass} ${escalationTrigger === o.key ? optionActiveClass : ''}`}
+                            >
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            value={escalationTiming}
+                            onChange={(e) => setEscalationTiming(e.target.value)}
+                            inputMode="numeric"
+                            placeholder="Days before"
+                            className={inputClass}
+                          />
+
+                          <button type="button" onClick={() => openUserModal('escalation')} className={`${inputClass} text-left`}>
+                            Contacts: {escalationContacts.length > 0 ? `${escalationContacts.length} selected` : 'Select contacts'}
+                          </button>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset disabled={!basicInfoConfirmed} className={`${sectionClass} ${!basicInfoConfirmed ? 'opacity-45' : ''}`}>
+            <div className={sectionRowClass}>
+              <div className={sectionQuestionClass}>
+                <span className="text-xs font-medium text-[#4B5563]">Do you want to add Financial Value?</span>
+                <YesNoToggle value={addFinancialValue} onChange={setAddFinancialValue} ariaLabel="Do you want to add Financial Value?" />
+              </div>
+              <div className={sectionContentClass}>
+                {addFinancialValue ? (
+                  <input
+                    value={financialValue}
+                    onChange={(e) => setFinancialValue(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="Enter amount"
+                    className={inputClass}
+                  />
+                ) : null}
+              </div>
+            </div>
+          </fieldset>
 
           <button
             type="button"

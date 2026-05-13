@@ -147,11 +147,6 @@ export function getTaskStatusCategoryFromTask(
   if (!task) return null;
   if (task.hide_user_status === true) return null;
 
-  const lifecycleFromApi = normalizeLifecycleStatus(task.current_user_lifecycle_status);
-  if (lifecycleFromApi) {
-    return lifecycleFromApi;
-  }
-
   const me = getCurrentUserAssignee(task, currentUserId);
   const cu = task.current_user_status;
 

@@ -27,8 +27,14 @@ interface TaskCardProps {
   onClick?: () => void;
 }
 
-/** Mirrors orgit-mobile TaskDashboardScreen.formatDate for the "Due …" line. */
-function formatDueLabelMobileStyle(dateString: string | undefined | null): string {
+function formatTaskPeriod(dateString: string | undefined | null): string {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+}
+
+function formatTaskDueDate(dateString: string | undefined | null): string {
   if (!dateString) return '';
   const date = new Date(dateString);
   if (Number.isNaN(date.getTime())) return '';
@@ -110,7 +116,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   unreadCount = 0,
   taskPeriod,
   frequency,
-  taskUnitType,
   taskUnitName,
   hideUserStatus,
   rawTaskStatus,
@@ -118,25 +123,15 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 }) => {
   const tagOrClient = (() => {
     const tagText = Array.isArray(tags) ? tags.filter(Boolean).join(', ') : typeof tags === 'string' ? tags : '';
-    return (tagText || clientName || '').trim() || '';
+    return (tagText || clientName || '').trim();
   })();
 
-  const dueFormatted = formatDueLabelMobileStyle(dueDate || '');
-  const dueText = dueFormatted ? `Due ${dueFormatted}` : '';
-
-  const line1 = [tagOrClient, dueText].filter(Boolean).join(' | ');
-
+  const baseTitle = String(title || '').trim();
+  const displayPeriod = (taskPeriod || '').trim();
+  const displayTitle = displayPeriod ? `${baseTitle} - ${displayPeriod}` : baseTitle;
+  const dueText = formatTaskDueDate(dueDate || null);
   const frequencyText = String(frequency || 'One-Time').replace(/_/g, ' ');
-  const unitType = taskUnitType || 'Task unit';
-  const unitName = taskUnitName && taskUnitName !== '-' ? taskUnitName : '';
-  const line2 = [frequencyText, unitType, unitName].filter(Boolean).join(' | ');
-
-  const normalizedTitle = String(title || '').trim();
-  const periodLabel = (taskPeriod || '').toLowerCase().trim();
-  const monthSuffixRegex = /\s(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)$/i;
-  const titleAlreadyHasMonth = monthSuffixRegex.test(normalizedTitle);
-  const displayTitle =
-    periodLabel && !titleAlreadyHasMonth ? `${normalizedTitle}-${periodLabel}` : normalizedTitle;
+  const unitText = taskUnitName && taskUnitName !== '-' ? String(taskUnitName).trim() : '';
 
   const iconName = lifecycleIconName(status);
   const iconColor = lifecycleIconColor(status);
@@ -147,7 +142,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       className={`group relative cursor-pointer rounded-2xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-slate-800/90 ${
         status === 'completed' ? 'opacity-90' : ''
       }`}
-      style={{ minHeight: 126, paddingLeft: 16, paddingRight: 10, paddingTop: 14, paddingBottom: 14 }}
+      style={{ minHeight: 126, paddingLeft: 16, paddingRight: 12, paddingTop: 14, paddingBottom: 14 }}
       onClick={onClick}
       role="button"
       tabIndex={0}
@@ -167,38 +162,53 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         </span>
       ) : null}
 
-      <div className="mt-2.5 flex flex-col gap-2 pr-10">
-        <div className="flex w-full items-center justify-between gap-2">
+      <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
+        <div className="col-span-2 min-w-0">
           <h4
-            className={`min-w-0 flex-1 text-[19px] font-bold leading-6 text-gray-900 dark:text-white ${
+            className={`text-[19px] font-bold leading-6 text-gray-900 dark:text-white ${
               status === 'completed' ? 'text-gray-500 dark:text-gray-400' : ''
             }`}
-            style={{ marginRight: 8 }}
           >
             <span className="line-clamp-1">{displayTitle}</span>
           </h4>
         </div>
-        {line1 ? (
-          <p className="w-full text-sm leading-[21px] text-gray-500 dark:text-gray-400">
-            <span className="line-clamp-1">{line1}</span>
-          </p>
-        ) : null}
-        {line2 ? (
-          <p className="w-full text-sm leading-[21px] text-gray-500 dark:text-gray-400">
-            <span className="line-clamp-1">{line2}</span>
-          </p>
-        ) : null}
-      </div>
 
-      <div
-        className="pointer-events-none absolute right-3 top-1/2 z-[3] -translate-y-1/2"
-        aria-hidden
-      >
-        <span className="material-icons-round text-[20px]" style={{ color: iconColor }}>
-          {iconName}
-        </span>
-      </div>
+        <div className="flex items-start justify-end">
+          {hideUserStatus ? null : (
+            <span className="material-icons-round text-[20px]" style={{ color: iconColor }} aria-hidden>
+              {iconName}
+            </span>
+          )}
+        </div>
 
+        {tagOrClient ? (
+          <p className="col-span-2 min-w-0 text-sm leading-[21px] text-gray-500 dark:text-gray-400">
+            <span className="line-clamp-1">{tagOrClient}</span>
+          </p>
+        ) : (
+          <div className="col-span-2" />
+        )}
+
+        {dueText ? (
+          <p className="text-right text-sm leading-[21px] text-gray-500 dark:text-gray-400">
+            <span className="line-clamp-1">{dueText}</span>
+          </p>
+        ) : (
+          <div />
+        )}
+
+        <p className="min-w-0 text-sm leading-[21px] text-gray-500 dark:text-gray-400">
+          <span className="line-clamp-1">{frequencyText}</span>
+        </p>
+
+        {unitText ? (
+          <p className="col-span-2 min-w-0 text-right text-sm leading-[21px] text-gray-500 dark:text-gray-400">
+            <span className="line-clamp-1">{unitText}</span>
+          </p>
+        ) : (
+          <div className="col-span-2" />
+        )}
+      </div>
       {overduePill ? (
         <div
           className="absolute bottom-3 right-3 z-[2] rounded-lg bg-red-50 px-2 py-1 dark:bg-red-950/40"
@@ -210,3 +220,5 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     </div>
   );
 };
+
+export { formatTaskPeriod };

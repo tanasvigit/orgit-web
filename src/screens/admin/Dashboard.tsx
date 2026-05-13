@@ -660,11 +660,11 @@ export const AdminDashboard: React.FC = () => {
               hideUserStatus={!!merged.hide_user_status}
               rawTaskStatus={merged.status}
               taskPeriod={(() => {
-                const start = merged.start_date || merged.startDate;
+                const start = merged.start_date || merged.startDate || merged.due_date || merged.dueDate;
                 if (!start) return '';
                 const d = new Date(start);
                 if (Number.isNaN(d.getTime())) return '';
-                return d.toLocaleString('en-US', { month: 'short' });
+                return d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
               })()}
               frequency={String(merged.recurrence_type || merged.frequency || merged.task_frequency || ((merged.task_type === 'recurring' || merged.taskType === 'recurring' || merged.task_type === 'recurring_instance' || merged.taskType === 'recurring_instance') ? 'Recurring' : 'One-Time'))}
               taskUnitType={chosenUnit.unitType}
