@@ -17,13 +17,24 @@ export interface Employee {
   status: string;
   profilePhotoUrl?: string;
   profile_photo_url?: string;
-  department?: string;
-  designation?: string;
   reportingTo?: string;
   reporting_to?: string;
   reportingToName?: string;
   reporting_to_name?: string;
-  level?: string;
+  primaryOrgNodeId?: string | null;
+  primary_org_node_id?: string | null;
+  secondaryOrgNodeIds?: string[];
+  secondary_org_node_ids?: string[];
+  primaryOrgPath?: string | null;
+  primary_org_path?: string | null;
+  primaryOrgNodeName?: string | null;
+  primary_org_node_name?: string | null;
+  primaryOrgLevelLabel?: string | null;
+  primary_org_level_label?: string | null;
+  secondaryOrgPaths?: string[];
+  secondary_org_paths?: string[];
+  orgFieldValues?: Record<string, unknown>;
+  org_field_values?: Record<string, unknown>;
   createdAt?: string;
   created_at?: string;
 }
@@ -31,19 +42,19 @@ export interface Employee {
 export interface AddEmployeeRequest {
   mobile: string;
   name: string;
-  department?: string;
-  designation?: string;
   reportingTo?: string;
-  level?: string;
+  primaryOrgNodeId?: string | null;
+  secondaryOrgNodeIds?: string[];
+  orgFieldValues?: Record<string, string>;
 }
 
 export interface UpdateEmployeeRequest {
   name?: string;
-  department?: string;
-  designation?: string;
   reportingTo?: string;
-  level?: string;
+  primaryOrgNodeId?: string | null;
+  secondaryOrgNodeIds?: string[];
   status?: string;
+  orgFieldValues?: Record<string, string>;
 }
 
 export const employeeService = {

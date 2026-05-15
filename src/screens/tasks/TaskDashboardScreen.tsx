@@ -114,7 +114,7 @@ export const TaskDashboardScreen: React.FC = () => {
   };
 
   const resolveTaskUnitDisplay = (taskLike: any) => {
-    const preference = userTaskConfig?.taskUnitPreference || 'cost_centre';
+    const preference = userTaskConfig?.taskUnitPreference || 'org_node';
     const map: Record<string, { label: string; keys: string[] }> = {
       cost_centre: {
         label: 'Cost centre',
@@ -127,8 +127,9 @@ export const TaskDashboardScreen: React.FC = () => {
       warehouse: { label: 'Warehouse', keys: ['warehouse_name', 'warehouseName', 'warehouse'] },
       project: { label: 'Project', keys: ['project_name', 'projectName', 'project'] },
       factory: { label: 'Factory', keys: ['factory_name', 'factoryName', 'factory'] },
+      org_node: { label: 'Organization node', keys: ['org_structure_path', 'orgStructurePath', 'task_unit', 'taskUnit'] },
     };
-    const chosen = map[preference] || map.cost_centre;
+    const chosen = map[preference] || map.org_node;
     // Backend stores the user-entered unit value as a single column (`task_unit`,
     // legacy `task_unit_name`); type-specific keys above are kept for forward-compat.
     const lookupKeys = [...chosen.keys, 'task_unit', 'taskUnit', 'task_unit_name', 'taskUnitName'];

@@ -157,34 +157,10 @@ export const UserTaskConfigScreen: React.FC = () => {
                 Task card unit display
               </label>
               <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
-                Choose which organization unit is shown in task cards.
+                Task cards now always show the selected organization-node path.
               </p>
-              <div className="flex flex-wrap gap-3">
-                {(
-                  [
-                    { key: 'cost_centre' as const, label: 'Cost centre' },
-                    { key: 'department' as const, label: 'Department' },
-                    { key: 'depot' as const, label: 'Depot' },
-                    { key: 'branch' as const, label: 'Branch' },
-                    { key: 'entity' as const, label: 'Entity' },
-                    { key: 'warehouse' as const, label: 'Warehouse' },
-                    { key: 'project' as const, label: 'Project' },
-                    { key: 'factory' as const, label: 'Factory' },
-                  ]
-                ).map((o) => (
-                  <button
-                    key={o.key}
-                    type="button"
-                    onClick={() => setTaskUnitPreference(o.key)}
-                    className={`px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-colors ${
-                      taskUnitPreference === o.key
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    {o.label}
-                  </button>
-                ))}
+              <div className="inline-flex px-4 py-2 rounded-xl text-sm font-semibold border-2 border-primary bg-primary/10 text-primary">
+                Organization node
               </div>
             </div>
 

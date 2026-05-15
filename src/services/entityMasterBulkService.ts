@@ -3,8 +3,6 @@ import api from './api';
 export interface EntityMasterUploadResult {
   updated: {
     organizations: number;
-    cost_centres: number;
-    branches: number;
     task_services: number;
     client_entities: number;
     client_entity_services: number;
@@ -27,10 +25,6 @@ export interface EntityMasterBulkStatusResponse {
   completedAt: string | null;
   summary?: {
     organizations?: number;
-    cost_centres?: number;
-    branches?: number;
-    depots?: number;
-    warehouses?: number;
     task_services?: number;
     client_entities?: number;
     client_entity_services?: number;

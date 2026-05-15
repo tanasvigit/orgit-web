@@ -40,27 +40,25 @@ const UserList = lazy(() => import('./screens/super-admin/users/UserList').then(
 const EmployeeList = lazy(() => import('./screens/admin/employees/EmployeeList').then(m => ({ default: m.EmployeeList })));
 const PlatformSettings = lazy(() => import('./screens/super-admin/settings/PlatformSettings').then(m => ({ default: m.PlatformSettings })));
 const AdminDashboard = lazy(() => import('./screens/admin/Dashboard').then(m => ({ default: m.AdminDashboard })));
-const EntityMasterData = lazy(() => import('./screens/admin/EntityMasterData').then(m => ({ default: m.EntityMasterData })));
 const ServiceList = lazy(() => import('./screens/admin/ServiceList').then(m => ({ default: m.ServiceList })));
 const EntityList = lazy(() => import('./screens/admin/EntityList').then(m => ({ default: m.EntityList })));
 const ProfileScreen = lazy(() => import('./screens/profile/ProfileScreen').then(m => ({ default: m.ProfileScreen })));
 const UserProfileScreen = lazy(() => import('./screens/profile/UserProfileScreen').then(m => ({ default: m.UserProfileScreen })));
 // Note: internal ProfileSettings screen has been replaced by an external profile app
 // const ProfileSettings = lazy(() => import('./screens/settings/ProfileSettings').then(m => ({ default: m.ProfileSettings })));
-const _ProfileSettings = lazy(() => import('./screens/settings/ProfileSettings').then(m => ({ default: m.ProfileSettings })));
 const ChangePassword = lazy(() => import('./screens/settings/ChangePassword').then(m => ({ default: m.ChangePassword })));
 const ThemeSettings = lazy(() => import('./screens/settings/ThemeSettings').then(m => ({ default: m.ThemeSettings })));
 const UserTaskConfigScreen = lazy(() =>
   import('./screens/settings/UserTaskConfigScreen').then(m => ({ default: m.UserTaskConfigScreen }))
 );
 const SettingsScreen = lazy(() => import('./screens/settings/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
-const Departments = lazy(() => import('./screens/admin/settings/Departments').then(m => ({ default: m.Departments })));
-const Designations = lazy(() => import('./screens/admin/settings/Designations').then(m => ({ default: m.Designations })));
 const ReportingHierarchy = lazy(() => import('./screens/admin/settings/ReportingHierarchy').then(m => ({ default: m.ReportingHierarchy })));
 const ReminderConfig = lazy(() => import('./screens/admin/settings/ReminderConfig').then(m => ({ default: m.ReminderConfig })));
 const AutoEscalationConfig = lazy(() => import('./screens/admin/settings/AutoEscalationConfig').then(m => ({ default: m.AutoEscalationConfig })));
 const RecurringTaskSettings = lazy(() => import('./screens/admin/settings/RecurringTaskSettings').then(m => ({ default: m.RecurringTaskSettings })));
+const OrganisationDefinitionScreen = lazy(() => import('./screens/admin/settings/OrganisationStructureScreen').then(m => ({ default: m.OrganisationDefinitionScreen })));
 const OrganisationStructureScreen = lazy(() => import('./screens/admin/settings/OrganisationStructureScreen').then(m => ({ default: m.OrganisationStructureScreen })));
+const EntityMasterData = lazy(() => import('./screens/admin/EntityMasterData').then(m => ({ default: m.EntityMasterData })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -148,28 +146,6 @@ const AdminProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   if (user?.role !== 'admin') {
-    return <Navigate to="/dashboard" replace />;
-  }
-
-  return <>{children}</>;
-};
-
-const _AdminOrSuperAdminProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading, user } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-primary">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (user?.role !== 'super_admin' && user?.role !== 'admin') {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -670,14 +646,6 @@ function App() {
               }
             />
             <Route
-              path="/admin/entity-master"
-              element={
-                <AdminProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><EntityMasterData /></Suspense>
-                </AdminProtectedRoute>
-              }
-            />
-            <Route
               path="/admin/services"
               element={
                 <AdminProtectedRoute>
@@ -694,6 +662,14 @@ function App() {
               }
             />
             <Route
+              path="/admin/entity-master"
+              element={
+                <AdminProtectedRoute>
+                  <Suspense fallback={<RouteFallback />}><EntityMasterData /></Suspense>
+                </AdminProtectedRoute>
+              }
+            />
+            <Route
               path="/admin/settings"
               element={
                 <AdminProtectedRoute>
@@ -702,26 +678,18 @@ function App() {
               }
             />
             <Route
+              path="/admin/settings/org-definition"
+              element={
+                <AdminProtectedRoute>
+                  <Suspense fallback={<RouteFallback />}><OrganisationDefinitionScreen /></Suspense>
+                </AdminProtectedRoute>
+              }
+            />
+            <Route
               path="/admin/settings/organisation-structure"
               element={
                 <AdminProtectedRoute>
                   <Suspense fallback={<RouteFallback />}><OrganisationStructureScreen /></Suspense>
-                </AdminProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/settings/departments"
-              element={
-                <AdminProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><Departments /></Suspense>
-                </AdminProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/settings/designations"
-              element={
-                <AdminProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><Designations /></Suspense>
                 </AdminProtectedRoute>
               }
             />

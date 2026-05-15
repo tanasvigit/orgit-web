@@ -237,12 +237,11 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
   // Auto-open settings dropdown and highlight Settings when on SettingsScreen or any settings route
   const isSettingsActive =
     location.pathname === '/admin/settings' ||
-    location.pathname === '/admin/entity-master' || location.pathname.startsWith('/admin/entity-master/') ||
     location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users/') ||
     location.pathname === '/admin/services' || location.pathname.startsWith('/admin/services/') ||
     location.pathname === '/admin/entities' || location.pathname.startsWith('/admin/entities/') ||
-    location.pathname === '/admin/settings/organisation-structure' || location.pathname.startsWith('/admin/settings/departments') ||
-    location.pathname.startsWith('/admin/settings/designations') || location.pathname.startsWith('/admin/settings/reporting-hierarchy') ||
+    location.pathname === '/admin/settings/org-definition' ||
+    location.pathname === '/admin/settings/organisation-structure' || location.pathname.startsWith('/admin/settings/reporting-hierarchy') ||
     location.pathname === '/admin/settings/user-config' ||
     location.pathname.startsWith('/admin/settings/reminder-config') ||
     location.pathname.startsWith('/admin/settings/auto-escalation') ||
@@ -383,22 +382,6 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
           {!isCollapsed && isSettingsOpen && (
             <div className="ml-4 mt-1 space-y-1 border-l-2 border-slate-200 pl-4">
               <Link
-                to="/admin/entity-master"
-                onClick={() => {
-                  if (window.innerWidth < 768) {
-                    setIsMobileOpen(false);
-                  }
-                }}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
-                  location.pathname === '/admin/entity-master' || location.pathname.startsWith('/admin/entity-master/')
-                    ? 'bg-primary/10 text-primary font-semibold'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                <span className="material-symbols-outlined text-lg shrink-0">domain</span>
-                <span className="font-medium text-sm whitespace-nowrap">Entity Master Data</span>
-              </Link>
-              <Link
                 to="/admin/users"
                 onClick={() => {
                   if (window.innerWidth < 768) {
@@ -431,6 +414,22 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                 <span className="font-medium text-sm whitespace-nowrap">Service List</span>
               </Link>
               <Link
+                to="/admin/entity-master"
+                onClick={() => {
+                  if (window.innerWidth < 768) {
+                    setIsMobileOpen(false);
+                  }
+                }}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
+                  location.pathname === '/admin/entity-master'
+                    ? 'bg-primary/10 text-primary font-semibold'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg shrink-0">corporate_fare</span>
+                <span className="font-medium text-sm whitespace-nowrap">Entity Master Data</span>
+              </Link>
+              <Link
                 to="/admin/entities"
                 onClick={() => {
                   if (window.innerWidth < 768) {
@@ -447,6 +446,22 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                 <span className="font-medium text-sm whitespace-nowrap">Entity List</span>
               </Link>
               <Link
+                to="/admin/settings/org-definition"
+                onClick={() => {
+                  if (window.innerWidth < 768) {
+                    setIsMobileOpen(false);
+                  }
+                }}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
+                  location.pathname === '/admin/settings/org-definition'
+                    ? 'bg-primary/10 text-primary font-semibold'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg shrink-0">schema</span>
+                <span className="font-medium text-sm whitespace-nowrap">Org Definition</span>
+              </Link>
+              <Link
                 to="/admin/settings/organisation-structure"
                 onClick={() => {
                   if (window.innerWidth < 768) {
@@ -454,9 +469,8 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                   }
                 }}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
+                  location.pathname === '/admin/settings/org-definition' ||
                   location.pathname === '/admin/settings/organisation-structure' ||
-                  location.pathname.startsWith('/admin/settings/departments') ||
-                  location.pathname.startsWith('/admin/settings/designations') ||
                   location.pathname.startsWith('/admin/settings/reporting-hierarchy')
                     ? 'bg-primary/10 text-primary font-semibold'
                     : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'

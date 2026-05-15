@@ -632,15 +632,16 @@ export const AdminDashboard: React.FC = () => {
               warehouse: { label: 'Warehouse', keys: ['warehouse_name', 'warehouseName', 'warehouse'] },
               project: { label: 'Project', keys: ['project_name', 'projectName', 'project'] },
               factory: { label: 'Factory', keys: ['factory_name', 'factoryName', 'factory'] },
+              org_node: { label: 'Organization node', keys: ['org_structure_path', 'orgStructurePath', 'task_unit', 'taskUnit'] },
             };
-            const chosen = map[preference] || map.cost_centre;
+            const chosen = map[preference] || map.org_node;
             // Backend stores the user-entered unit value as a single column (`task_unit`,
             // legacy `task_unit_name`); type-specific keys above are kept for forward-compat.
             const lookupKeys = [...chosen.keys, 'task_unit', 'taskUnit', 'task_unit_name', 'taskUnitName'];
             const value = lookupKeys.map((k) => taskLike?.[k]).find((v) => typeof v === 'string' && v.trim()) || '-';
             return { unitType: chosen.label, unitName: String(value) };
           };
-          const unitPref = userTaskConfig?.taskUnitPreference || 'cost_centre';
+          const unitPref = userTaskConfig?.taskUnitPreference || 'org_node';
           const chosenUnit = resolveTaskUnitDisplay(merged, unitPref);
           return (
             <TaskCard

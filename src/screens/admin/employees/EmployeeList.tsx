@@ -15,10 +15,18 @@ import React, { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { AdminLayout } from '../../../components/admin/AdminLayout';
 import { employeeService, Employee } from '../../../services/employeeService';
-import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
-import { getDepartments, getDesignations } from '../../../services/settingsService';
-import { chatUserService } from '../../../services/chatUserService';
+import { getOrganizationStructureTree } from '../../../services/settingsService';
+import { EmployeeOrgLevelNodeSelectors } from '../../../components/admin/EmployeeOrgLevelNodeSelectors';
+import {
+  buildEmployeeOrgFieldValuesPayload,
+  deriveOrgNodeByLevelFromPrimary,
+  extractOrgNodeByLevel,
+  formatOrgNodeByLevelSummary,
+  getActiveLevelsFromL2,
+  getDeepestSelectedNodeId,
+  type OrgNodeByLevel,
+} from '../../../utils/employeeOrgNodeLevels';
 import { entityMasterBulkService } from '../../../services/entityMasterBulkService';
 
 export const EmployeeList: React.FC = () => {
@@ -37,7 +45,6 @@ export const EmployeeList: React.FC = () => {
   const [isBulkUploading, setIsBulkUploading] = useState(false);
   const bulkFileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
-  const { user: currentUser } = useAuth();
   const { toast } = useToast();
 
   const handleDownloadEmployeeTemplate = async () => {
@@ -66,7 +73,7 @@ export const EmployeeList: React.FC = () => {
           if (status.status === 'completed') {
             toast.success('Employee bulk upload completed.');
           } else {
-            toast.warning('Bulk upload finished with errors.');
+            toast.info('Bulk upload finished with errors.');
           }
           if (status.errors?.length) {
             status.errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
@@ -109,14 +116,40 @@ export const EmployeeList: React.FC = () => {
   );
 
   const employees: Employee[] = Array.isArray(data) ? data : [];
+  const { data: orgStructureData } = useQuery(
+    ['employees-org-structure-status'],
+    () =>
+      getOrganizationStructureTree({
+        includeArchived: true,
+        includeInactive: true,
+      }).then((response) => response.data || response),
+    {
+      refetchOnWindowFocus: false,
+    }
+  );
+
+  const getEmployeeOrgAssignmentLabel = (emp: Employee): string => {
+    const rawFv = (emp.org_field_values || emp.orgFieldValues) as Record<string, unknown> | undefined;
+    let byLevel = extractOrgNodeByLevel(rawFv);
+    if (Object.keys(byLevel).length === 0) {
+      const primaryId = emp.primaryOrgNodeId || emp.primary_org_node_id;
+      if (primaryId && orgStructureData) {
+        byLevel = deriveOrgNodeByLevelFromPrimary(orgStructureData, primaryId);
+      }
+    }
+    const summary = formatOrgNodeByLevelSummary(orgStructureData, byLevel);
+    if (summary) return summary;
+    return emp.primaryOrgNodeName || emp.primary_org_node_name || '-';
+  };
 
   // Filter employees
   const filteredEmployees = employees.filter((emp: Employee) => {
+    const orgLabel = getEmployeeOrgAssignmentLabel(emp).toLowerCase();
     const matchesSearch = !searchQuery || 
       emp.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       emp.mobile?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.department?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.designation?.toLowerCase().includes(searchQuery.toLowerCase());
+      orgLabel.includes(searchQuery.toLowerCase()) ||
+      (emp.reportingToName || emp.reporting_to_name || '').toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesStatus = !statusFilter || emp.status === statusFilter;
     
@@ -250,6 +283,16 @@ export const EmployeeList: React.FC = () => {
           </div>
         </div>
 
+        {!orgStructureData?.rootNode ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            Org definition has not been completed yet. Set up the hierarchy first in
+            {' '}
+            <span className="font-semibold">Settings &gt; Org Definition</span>
+            {' '}
+            on web so employee mappings can follow the defined organization structure across web and mobile.
+          </div>
+        ) : null}
+
         {/* Bulk update from Excel (same process as Entity Master Data) */}
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
           <h2 className="text-lg font-bold text-text-main mb-2 flex items-center gap-2">
@@ -293,7 +336,7 @@ export const EmployeeList: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <input
               type="text"
-              placeholder="Search by name, mobile, department, designation..."
+              placeholder="Search by name, mobile, org path, reporting manager..."
               className="px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-text-main"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -349,10 +392,8 @@ export const EmployeeList: React.FC = () => {
                   <tr>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Name</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Mobile</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Department</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Designation</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Organisation</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Reporting To</th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Level</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
                     <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Actions</th>
                   </tr>
@@ -379,13 +420,13 @@ export const EmployeeList: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-text-muted">{employee.mobile}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-main">{employee.department || '-'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-main">{employee.designation || '-'}</td>
+                      <td className="px-6 py-4 text-sm text-text-main">
+                        <div className="max-w-xs truncate" title={getEmployeeOrgAssignmentLabel(employee)}>
+                          {getEmployeeOrgAssignmentLabel(employee)}
+                        </div>
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-text-muted">
                         {employee.reportingToName || employee.reporting_to_name || '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-main">
-                        {employee.level || '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
@@ -575,13 +616,15 @@ interface EmployeeFormProps {
 }
 
 const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave, onCancel, isSaving }) => {
+  const { toast } = useToast();
+  const rawEmployeeFv = ((employee as any)?.org_field_values ||
+    (employee as any)?.orgFieldValues) as Record<string, unknown> | undefined;
+
   const [formData, setFormData] = useState({
     mobile: employee?.mobile || '',
     name: employee?.name || '',
-    department: employee?.department || '',
-    designation: employee?.designation || '',
     reportingTo: (employee as any)?.reportingTo || (employee as any)?.reporting_to || '',
-    level: (employee as any)?.level || '',
+    orgNodeByLevel: extractOrgNodeByLevel(rawEmployeeFv) as OrgNodeByLevel,
     status: employee?.status || 'active',
     password: '',
   });
@@ -590,35 +633,39 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
   const [selectedExistingUser, setSelectedExistingUser] = useState<any | null>(null);
   const searchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
-  // Reset form when employee changes (switching between add/edit)
+  const { data: orgStructureTreeData } = useQuery(['employee-form-org-tree'], async () => {
+    const response = await getOrganizationStructureTree({
+      includeArchived: false,
+      includeInactive: false,
+    });
+    return response.data || response;
+  });
+
+  const levelsFromL2 = React.useMemo(
+    () => getActiveLevelsFromL2(orgStructureTreeData?.levels ?? []),
+    [orgStructureTreeData?.levels]
+  );
+
   React.useEffect(() => {
+    const primaryId = (employee as any)?.primaryOrgNodeId || (employee as any)?.primary_org_node_id || '';
+    const rawFv = ((employee as any)?.org_field_values || (employee as any)?.orgFieldValues) as
+      | Record<string, unknown>
+      | undefined;
+    let orgNodeByLevel = extractOrgNodeByLevel(rawFv);
+    if (Object.keys(orgNodeByLevel).length === 0 && primaryId && orgStructureTreeData) {
+      orgNodeByLevel = deriveOrgNodeByLevelFromPrimary(orgStructureTreeData, primaryId);
+    }
     setFormData({
       mobile: employee?.mobile || '',
       name: employee?.name || '',
-      department: employee?.department || '',
-      designation: employee?.designation || '',
       reportingTo: (employee as any)?.reportingTo || (employee as any)?.reporting_to || '',
-      level: (employee as any)?.level || '',
+      orgNodeByLevel,
       status: employee?.status || 'active',
       password: '',
     });
     setSearchResults([]);
     setSelectedExistingUser(null);
-  }, [employee]);
-
-  // Fetch departments and designations
-  const { data: departmentsData } = useQuery('departments', async () => {
-    const response = await getDepartments();
-    return response.data || response;
-  });
-
-  const { data: designationsData } = useQuery('designations', async () => {
-    const response = await getDesignations();
-    return response.data || response;
-  });
-
-  const departments = Array.isArray(departmentsData) ? departmentsData : (departmentsData?.items || []);
-  const designations = Array.isArray(designationsData) ? designationsData : (designationsData?.items || []);
+  }, [employee, orgStructureTreeData]);
 
   // Search for existing users by mobile number (EXACT mobile logic)
   const handleMobileChange = async (text: string) => {
@@ -683,7 +730,28 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const submitData: any = { ...formData };
+
+    if (levelsFromL2.length > 0) {
+      for (const level of levelsFromL2) {
+        if (!formData.orgNodeByLevel[String(level.levelNumber)]) {
+          toast.error(`Please select ${level.levelLabel} (L${level.levelNumber})`);
+          return;
+        }
+      }
+    }
+
+    const primaryOrgNodeId = getDeepestSelectedNodeId(formData.orgNodeByLevel, levelsFromL2);
+    const submitData: any = {
+      mobile: formData.mobile,
+      name: formData.name,
+      reportingTo: formData.reportingTo,
+      status: formData.status,
+      password: formData.password,
+      primaryOrgNodeId: primaryOrgNodeId || null,
+      secondaryOrgNodeIds: [],
+      orgFieldValues: buildEmployeeOrgFieldValuesPayload(formData.orgNodeByLevel, {}),
+    };
+
     if (employee) {
       // For updates, don't send password if not changed
       if (!submitData.password) {
@@ -836,36 +904,14 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
           </p>
         )}
       </div>
-      <div>
-        <label className="block text-sm font-medium text-text-main mb-1">Department</label>
-        <select
-          className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
-          value={formData.department}
-          onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-        >
-          <option value="">Select Department</option>
-          {departments.map((dept: any) => (
-            <option key={dept.id} value={dept.name}>
-              {dept.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-text-main mb-1">Designation</label>
-        <select
-          className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
-          value={formData.designation}
-          onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
-        >
-          <option value="">Select Designation</option>
-          {designations.map((desg: any) => (
-            <option key={desg.id} value={desg.name}>
-              {desg.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      <EmployeeOrgLevelNodeSelectors
+        tree={orgStructureTreeData}
+        value={formData.orgNodeByLevel}
+        onChange={(orgNodeByLevel) => setFormData((prev) => ({ ...prev, orgNodeByLevel }))}
+      />
+      <p className="text-xs text-slate-500 dark:text-slate-400 -mt-2">
+        Choose organisation, company, region, etc. for this employee. Node details are managed in Entity Master Data, not here.
+      </p>
       <div>
         <label className="block text-sm font-medium text-text-main mb-1">Reporting To</label>
         <select
@@ -882,16 +928,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
               </option>
             ))}
         </select>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-text-main mb-1">Level</label>
-        <input
-          type="text"
-          className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
-          placeholder="e.g. L1, L2"
-          value={formData.level}
-          onChange={(e) => setFormData({ ...formData, level: e.target.value.toUpperCase() })}
-        />
       </div>
       {employee && (
         <div>

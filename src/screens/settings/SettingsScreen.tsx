@@ -43,40 +43,26 @@ export const SettingsScreen: React.FC = () => {
     },
   ];
 
-  // Eight sections: Entity Master Data, Employees, Departments, Designations, Organisation Structure, Service List, Entity List, Automation & Configurations
+  // Admin settings flow starts with Org Definition on web, then applies to downstream org settings.
   const adminSettingsCards = [
     { 
-      icon: 'business', 
-      title: 'Entity Master Data', 
-      subtitle: 'Name of the Organisation, Short Name, Address, E Mail ID, Web Site, Phone Number, Org Constitution, PAN, GST Number, Depot, Warehouse', 
-      screen: '/admin/entity-master',
-      color: 'purple'
+      icon: 'schema', 
+      title: 'Org Definition', 
+      subtitle: 'Define the organization hierarchy on web before applying it to other org settings', 
+      screen: '/admin/settings/org-definition',
+      color: 'indigo'
     },
     { 
       icon: 'group', 
       title: 'Employees', 
-      subtitle: 'NAME OF THE EMPLOYEE, MOBILE NUMBER, DESIGNATON, REPORTING TO, LEVEL', 
+      subtitle: 'Map employees and reporting using the defined organization structure', 
       screen: '/admin/users',
       color: 'blue'
     },
     { 
-      icon: 'domain', 
-      title: 'Departments', 
-      subtitle: 'Manage business units', 
-      screen: '/admin/settings/departments',
-      color: 'green'
-    },
-    { 
-      icon: 'badge', 
-      title: 'Designations', 
-      subtitle: 'Job titles & levels', 
-      screen: '/admin/settings/designations',
-      color: 'orange'
-    },
-    { 
       icon: 'account_tree', 
       title: 'Organisation Structure', 
-      subtitle: 'Overall org structure view', 
+      subtitle: 'Overview of definition progress and downstream rollout status', 
       screen: '/admin/settings/organisation-structure',
       color: 'indigo'
     },
@@ -90,7 +76,7 @@ export const SettingsScreen: React.FC = () => {
     { 
       icon: 'groups', 
       title: 'Entity List', 
-      subtitle: 'NAME OF THE CLIENT, ENTITY TYPE, COST CENTRE, GSTR & compliance fields', 
+      subtitle: 'Assign clients to org nodes and manage service coverage', 
       screen: '/admin/entities',
       color: 'pink'
     },
@@ -129,7 +115,7 @@ export const SettingsScreen: React.FC = () => {
         if (status.status === 'completed') {
           const s = status.summary;
           const summaryLine = s
-            ? `Org:${s.organizations ?? 0}, CC:${s.cost_centres ?? 0}, Branch:${s.branches ?? 0}, Depot:${s.depots ?? 0}, Warehouse:${s.warehouses ?? 0}, Services:${s.task_services ?? 0}, Entities:${s.client_entities ?? 0}, Entity services:${s.client_entity_services ?? 0}, Employees:${s.employees ?? 0}, Tasks:${s.tasks ?? 0}`
+            ? `Org:${s.organizations ?? 0}, Services:${s.task_services ?? 0}, Entities:${s.client_entities ?? 0}, Entity services:${s.client_entity_services ?? 0}, Employees:${s.employees ?? 0}, Tasks:${s.tasks ?? 0}`
             : null;
           toast.success(summaryLine ? `Settings bulk upload completed. ${summaryLine}` : 'Settings bulk upload completed.');
         } else {

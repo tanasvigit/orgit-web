@@ -1332,9 +1332,10 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       warehouse: { label: 'Warehouse', keys: ['warehouse_name', 'warehouseName', 'warehouse'] },
       project: { label: 'Project', keys: ['project_name', 'projectName', 'project'] },
       factory: { label: 'Factory', keys: ['factory_name', 'factoryName', 'factory'] },
+      org_node: { label: 'Organization node', keys: ['org_structure_path', 'orgStructurePath', 'task_unit', 'taskUnit'] },
     };
-    const pref = (userTaskConfig as any)?.taskUnitPreference || 'cost_centre';
-    const chosen = unitMap[pref] || unitMap.cost_centre;
+    const pref = (userTaskConfig as any)?.taskUnitPreference || 'org_node';
+    const chosen = unitMap[pref] || unitMap.org_node;
     const lookupKeys = [...chosen.keys, 'task_unit', 'taskUnit', 'task_unit_name', 'taskUnitName'];
     const unitName =
       lookupKeys.map((k) => (task as any)?.[k]).find((v) => typeof v === 'string' && v.trim()) || '';

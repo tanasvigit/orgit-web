@@ -22,27 +22,24 @@ export const AdminLayout: React.FC<AdminLayoutProps> = (props) => {
   const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
   const sidebarToggleRef = useRef<(() => void) | null>(null);
 
-  // Redirect if not admin
   if (user?.role !== 'admin') {
     return <Navigate to="/" replace />;
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
+    <div className="flex h-full min-h-0 w-full overflow-hidden bg-background">
       <AdminSidebar onToggleRef={sidebarToggleRef} />
-      <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-background">
-        <main className="flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto w-full">{children}</main>
       </div>
 
-      {/* Floating Action Button */}
-      <FloatingActionButton 
+      <FloatingActionButton
         isAdmin={true}
         onOpenTaskModal={() => setShowTaskCreateModal(true)}
         onOpenDocumentPage={() => navigate('/admin/documents/create')}
         onOpenCompliancePage={() => navigate('/admin/compliance/create')}
       />
 
-      {/* Task Create Modal */}
       <TaskCreateModal
         visible={showTaskCreateModal}
         onClose={() => setShowTaskCreateModal(false)}
@@ -55,4 +52,3 @@ export const AdminLayout: React.FC<AdminLayoutProps> = (props) => {
     </div>
   );
 };
-

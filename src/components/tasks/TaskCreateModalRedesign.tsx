@@ -52,6 +52,13 @@ type TaskUnitSection = {
   units: string[];
 };
 
+const formatOrgNodeTaskUnit = (node: any) => {
+  const pathDisplay = String(node?.pathDisplay || node?.name || '').trim();
+  const code = String(node?.code || '').trim();
+  if (!pathDisplay) return '';
+  return code ? `${pathDisplay} [${code}]` : pathDisplay;
+};
+
 const introMessageClass =
   'w-fit max-w-full rounded-xl border border-[#E5E7EB] bg-[#F3F4F6] px-3 py-2 text-sm font-medium text-[#1F2937]';
 const requiredLabelClass = 'mb-0.5 block text-xs font-medium text-[#6B7280]';
@@ -210,6 +217,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [description, setDescription] = useState(initialDescription);
   const [tagInput, setTagInput] = useState('');
   const [taskUnit, setTaskUnit] = useState('');
+  const [selectedOrgStructureNodeId, setSelectedOrgStructureNodeId] = useState<string | null>(null);
   const [showTitleSuggestions, setShowTitleSuggestions] = useState(false);
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
   const [showTaskUnitSuggestions, setShowTaskUnitSuggestions] = useState(false);
@@ -307,20 +315,33 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const clients = useMemo(() => (Array.isArray(clientMatrixData) ? clientMatrixData : []), [clientMatrixData]);
   const taskUnitSections = useMemo<TaskUnitSection[]>(() => {
     const org = orgDataForTaskUnit || {};
-    const getNames = (list: any[]) =>
-      (Array.isArray(list) ? list : [])
-        .map((item: any) => String(item?.name || '').trim())
-        .filter((name: string) => !!name);
     const sections: TaskUnitSection[] = [
-      { key: 'cost_centre', label: 'Cost Centre', units: getNames(org.costCentres) },
-      // Branch values are sourced from organization branches in settings.
-      { key: 'branches', label: 'Branches', units: getNames(org.branches) },
-      { key: 'depot', label: 'Depot', units: getNames(org.depots) },
-      { key: 'warehouse', label: 'Warehouse', units: getNames(org.warehouses) },
-      { key: 'project', label: 'Project', units: getNames(org.projects) },
-      { key: 'factory', label: 'Factory', units: getNames(org.factories) },
+      {
+        key: 'org_node',
+        label: 'Org Structure',
+        units: (Array.isArray(org.orgStructureOperationalOptions?.nodes)
+          ? org.orgStructureOperationalOptions.nodes
+          : []
+        )
+          .map((node: any) => formatOrgNodeTaskUnit(node))
+          .filter(Boolean),
+      },
     ];
     return sections.filter((section) => section.units.length > 0);
+  }, [orgDataForTaskUnit]);
+  const taskUnitOrgNodeIdMap = useMemo(() => {
+    const org = orgDataForTaskUnit || {};
+    const map = new Map<string, string>();
+    const orgNodes = Array.isArray(org.orgStructureOperationalOptions?.nodes)
+      ? org.orgStructureOperationalOptions.nodes
+      : [];
+    orgNodes.forEach((node: any) => {
+      const label = formatOrgNodeTaskUnit(node);
+      if (label && node?.id) {
+        map.set(label, String(node.id));
+      }
+    });
+    return map;
   }, [orgDataForTaskUnit]);
   const taskUnitOptions = useMemo(
     () =>
@@ -374,6 +395,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     setDescription(initialDescription || '');
     setTagInput('');
     setTaskUnit('');
+    setSelectedOrgStructureNodeId(null);
     setShowTitleSuggestions(false);
     setShowTagSuggestions(false);
     setShowTaskUnitSuggestions(false);
@@ -434,6 +456,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const applyTaskUnitName = (unitName?: string) => {
     const nextTaskUnit = (unitName || taskUnit).trim();
     setTaskUnit(nextTaskUnit);
+    setSelectedOrgStructureNodeId(taskUnitOrgNodeIdMap.get(nextTaskUnit) || null);
     setShowTaskUnitSuggestions(false);
     setTaskUnitHighlightedIndex(-1);
     setBasicInfoConfirmed(false);
@@ -545,7 +568,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
           assignPeople && autoEscalation ? Number.parseInt(escalationTiming || '0', 10) || 0 : null,
         escalation_contact_ids: assignPeople && autoEscalation ? escalationContacts.map((u) => u.id) : [],
         financial_value: addFinancialValue ? Number.parseFloat(financialValue || '0') || null : null,
-        task_unit: taskUnit.trim() || null,
+        org_structure_node_id: selectedOrgStructureNodeId || undefined,
         client_name: tagInput.trim() || null,
         tags: [],
         compliance_id: complianceId || undefined,
@@ -752,13 +775,14 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
               </div>
             </div>
             <div className="flex items-start gap-3">
-              <label className="w-24 shrink-0 pt-2 text-xs font-medium text-[#6B7280]">Task Unit</label>
+              <label className="w-24 shrink-0 pt-2 text-xs font-medium text-[#6B7280]">Org Node</label>
               <div className="min-w-0 flex-1 flex items-start gap-2">
                 <div className="relative min-w-0 flex-1">
                   <input
                     value={taskUnit}
                     onChange={(e) => {
                       setTaskUnit(e.target.value);
+                      setSelectedOrgStructureNodeId(taskUnitOrgNodeIdMap.get(e.target.value.trim()) || null);
                       setShowTaskUnitSuggestions(true);
                       setTaskUnitHighlightedIndex(-1);
                       setBasicInfoConfirmed(false);
@@ -777,7 +801,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                         onEnterWithoutSuggestions: () => applyTaskUnitName(),
                       })
                     }
-                    placeholder="Select task unit"
+                    placeholder="Select organization node"
                     className={inputClass}
                     autoComplete="off"
                     role="combobox"
@@ -804,6 +828,11 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                         </button>
                       ))}
                     </div>
+                  ) : null}
+                  {selectedOrgStructureNodeId ? (
+                    <p className="mt-2 text-xs text-[#6B7280]">
+                      Linked organization path: {taskUnit}
+                    </p>
                   ) : null}
                 </div>
                 <button

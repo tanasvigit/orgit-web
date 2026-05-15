@@ -3,22 +3,14 @@ export const FALLBACK_TASK_CREATION_USER_CONFIG = {
   dueDaysFromStart: 10,
   targetDaysBeforeDue: 3,
   autoEscalateTrigger: 'target_date' as const,
-  taskUnitPreference: 'cost_centre' as const,
+  taskUnitPreference: 'org_node' as const,
 };
 
 export type TaskCreationUserConfig = {
   dueDaysFromStart: number;
   targetDaysBeforeDue: number;
   autoEscalateTrigger: 'target_date' | 'due_date';
-  taskUnitPreference:
-    | 'cost_centre'
-    | 'department'
-    | 'depot'
-    | 'branch'
-    | 'entity'
-    | 'warehouse'
-    | 'project'
-    | 'factory';
+  taskUnitPreference: 'org_node';
 };
 
 /** Start date at 9:00; target = due minus N days; due = start plus M days. */

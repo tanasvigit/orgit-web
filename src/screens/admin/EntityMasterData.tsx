@@ -8,6 +8,8 @@ import { useToast } from '../../context/ToastContext';
 import api from '../../services/api';
 import { getBackendBaseUrlWithSlash } from '../../config/env';
 import { masterDataService } from '../../services/masterDataService';
+import { getOrganizationStructureTree } from '../../services/settingsService';
+import { OrgStructureEntityMasterPanel } from '../../components/admin/OrgStructureEntityMasterPanel';
 
 const mapOrgToFormState = (orgData: any) => ({
   name: orgData.name || '',
@@ -86,6 +88,18 @@ export const EntityMasterData: React.FC = () => {
     const res = await masterDataService.getOrgConstitutions();
     return res.data.data || res.data;
   });
+  const { data: orgStructureData } = useQuery(
+    ['entity-master-org-structure-status'],
+    () =>
+      getOrganizationStructureTree({
+        includeArchived: true,
+        includeInactive: true,
+      }).then((response) => response.data || response),
+    {
+      enabled: !!user,
+      refetchOnWindowFocus: false,
+    }
+  );
 
   // Get user's organization
   const { data: orgData, isLoading } = useQuery(
@@ -186,7 +200,7 @@ export const EntityMasterData: React.FC = () => {
           if (status.status === 'completed') {
             toast.success('Entity Master bulk upload completed.');
           } else {
-            toast.warning('Bulk upload finished with errors.');
+            toast.info('Bulk upload finished with errors.');
           }
           if (status.errors?.length) {
             status.errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
@@ -358,6 +372,23 @@ export const EntityMasterData: React.FC = () => {
               )}
             </div>
           </div>
+
+          {!orgStructureData?.rootNode ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              Org definition has not been completed yet. Define the hierarchy first in
+              {' '}
+              <span className="font-semibold">Settings &gt; Org Definition</span>
+              {' '}
+              on web, then apply entity master data against that structure across web and mobile.
+            </div>
+          ) : null}
+
+          <OrgStructureEntityMasterPanel
+            tree={orgStructureData}
+            organizationName={formData.name}
+            onOrganizationNameChange={(name) => setFormData((prev) => ({ ...prev, name }))}
+            valuesEditable={isEditing}
+          />
 
           <form id="entity-master-form" onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
             {/* Organization Details */}

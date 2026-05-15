@@ -4,8 +4,19 @@ import { AdminLayout } from '../../components/admin/AdminLayout';
 import { entityListService } from '../../services/entityListService';
 import { entityMasterBulkService } from '../../services/entityMasterBulkService';
 import { masterDataService, TaskServiceFrequency, OrgConstitutionOption } from '../../services/masterDataService';
-import { organizationService } from '../../services/organizationService';
+import { getOrganizationStructureTree } from '../../services/settingsService';
 import { useToast } from '../../context/ToastContext';
+import { EmployeeOrgLevelNodeSelectors } from '../../components/admin/EmployeeOrgLevelNodeSelectors';
+import {
+  buildEmployeeOrgFieldValuesPayload,
+  deriveOrgNodeByLevelFromPrimary,
+  extractOrgNodeByLevel,
+  formatOrgNodeByLevelSummary,
+  getActiveLevelsFromL2,
+  getDeepestSelectedNodeId,
+  getEntityTypeFromNode,
+  type OrgNodeByLevel,
+} from '../../utils/employeeOrgNodeLevels';
 
 export const EntityList: React.FC = () => {
   const qc = useQueryClient();
@@ -16,9 +27,9 @@ export const EntityList: React.FC = () => {
   const [isBulkUploading, setIsBulkUploading] = useState(false);
   const bulkFileInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: orgData } = useQuery(['admin-organization'], async () => {
-    const res = await organizationService.getMyOrganization();
-    return res.data.data;
+  const { data: orgStructureTreeData } = useQuery(['entity-list-org-structure-tree'], async () => {
+    const res = await getOrganizationStructureTree({ includeArchived: false, includeInactive: false });
+    return res.data || res;
   });
 
   const { data: clientsData, isLoading: clientsLoading } = useQuery(['client-entities'], async () => {
@@ -80,24 +91,43 @@ export const EntityList: React.FC = () => {
   const [modal, setModal] = React.useState<{ mode: 'add' | 'edit'; client?: any } | null>(null);
   const [form, setForm] = React.useState({
     name: '',
-    entityType: '',
-    costCentreId: '',
-    depotId: '',
-    warehouseId: '',
+    orgNodeByLevel: {} as OrgNodeByLevel,
     pan: '',
     reportingPartnerMobile: '',
     status: 'active' as 'active' | 'inactive',
   });
 
+  const levelsFromL2 = React.useMemo(
+    () => getActiveLevelsFromL2(orgStructureTreeData?.levels ?? []),
+    [orgStructureTreeData?.levels]
+  );
+
+  const getClientOrgLabel = (client: any): string => {
+    const rawFv = (client.org_field_values || {}) as Record<string, unknown>;
+    let byLevel = extractOrgNodeByLevel(rawFv);
+    if (Object.keys(byLevel).length === 0 && client.org_structure_node_id) {
+      byLevel = deriveOrgNodeByLevelFromPrimary(orgStructureTreeData, client.org_structure_node_id);
+    }
+    const summary = formatOrgNodeByLevelSummary(orgStructureTreeData, byLevel);
+    if (summary) return summary;
+    if (Array.isArray(client.org_structure_path) && client.org_structure_path.length > 0) {
+      return client.org_structure_path.map((node: { name: string }) => node.name).join(' / ');
+    }
+    return client.org_structure_node_name || '-';
+  };
+
   React.useEffect(() => {
     if (!modal) return;
     if (modal.mode === 'edit' && modal.client) {
+      const nodeId = modal.client.org_structure_node_id || '';
+      const rawFv = (modal.client.org_field_values || {}) as Record<string, unknown>;
+      let orgNodeByLevel = extractOrgNodeByLevel(rawFv);
+      if (Object.keys(orgNodeByLevel).length === 0 && nodeId && orgStructureTreeData) {
+        orgNodeByLevel = deriveOrgNodeByLevelFromPrimary(orgStructureTreeData, nodeId);
+      }
       setForm({
         name: modal.client.name || '',
-        entityType: modal.client.entity_type || '',
-        costCentreId: modal.client.cost_centre_id || '',
-        depotId: modal.client.depot_id || '',
-        warehouseId: modal.client.warehouse_id || '',
+        orgNodeByLevel,
         pan: modal.client.pan || '',
         reportingPartnerMobile: modal.client.reporting_partner_mobile || '',
         status: (modal.client.status as 'active' | 'inactive') || 'active',
@@ -105,23 +135,43 @@ export const EntityList: React.FC = () => {
     } else {
       setForm({
         name: '',
-        entityType: '',
-        costCentreId: '',
-        depotId: '',
-        warehouseId: '',
+        orgNodeByLevel: {},
         pan: '',
         reportingPartnerMobile: '',
         status: 'active',
       });
     }
-  }, [modal]);
+  }, [modal, orgStructureTreeData]);
+
+  const buildSavePayload = () => {
+    if (levelsFromL2.length > 0) {
+      for (const level of levelsFromL2) {
+        if (!form.orgNodeByLevel[String(level.levelNumber)]) {
+          toast.error(`Please select ${level.levelLabel} (L${level.levelNumber})`);
+          return null;
+        }
+      }
+    }
+    const orgStructureNodeId = getDeepestSelectedNodeId(form.orgNodeByLevel, levelsFromL2);
+    return {
+      name: form.name,
+      entityType: getEntityTypeFromNode(orgStructureTreeData, orgStructureNodeId) || undefined,
+      orgStructureNodeId: orgStructureNodeId || undefined,
+      pan: form.pan,
+      reportingPartnerMobile: form.reportingPartnerMobile,
+      status: form.status,
+      orgFieldValues: buildEmployeeOrgFieldValuesPayload(form.orgNodeByLevel, {}),
+    };
+  };
 
   const saveMutation = useMutation(
     async () => {
+      const payload = buildSavePayload();
+      if (!payload) throw new Error('Validation failed');
       if (modal?.mode === 'edit' && modal.client?.id) {
-        await entityListService.update(modal.client.id, form);
+        await entityListService.update(modal.client.id, payload);
       } else {
-        await entityListService.create(form);
+        await entityListService.create(payload);
       }
     },
     {
@@ -148,7 +198,7 @@ export const EntityList: React.FC = () => {
     setIsDownloadingTemplate(true);
     try {
       await entityMasterBulkService.getTemplate('entity-list');
-      toast.success('Entity List template downloaded. Fill NAME OF THE CLIENT, ENTITY TYPE, COST CENTRE and compliance dropdowns (GSTR, etc.), then upload.');
+      toast.success('Entity List template downloaded. Fill client details and org-node assignments, then upload.');
     } catch (err: any) {
       toast.error(err.response?.data?.error || err.message || 'Failed to download template');
     } finally {
@@ -292,13 +342,7 @@ export const EntityList: React.FC = () => {
                         ENTITY TYPE
                       </th>
                       <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        COST CENTRE
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        DEPOT
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        WAREHOUSE
+                        ORGANISATION
                       </th>
                       <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                         PAN
@@ -317,7 +361,7 @@ export const EntityList: React.FC = () => {
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                     {clientsLoading ? (
                       <tr>
-                        <td colSpan={9} className="px-6 py-10 text-center text-sm text-slate-500">
+                        <td colSpan={7} className="px-6 py-10 text-center text-sm text-slate-500">
                           Loading...
                         </td>
                       </tr>
@@ -327,13 +371,9 @@ export const EntityList: React.FC = () => {
                           <td className="px-6 py-4 text-sm font-semibold text-slate-900 dark:text-white">{c.name}</td>
                           <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-200">{c.entity_type || '-'}</td>
                           <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-200">
-                            {c.cost_centre_name ? `${c.cost_centre_name}${c.cost_centre_short_name ? ` (${c.cost_centre_short_name})` : ''}` : '-'}
-                          </td>
-                          <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-200">
-                            {c.depot_name ? `${c.depot_name}${c.depot_short_name ? ` (${c.depot_short_name})` : ''}` : '-'}
-                          </td>
-                          <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-200">
-                            {c.warehouse_name ? `${c.warehouse_name}${c.warehouse_short_name ? ` (${c.warehouse_short_name})` : ''}` : '-'}
+                            <div className="max-w-xs truncate" title={getClientOrgLabel(c)}>
+                              {getClientOrgLabel(c)}
+                            </div>
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-200 font-mono uppercase">
                             {c.pan || '-'}
@@ -634,7 +674,7 @@ export const EntityList: React.FC = () => {
 
         {modal && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="bg-white dark:bg-slate-800 rounded-xl w-full max-w-md mx-auto flex flex-col max-h-[90vh] my-auto">
+            <div className="bg-white dark:bg-slate-800 rounded-xl w-full max-w-lg mx-auto flex flex-col max-h-[90vh] my-auto">
               <div className="p-6 pb-2 flex-shrink-0">
                 <div className="text-lg font-bold text-slate-900 dark:text-white">
                   {modal.mode === 'add' ? 'Add Client' : 'Edit Client'}
@@ -649,66 +689,14 @@ export const EntityList: React.FC = () => {
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Entity Type</label>
-                  <select
-                    className="w-full px-4 py-2 rounded-lg border border-slate-200 bg-white dark:bg-slate-800"
-                    value={form.entityType}
-                    onChange={(e) => setForm({ ...form, entityType: e.target.value })}
-                  >
-                    <option value="">Select entity type</option>
-                    {orgConstitutions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Cost Centre</label>
-                  <select
-                    className="w-full px-4 py-2 rounded-lg border border-slate-200 bg-white dark:bg-slate-800"
-                    value={form.costCentreId}
-                    onChange={(e) => setForm({ ...form, costCentreId: e.target.value })}
-                  >
-                    <option value="">None</option>
-                    {(orgData?.costCentres || []).map((cc: any) => (
-                      <option key={cc.id} value={cc.id}>
-                        {cc.name} {cc.shortName ? `(${cc.shortName})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Depot</label>
-                  <select
-                    className="w-full px-4 py-2 rounded-lg border border-slate-200 bg-white dark:bg-slate-800"
-                    value={form.depotId}
-                    onChange={(e) => setForm({ ...form, depotId: e.target.value })}
-                  >
-                    <option value="">None</option>
-                    {(orgData?.depots || []).map((d: any) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name} {d.shortName ? `(${d.shortName})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Warehouse</label>
-                  <select
-                    className="w-full px-4 py-2 rounded-lg border border-slate-200 bg-white dark:bg-slate-800"
-                    value={form.warehouseId}
-                    onChange={(e) => setForm({ ...form, warehouseId: e.target.value })}
-                  >
-                    <option value="">None</option>
-                    {(orgData?.warehouses || []).map((w: any) => (
-                      <option key={w.id} value={w.id}>
-                        {w.name} {w.shortName ? `(${w.shortName})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <EmployeeOrgLevelNodeSelectors
+                  tree={orgStructureTreeData}
+                  value={form.orgNodeByLevel}
+                  onChange={(orgNodeByLevel) => setForm((prev) => ({ ...prev, orgNodeByLevel }))}
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400 -mt-1">
+                  Select organisation, company, region, etc. Node field values are managed in Entity Master Data.
+                </p>
                 <div>
                   <label className="block text-sm font-medium mb-1">PAN</label>
                   <input

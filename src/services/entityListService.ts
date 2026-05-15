@@ -5,15 +5,11 @@ export interface ClientEntity {
   id: string;
   name: string;
   entity_type?: string;
-  cost_centre_id?: string;
-  cost_centre_name?: string;
-  cost_centre_short_name?: string;
-  depot_id?: string;
-  depot_name?: string;
-  depot_short_name?: string;
-  warehouse_id?: string;
-  warehouse_name?: string;
-  warehouse_short_name?: string;
+  org_structure_node_id?: string | null;
+  org_structure_node_name?: string | null;
+  org_structure_level_label?: string | null;
+  org_structure_path?: Array<{ id: string; name: string; levelLabel?: string; levelKey?: string }>;
+  org_field_values?: Record<string, unknown>;
   pan?: string;
   reporting_partner_mobile?: string;
   reporting_partner_name?: string;
@@ -39,12 +35,11 @@ export const entityListService = {
   create: (data: {
     name: string;
     entityType?: string;
-    costCentreId?: string;
-    depotId?: string;
-    warehouseId?: string;
+    orgStructureNodeId?: string;
     pan?: string;
     reportingPartnerMobile?: string;
     status?: 'active' | 'inactive';
+    orgFieldValues?: Record<string, string>;
   }) =>
     api.post('/admin/entities', data),
   update: (
@@ -52,12 +47,11 @@ export const entityListService = {
     data: {
       name?: string;
       entityType?: string;
-      costCentreId?: string;
-      depotId?: string;
-      warehouseId?: string;
+      orgStructureNodeId?: string;
       pan?: string;
       reportingPartnerMobile?: string;
       status?: 'active' | 'inactive';
+      orgFieldValues?: Record<string, string>;
     }
   ) =>
     api.put(`/admin/entities/${id}`, data),
