@@ -562,11 +562,12 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         assignee_ids: assignPeople ? selectedAssignees.map((u) => u.id) : [],
         creator_id: assignPeople ? taskOwnerId : currentUserId,
         task_owner: 'self',
-        auto_escalate: assignPeople ? autoEscalation : false,
-        escalation_trigger: assignPeople && autoEscalation ? escalationTrigger : null,
-        escalation_days_before:
-          assignPeople && autoEscalation ? Number.parseInt(escalationTiming || '0', 10) || 0 : null,
-        escalation_contact_ids: assignPeople && autoEscalation ? escalationContacts.map((u) => u.id) : [],
+        auto_escalate: autoEscalation,
+        escalation_trigger: autoEscalation ? escalationTrigger : null,
+        escalation_days_before: autoEscalation
+          ? Number.parseInt(escalationTiming || '0', 10) || 0
+          : null,
+        escalation_contact_ids: autoEscalation ? escalationContacts.map((u) => u.id) : [],
         financial_value: addFinancialValue ? Number.parseFloat(financialValue || '0') || null : null,
         org_structure_node_id: selectedOrgStructureNodeId || undefined,
         client_name: tagInput.trim() || null,
@@ -944,53 +945,58 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
               </div>
               <div className={sectionContentClass}>
                 {assignPeople ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => openUserModal('owner')} className={`${inputClass} text-left`}>
+                      Task Owner: {ownerLabel}
+                    </button>
+                    <button type="button" onClick={() => openUserModal('assignees')} className={`${inputClass} text-left`}>
+                      Assignees: {selectedAssignees.length > 0 ? `${selectedAssignees.length} selected` : 'Select users'}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </fieldset>
+
+
+          <fieldset disabled={!basicInfoConfirmed} className={`${sectionClass} ${!basicInfoConfirmed ? 'opacity-45' : ''}`}>
+            <div className={sectionRowClass}>
+              <div className={sectionQuestionClass}>
+                <span className="text-xs font-medium text-[#4B5563]">Do you want auto escalation for this task?</span>
+                <YesNoToggle value={autoEscalation} onChange={setAutoEscalation} ariaLabel="Do you want auto escalation for this task?" />
+              </div>
+              <div className={sectionContentClass}>
+                {autoEscalation ? (
                   <div className="space-y-2">
-                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
-                      <button type="button" onClick={() => openUserModal('owner')} className={`${inputClass} text-left`}>
-                        Task Owner: {ownerLabel}
-                      </button>
-                      <button type="button" onClick={() => openUserModal('assignees')} className={`${inputClass} text-left`}>
-                        Assignees: {selectedAssignees.length > 0 ? `${selectedAssignees.length} selected` : 'Select users'}
-                      </button>
-                      <div className={`${inputClass} flex min-w-[220px] items-center justify-between gap-3`}>
-                        <span className="text-xs font-medium text-[#4B5563]">Auto escalation</span>
-                        <YesNoToggle value={autoEscalation} onChange={setAutoEscalation} ariaLabel="Auto escalation" />
-                      </div>
+                    <div className="flex flex-wrap gap-2">
+                      {([
+                        { key: 'target_date', label: 'After Target Date' },
+                        { key: 'due_date', label: 'After Due Date' },
+                      ] as const).map((o) => (
+                        <button
+                          key={o.key}
+                          type="button"
+                          onClick={() => setEscalationTrigger(o.key)}
+                          className={`${optionBaseClass} ${escalationTrigger === o.key ? optionActiveClass : ''}`}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
                     </div>
 
-                    {autoEscalation ? (
-                      <>
-                        <div className="flex flex-wrap gap-2">
-                          {([
-                            { key: 'target_date', label: 'After Target Date' },
-                            { key: 'due_date', label: 'After Due Date' },
-                          ] as const).map((o) => (
-                            <button
-                              key={o.key}
-                              type="button"
-                              onClick={() => setEscalationTrigger(o.key)}
-                              className={`${optionBaseClass} ${escalationTrigger === o.key ? optionActiveClass : ''}`}
-                            >
-                              {o.label}
-                            </button>
-                          ))}
-                        </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        value={escalationTiming}
+                        onChange={(e) => setEscalationTiming(e.target.value)}
+                        inputMode="numeric"
+                        placeholder="Days before"
+                        className={inputClass}
+                      />
 
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            value={escalationTiming}
-                            onChange={(e) => setEscalationTiming(e.target.value)}
-                            inputMode="numeric"
-                            placeholder="Days before"
-                            className={inputClass}
-                          />
-
-                          <button type="button" onClick={() => openUserModal('escalation')} className={`${inputClass} text-left`}>
-                            Contacts: {escalationContacts.length > 0 ? `${escalationContacts.length} selected` : 'Select contacts'}
-                          </button>
-                        </div>
-                      </>
-                    ) : null}
+                      <button type="button" onClick={() => openUserModal('escalation')} className={`${inputClass} text-left`}>
+                        Contacts: {escalationContacts.length > 0 ? `${escalationContacts.length} selected` : 'Select contacts'}
+                      </button>
+                    </div>
                   </div>
                 ) : null}
               </div>

@@ -1,9 +1,11 @@
 import React, { useMemo } from 'react';
 import type { OrganizationStructureTree } from '../../services/settingsService';
 import {
+  formatOrgNodeOptionLabel,
   getActiveLevelsFromL2,
-  getNodesAtLevel,
-  getParentNodeIdForLevel,
+  getNodesForSection,
+  getSectionStorageKey,
+  normalizeOrgNodeByLevel,
   type OrgNodeByLevel,
 } from '../../utils/employeeOrgNodeLevels';
 
@@ -19,10 +21,15 @@ export function EmployeeOrgLevelNodeSelectors({ tree, value, onChange, disabled 
   const nodes = tree?.nodes ?? [];
   const rootNodeId = tree?.rootNode?.id;
 
+  const normalizedValue = useMemo(
+    () => normalizeOrgNodeByLevel(value, tree?.levels ?? []),
+    [value, tree?.levels]
+  );
+
   if (!tree?.summary?.hasRootGroup) {
     return (
       <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-        Complete Org Definition first to assign employees to organisation, company, region, and other levels.
+        Complete Org Definition first — create the Group, then add sections (Entity, Region, etc.).
       </p>
     );
   }
@@ -30,18 +37,16 @@ export function EmployeeOrgLevelNodeSelectors({ tree, value, onChange, disabled 
   if (levels.length === 0) {
     return (
       <p className="text-sm text-slate-500">
-        No levels below L1 are defined. Add organisation structure in Org Definition.
+        No organisation sections are defined yet. Add sections in Org Definition.
       </p>
     );
   }
 
-  const handleLevelChange = (levelNumber: number, nodeId: string) => {
-    const key = String(levelNumber);
-    const next: OrgNodeByLevel = { ...value, [key]: nodeId };
-    for (const level of levels) {
-      if (level.levelNumber > levelNumber) {
-        delete next[String(level.levelNumber)];
-      }
+  const handleSectionChange = (level: (typeof levels)[0], nodeId: string) => {
+    const key = getSectionStorageKey(level);
+    const next: OrgNodeByLevel = { ...normalizedValue, [key]: nodeId };
+    if (!nodeId) {
+      delete next[key];
     }
     onChange(next);
   };
@@ -49,36 +54,31 @@ export function EmployeeOrgLevelNodeSelectors({ tree, value, onChange, disabled 
   return (
     <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-700 dark:bg-slate-900/30">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        Organisation assignment (from level 2)
+        Organisation assignment
       </p>
       {levels.map((level) => {
-        const parentId = getParentNodeIdForLevel(level.levelNumber, value, rootNodeId);
-        const options = getNodesAtLevel(nodes, level.levelNumber, parentId);
-        const selectedId = value[String(level.levelNumber)] || '';
-        const parentMissing = level.levelNumber > 2 && !parentId;
+        const sectionKey = getSectionStorageKey(level);
+        const options = getNodesForSection(nodes, level.levelLabel, rootNodeId);
+        const selectedId = normalizedValue[sectionKey] || '';
 
         return (
           <div key={level.id}>
-            <label className="block text-sm font-medium text-text-main mb-1">
-              L{level.levelNumber} — {level.levelLabel} *
-            </label>
+            <label className="mb-1 block text-sm font-medium text-text-main">{level.levelLabel} *</label>
             <select
               required
-              disabled={disabled || parentMissing || (level.levelNumber === 2 && !rootNodeId)}
+              disabled={disabled || !rootNodeId}
               value={selectedId}
-              onChange={(e) => handleLevelChange(level.levelNumber, e.target.value)}
-              className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main disabled:opacity-60"
+              onChange={(e) => handleSectionChange(level, e.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-text-main disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800"
             >
               <option value="">
-                {parentMissing
-                  ? `Select L${level.levelNumber - 1} first`
-                  : options.length === 0
-                    ? `No ${level.levelLabel} defined`
-                    : `Select ${level.levelLabel}`}
+                {options.length === 0
+                  ? `No nodes in ${level.levelLabel} — add in Org Definition`
+                  : `Select ${level.levelLabel}`}
               </option>
               {options.map((node) => (
                 <option key={node.id} value={node.id}>
-                  {node.name}
+                  {formatOrgNodeOptionLabel(tree, node)}
                 </option>
               ))}
             </select>

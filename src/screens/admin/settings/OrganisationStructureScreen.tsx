@@ -20,7 +20,9 @@ import {
   OrganizationStructureHorizontalChart,
 } from './OrganizationStructureHorizontalChart';
 import {
-  getEntityTypeOptionsForLevel,
+  getEntityTypeOptionsForSection,
+  getOrgLevelChoicesForChild,
+  getOrgLevelDefinitionByHeader,
   normalizeEntityTypeSelection,
 } from './organizationStructureEntityTypes';
 import {
@@ -93,12 +95,34 @@ const getNodeEntityType = (node?: OrganizationStructureNode | null) => {
   return rawEntityType || node?.levelLabel || '';
 };
 
-const getDraftEntityLabel = (draft: Pick<InlineDraftState, 'selectedEntityType' | 'customEntityType'>) => {
+const getDraftFieldLabel = (draft: Pick<InlineDraftState, 'selectedEntityType' | 'customEntityType'>) => {
   const selected = draft.selectedEntityType.trim();
   if (selected === 'Custom') {
     return draft.customEntityType.trim();
   }
   return selected;
+};
+
+const getDraftHeaderCategory = (
+  draft: Pick<InlineDraftState, 'selectedSection'>,
+  existingLevel?: OrganizationStructureLevel
+) => {
+  if (existingLevel?.levelLabel?.trim()) {
+    return existingLevel.levelLabel.trim();
+  }
+  return draft.selectedSection.trim();
+};
+
+const getDraftSummaryLabel = (
+  draft: Pick<InlineDraftState, 'selectedSection' | 'selectedEntityType' | 'customEntityType'>,
+  existingLevel?: OrganizationStructureLevel
+) => {
+  const header = getDraftHeaderCategory(draft, existingLevel);
+  const field = getDraftFieldLabel(draft);
+  if (header && field) {
+    return `${header} · ${field}`;
+  }
+  return header || field;
 };
 
 const slugifyFieldKey = (value: string) =>
@@ -242,6 +266,14 @@ export const OrganisationDefinitionScreen: React.FC = () => {
   const rootNode: OrganizationStructureNode | null = treeQuery.data?.rootNode || null;
 
   const levelByNumber = useMemo(() => new Map(levels.map((level) => [level.levelNumber, level])), [levels]);
+  const levelByLabel = useMemo(
+    () => new Map(levels.map((level) => [level.levelLabel.trim().toLowerCase(), level])),
+    [levels]
+  );
+  const orderedLevels = useMemo(
+    () => [...levels].sort((a, b) => a.levelNumber - b.levelNumber),
+    [levels]
+  );
   const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
 
   useEffect(() => {
@@ -296,11 +328,15 @@ export const OrganisationDefinitionScreen: React.FC = () => {
     return sortStructureNodes(nodes.filter((n) => n.levelNumber === 1));
   }, [childrenByParentId, rootNode, nodes]);
 
-  const maxLevelNumber = useMemo(() => {
-    const fromLevels = levels.map((l) => l.levelNumber);
-    const fromNodes = nodes.map((n) => n.levelNumber);
-    return Math.max(1, ...fromLevels, ...fromNodes, 0);
-  }, [levels, nodes]);
+  const chartColumnCount = useMemo(() => {
+    const draftSection =
+      inlineDraft?.relation === 'child' && inlineDraft.selectedSection
+        ? inlineDraft.selectedSection.trim().toLowerCase()
+        : '';
+    const draftAddsColumn =
+      draftSection && !levelByLabel.has(draftSection) && inlineDraft?.relation === 'child';
+    return Math.max(1, orderedLevels.length + (draftAddsColumn ? 1 : 0));
+  }, [inlineDraft, levelByLabel, orderedLevels.length]);
 
   const createNodeMutation = useMutation(createOrganizationStructureNode, {
     onSuccess: () => {
@@ -347,25 +383,25 @@ export const OrganisationDefinitionScreen: React.FC = () => {
   };
 
   const openInlineDraft = (relation: 'root' | 'child' | 'sibling', referenceNode?: OrganizationStructureNode) => {
-    const targetLevelNumber =
-      relation === 'root' ? 1 : relation === 'child' ? (referenceNode?.levelNumber || 0) + 1 : referenceNode?.levelNumber || 1;
-    const existingLevel = levelByNumber.get(targetLevelNumber);
-
-    const defaultEntityType =
+    const selectedSection =
       relation === 'root'
-        ? existingLevel?.levelLabel || ''
+        ? 'Group'
         : relation === 'child'
-        ? existingLevel?.levelLabel || ''
-        : getNodeEntityType(referenceNode);
-    const normalizedType = normalizeEntityTypeSelection(defaultEntityType, targetLevelNumber);
+          ? getOrgLevelChoicesForChild()[0]?.headerCategory || 'Entity'
+          : referenceNode?.levelLabel || '';
+    const existingLevel = levelByLabel.get(selectedSection.trim().toLowerCase());
+    const headerCategory = getDraftHeaderCategory({ selectedSection }, existingLevel);
+
     setInlineDraft({
       relation,
       referenceNode,
-      targetLevelNumber,
-      selectedEntityType: normalizedType.selectedEntityType,
-      customEntityType: normalizedType.customEntityType,
-      definitionSource: existingLevel?.definitionSource || (normalizedType.selectedEntityType && normalizedType.selectedEntityType !== 'Custom' ? 'preset' : 'custom'),
-      presetKey: existingLevel?.presetKey || (normalizedType.selectedEntityType && normalizedType.selectedEntityType !== 'Custom' ? slugifyFieldKey(normalizedType.selectedEntityType) : null),
+      selectedSection,
+      selectedEntityType: '',
+      customEntityType: '',
+      definitionSource: existingLevel?.definitionSource || (headerCategory ? 'preset' : 'custom'),
+      presetKey:
+        existingLevel?.presetKey ||
+        (headerCategory ? slugifyFieldKey(headerCategory) : null),
       fieldValues: createEmptyFieldValues(CREATE_NODE_FIELD_SCHEMA),
       description: '',
       status: 'active',
@@ -400,13 +436,21 @@ export const OrganisationDefinitionScreen: React.FC = () => {
       return;
     }
 
-    const entityLabel = getDraftEntityLabel(inlineDraft);
-    if (!entityLabel) {
-      toast.error('Select or define the entity section type');
+    const fieldLabel = getDraftFieldLabel(inlineDraft);
+    if (!fieldLabel) {
+      toast.error('Select a field for this level');
       return;
     }
 
-    const existingLevel = levelByNumber.get(inlineDraft.targetLevelNumber);
+    const sectionLabel = inlineDraft.selectedSection.trim();
+    if (!sectionLabel) {
+      toast.error('Select a section');
+      return;
+    }
+
+    const existingLevel = levelByLabel.get(sectionLabel.toLowerCase());
+    const headerCategory = getDraftHeaderCategory(inlineDraft, existingLevel);
+
     const createLevelFieldSchema = CREATE_NODE_FIELD_SCHEMA.map((field) => ({ ...field }));
     const fieldSchemaError = validateFieldSchemaDraft(createLevelFieldSchema);
     if (!existingLevel && fieldSchemaError) {
@@ -419,14 +463,16 @@ export const OrganisationDefinitionScreen: React.FC = () => {
     await createNodeMutation.mutateAsync({
       relation: inlineDraft.relation,
       referenceNodeId: inlineDraft.referenceNode?.id,
+      targetSectionLabel: inlineDraft.relation === 'child' ? sectionLabel : undefined,
       name: typeof fieldValues.name === 'string' ? String(fieldValues.name) : undefined,
       code: typeof fieldValues.code === 'string' ? String(fieldValues.code).toUpperCase() : undefined,
       description: inlineDraft.description.trim() || undefined,
       status: inlineDraft.status,
-      createLevelLabel: existingLevel ? undefined : entityLabel,
+      createLevelLabel: existingLevel ? undefined : headerCategory,
       createLevelDefinitionSource: existingLevel ? undefined : inlineDraft.definitionSource,
       createLevelPresetKey: existingLevel ? undefined : inlineDraft.presetKey,
       createLevelFieldSchema: existingLevel ? undefined : createLevelFieldSchema,
+      metaJson: { entityType: fieldLabel },
       fieldValues,
     });
 
@@ -478,14 +524,25 @@ export const OrganisationDefinitionScreen: React.FC = () => {
 
   function renderInlineDraftForm(indentPx: number): React.ReactNode {
     if (!inlineDraft) return null;
+
+    const sectionLabel = inlineDraft.selectedSection.trim();
+    const existingLevel = levelByLabel.get(sectionLabel.toLowerCase());
+    const levelDefinition = getOrgLevelDefinitionByHeader(sectionLabel);
+    const levelPickerOptions =
+      inlineDraft.relation === 'child' ? getOrgLevelChoicesForChild() : [];
+    const showLevelPicker = inlineDraft.relation === 'child';
+
     return (
       <OrganizationStructureInlineDraftForm
         indentPx={indentPx}
         inlineDraft={inlineDraft}
-        draftLevelNumber={inlineDraft.targetLevelNumber}
-        existingLevel={levelByNumber.get(inlineDraft.targetLevelNumber)}
-        draftEntityLabel={getDraftEntityLabel(inlineDraft)}
-        entityTypeOptions={getEntityTypeOptionsForLevel(inlineDraft.targetLevelNumber)}
+        draftLevelNumber={existingLevel?.levelNumber || 0}
+        existingLevel={existingLevel}
+        levelDefinition={levelDefinition}
+        levelPickerOptions={levelPickerOptions}
+        showLevelPicker={showLevelPicker}
+        draftSummaryLabel={getDraftSummaryLabel(inlineDraft, existingLevel)}
+        fieldOptions={getEntityTypeOptionsForSection(sectionLabel)}
         slugifyFieldKey={slugifyFieldKey}
         onClose={closeInlineDraft}
         onSubmit={handleInlineDraftSubmit}
@@ -516,7 +573,7 @@ export const OrganisationDefinitionScreen: React.FC = () => {
                   onClick={() => openInlineDraft('root')}
                   className="mt-3 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark"
                 >
-                  Create root
+                  Create Group
                 </button>
               </div>
             ) : null}
@@ -577,13 +634,15 @@ export const OrganisationDefinitionScreen: React.FC = () => {
                   selectedNode={selectedNode}
                   onSelectNode={handleSelectNode}
                   getNodeFieldValues={getNodeFieldValues}
+                  getNodeEntityType={getNodeEntityType}
                   openInlineDraft={openInlineDraft}
                   onArchiveNode={handleArchiveNode}
                   onOpenNodeView={(node) => openNodeModal(node, 'view')}
                   onOpenNodeEdit={(node) => openNodeModal(node, 'edit')}
                   inlineDraft={inlineDraft}
                   chartInlineDraft={(_box) => renderInlineDraftForm(0)}
-                  maxLevelNumber={maxLevelNumber}
+                  orderedLevels={orderedLevels}
+                  columnCount={chartColumnCount}
                 />
               </>
             ) : null}

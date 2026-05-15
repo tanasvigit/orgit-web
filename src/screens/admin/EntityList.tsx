@@ -15,6 +15,8 @@ import {
   getActiveLevelsFromL2,
   getDeepestSelectedNodeId,
   getEntityTypeFromNode,
+  lookupOrgNodeId,
+  normalizeOrgNodeByLevel,
   type OrgNodeByLevel,
 } from '../../utils/employeeOrgNodeLevels';
 
@@ -108,6 +110,9 @@ export const EntityList: React.FC = () => {
     if (Object.keys(byLevel).length === 0 && client.org_structure_node_id) {
       byLevel = deriveOrgNodeByLevelFromPrimary(orgStructureTreeData, client.org_structure_node_id);
     }
+    if (orgStructureTreeData?.levels) {
+      byLevel = normalizeOrgNodeByLevel(byLevel, orgStructureTreeData.levels);
+    }
     const summary = formatOrgNodeByLevelSummary(orgStructureTreeData, byLevel);
     if (summary) return summary;
     if (Array.isArray(client.org_structure_path) && client.org_structure_path.length > 0) {
@@ -144,15 +149,19 @@ export const EntityList: React.FC = () => {
   }, [modal, orgStructureTreeData]);
 
   const buildSavePayload = () => {
+    const orgNodeByLevel = orgStructureTreeData?.levels
+      ? normalizeOrgNodeByLevel(form.orgNodeByLevel, orgStructureTreeData.levels)
+      : form.orgNodeByLevel;
+
     if (levelsFromL2.length > 0) {
       for (const level of levelsFromL2) {
-        if (!form.orgNodeByLevel[String(level.levelNumber)]) {
-          toast.error(`Please select ${level.levelLabel} (L${level.levelNumber})`);
+        if (!lookupOrgNodeId(orgNodeByLevel, level)) {
+          toast.error(`Please select ${level.levelLabel}`);
           return null;
         }
       }
     }
-    const orgStructureNodeId = getDeepestSelectedNodeId(form.orgNodeByLevel, levelsFromL2);
+    const orgStructureNodeId = getDeepestSelectedNodeId(orgNodeByLevel, levelsFromL2);
     return {
       name: form.name,
       entityType: getEntityTypeFromNode(orgStructureTreeData, orgStructureNodeId) || undefined,
@@ -160,7 +169,7 @@ export const EntityList: React.FC = () => {
       pan: form.pan,
       reportingPartnerMobile: form.reportingPartnerMobile,
       status: form.status,
-      orgFieldValues: buildEmployeeOrgFieldValuesPayload(form.orgNodeByLevel, {}),
+      orgFieldValues: buildEmployeeOrgFieldValuesPayload(orgNodeByLevel, {}),
     };
   };
 

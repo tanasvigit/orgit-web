@@ -3,7 +3,10 @@ import {
   OrganizationStructureFieldSchemaField,
   OrganizationStructureNode,
 } from '../../../services/settingsService';
-import { getEntityTypeOptionsForLevel, normalizeEntityTypeSelection } from './organizationStructureEntityTypes';
+import {
+  getEntityTypeOptionsForSection,
+  normalizeEntityTypeSelection,
+} from './organizationStructureEntityTypes';
 import {
   buildEditFieldList,
   groupFieldsByCategory,
@@ -145,7 +148,7 @@ export function OrganizationStructureNodeEditModal({
   const [panelMode, setPanelMode] = useState<NodeModalPanelMode>(initialMode);
   const readOnly = panelMode === 'view';
 
-  const entityNorm = normalizeEntityTypeSelection(getNodeEntityType(node), node.levelNumber);
+  const entityNorm = normalizeEntityTypeSelection(getNodeEntityType(node), node.levelLabel);
   const initialCustom = parseCustomFieldSchemaFromMeta(node.metaJson as Record<string, unknown>);
   const editFields = useMemo(() => buildEditFieldList(initialCustom), [initialCustom]);
   const fvSource = getNodeFieldValues(node);
@@ -226,7 +229,7 @@ export function OrganizationStructureNodeEditModal({
     });
   };
 
-  const entityTypeOptions = getEntityTypeOptionsForLevel(node.levelNumber);
+  const entityTypeOptions = getEntityTypeOptionsForSection(node.levelLabel);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
@@ -292,7 +295,7 @@ export function OrganizationStructureNodeEditModal({
           <div className="flex-1 space-y-5 overflow-y-auto px-6 py-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium">Section type</label>
+                <label className="mb-1 block text-sm font-medium">Field</label>
                 {readOnly ? (
                   <p className="text-sm text-slate-900 dark:text-slate-100">{entityTypeLabel}</p>
                 ) : (

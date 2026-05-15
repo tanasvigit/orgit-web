@@ -239,6 +239,8 @@ export const getOrganizationStructureOperationalOptions = async () => {
 export const createOrganizationStructureNode = async (data: {
   relation: 'root' | 'child' | 'sibling';
   referenceNodeId?: string;
+  targetLevelNumber?: number;
+  targetSectionLabel?: string;
   name?: string;
   code?: string | null;
   description?: string;

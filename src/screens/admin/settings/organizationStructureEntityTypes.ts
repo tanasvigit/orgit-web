@@ -1,4 +1,4 @@
-/** Predefined entity/section types per org-structure level (L1–L11). */
+/** Predefined field values per org-structure level (L1–L11). */
 export const LEVEL_ENTITY_TYPE_OPTIONS: Record<number, readonly string[]> = {
   1: [
     'Group',
@@ -79,30 +79,62 @@ export const LEVEL_ENTITY_TYPE_OPTIONS: Record<number, readonly string[]> = {
   11: ['Custom Unit', 'Custom'],
 };
 
+export type OrgLevelDefinition = {
+  levelNumber: number;
+  headerCategory: string;
+  fieldValues: readonly string[];
+};
+
 const MAX_DEFINED_LEVEL = 11;
 
-/** All preset section types from L1–L11 (deduped, stable order). Used for every level dropdown. */
-export function getAllEntityTypeOptions(): readonly string[] {
-  const seen = new Set<string>();
-  const merged: string[] = [];
-  for (let level = 1; level <= MAX_DEFINED_LEVEL; level += 1) {
-    const options = LEVEL_ENTITY_TYPE_OPTIONS[level];
-    if (!options) continue;
-    for (const option of options) {
-      if (!seen.has(option)) {
-        seen.add(option);
-        merged.push(option);
-      }
-    }
+/** Header categories and field values aligned to the org hierarchy spreadsheet. */
+export const ORG_LEVEL_DEFINITIONS: readonly OrgLevelDefinition[] = [
+  { levelNumber: 1, headerCategory: 'Group', fieldValues: LEVEL_ENTITY_TYPE_OPTIONS[1] },
+  { levelNumber: 2, headerCategory: 'Entity', fieldValues: LEVEL_ENTITY_TYPE_OPTIONS[2] },
+  { levelNumber: 3, headerCategory: 'Region', fieldValues: LEVEL_ENTITY_TYPE_OPTIONS[3] },
+  { levelNumber: 4, headerCategory: 'Business Unit', fieldValues: LEVEL_ENTITY_TYPE_OPTIONS[4] },
+  { levelNumber: 5, headerCategory: 'Location', fieldValues: LEVEL_ENTITY_TYPE_OPTIONS[5] },
+  { levelNumber: 6, headerCategory: 'Department', fieldValues: LEVEL_ENTITY_TYPE_OPTIONS[6] },
+  { levelNumber: 7, headerCategory: 'Project', fieldValues: LEVEL_ENTITY_TYPE_OPTIONS[7] },
+  { levelNumber: 8, headerCategory: 'Manufacturing Unit', fieldValues: LEVEL_ENTITY_TYPE_OPTIONS[8] },
+  { levelNumber: 9, headerCategory: 'Warehouse / Distribution', fieldValues: LEVEL_ENTITY_TYPE_OPTIONS[9] },
+  { levelNumber: 10, headerCategory: 'Financial Unit', fieldValues: LEVEL_ENTITY_TYPE_OPTIONS[10] },
+  { levelNumber: 11, headerCategory: 'Custom Unit', fieldValues: LEVEL_ENTITY_TYPE_OPTIONS[11] },
+];
+
+export function getOrgLevelDefinition(levelNumber?: number): OrgLevelDefinition | undefined {
+  if (!levelNumber || levelNumber < 1 || levelNumber > MAX_DEFINED_LEVEL) {
+    return undefined;
   }
-  return merged;
+  return ORG_LEVEL_DEFINITIONS.find((def) => def.levelNumber === levelNumber);
 }
 
-export function getEntityTypeOptionsForLevel(_levelNumber?: number): readonly string[] {
-  return getAllEntityTypeOptions();
+export function getOrgLevelDefinitionByHeader(headerCategory?: string): OrgLevelDefinition | undefined {
+  const normalized = String(headerCategory || '').trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+  return ORG_LEVEL_DEFINITIONS.find((def) => def.headerCategory.toLowerCase() === normalized);
 }
 
-export function normalizeEntityTypeSelection(rawType: string, _levelNumber?: number) {
+/** All sections available when adding a child after Group (names only, not ordered slots). */
+export function getOrgLevelChoicesForChild(): readonly OrgLevelDefinition[] {
+  return ORG_LEVEL_DEFINITIONS.filter((def) => def.levelNumber >= 2);
+}
+
+export function getEntityTypeOptionsForLevel(levelNumber?: number): readonly string[] {
+  if (!levelNumber) {
+    return [];
+  }
+  return LEVEL_ENTITY_TYPE_OPTIONS[levelNumber] || [];
+}
+
+export function getEntityTypeOptionsForSection(headerCategory?: string): readonly string[] {
+  const def = getOrgLevelDefinitionByHeader(headerCategory);
+  return def?.fieldValues || [];
+}
+
+export function normalizeEntityTypeSelection(rawType: string, sectionOrLevel?: string | number) {
   const normalized = rawType.trim();
   if (!normalized) {
     return {
@@ -111,7 +143,10 @@ export function normalizeEntityTypeSelection(rawType: string, _levelNumber?: num
     };
   }
 
-  const options = getAllEntityTypeOptions();
+  const options =
+    typeof sectionOrLevel === 'string'
+      ? getEntityTypeOptionsForSection(sectionOrLevel)
+      : getEntityTypeOptionsForLevel(sectionOrLevel);
   if (options.includes(normalized)) {
     return {
       selectedEntityType: normalized,

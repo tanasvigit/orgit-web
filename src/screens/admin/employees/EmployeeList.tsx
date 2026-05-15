@@ -25,6 +25,8 @@ import {
   formatOrgNodeByLevelSummary,
   getActiveLevelsFromL2,
   getDeepestSelectedNodeId,
+  lookupOrgNodeId,
+  normalizeOrgNodeByLevel,
   type OrgNodeByLevel,
 } from '../../../utils/employeeOrgNodeLevels';
 import { entityMasterBulkService } from '../../../services/entityMasterBulkService';
@@ -136,6 +138,9 @@ export const EmployeeList: React.FC = () => {
       if (primaryId && orgStructureData) {
         byLevel = deriveOrgNodeByLevelFromPrimary(orgStructureData, primaryId);
       }
+    }
+    if (orgStructureData?.levels) {
+      byLevel = normalizeOrgNodeByLevel(byLevel, orgStructureData.levels);
     }
     const summary = formatOrgNodeByLevelSummary(orgStructureData, byLevel);
     if (summary) return summary;
@@ -655,6 +660,9 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
     if (Object.keys(orgNodeByLevel).length === 0 && primaryId && orgStructureTreeData) {
       orgNodeByLevel = deriveOrgNodeByLevelFromPrimary(orgStructureTreeData, primaryId);
     }
+    if (orgStructureTreeData?.levels) {
+      orgNodeByLevel = normalizeOrgNodeByLevel(orgNodeByLevel, orgStructureTreeData.levels);
+    }
     setFormData({
       mobile: employee?.mobile || '',
       name: employee?.name || '',
@@ -731,16 +739,20 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    const orgNodeByLevel = orgStructureTreeData?.levels
+      ? normalizeOrgNodeByLevel(formData.orgNodeByLevel, orgStructureTreeData.levels)
+      : formData.orgNodeByLevel;
+
     if (levelsFromL2.length > 0) {
       for (const level of levelsFromL2) {
-        if (!formData.orgNodeByLevel[String(level.levelNumber)]) {
-          toast.error(`Please select ${level.levelLabel} (L${level.levelNumber})`);
+        if (!lookupOrgNodeId(orgNodeByLevel, level)) {
+          toast.error(`Please select ${level.levelLabel}`);
           return;
         }
       }
     }
 
-    const primaryOrgNodeId = getDeepestSelectedNodeId(formData.orgNodeByLevel, levelsFromL2);
+    const primaryOrgNodeId = getDeepestSelectedNodeId(orgNodeByLevel, levelsFromL2);
     const submitData: any = {
       mobile: formData.mobile,
       name: formData.name,
@@ -749,7 +761,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
       password: formData.password,
       primaryOrgNodeId: primaryOrgNodeId || null,
       secondaryOrgNodeIds: [],
-      orgFieldValues: buildEmployeeOrgFieldValuesPayload(formData.orgNodeByLevel, {}),
+      orgFieldValues: buildEmployeeOrgFieldValuesPayload(orgNodeByLevel, {}),
     };
 
     if (employee) {

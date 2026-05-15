@@ -901,24 +901,27 @@ export const EmployeeDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Tasks List */}
+        {/* Tasks + calendar: left 50% self/assigned, right 50% due-date calendar */}
         <div className="space-y-6 md:space-y-8 max-[1366px]:space-y-4">
-          {/* Self Tasks Row */}
-          {renderTaskRow(selfTasks, 'self', 'Self Tasks', selfTasksToDoIconRef, selfTasksInProgressIconRef, selfTasksCompletedIconRef)}
-          
-          {/* Assigned Tasks Row */}
-          {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks', assignedTasksToDoIconRef, assignedTasksInProgressIconRef, assignedTasksCompletedIconRef)}
-          {renderCalendarSection(
-            'Tasks (by due date)',
-            selfCalendarMonth,
-            (delta) => {
-              setSelfCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
-              setAssignedCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
-            },
-            selfCalendarData?.days,
-            assignedCalendarData?.days,
-            isSelfCalendarLoading || isAssignedCalendarLoading
-          )}
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-6 max-[1366px]:gap-4">
+            <div className="w-full min-w-0 space-y-6 md:space-y-8 lg:w-1/2 max-[1366px]:space-y-4">
+              {renderTaskRow(selfTasks, 'self', 'Self Tasks', selfTasksToDoIconRef, selfTasksInProgressIconRef, selfTasksCompletedIconRef)}
+              {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks', assignedTasksToDoIconRef, assignedTasksInProgressIconRef, assignedTasksCompletedIconRef)}
+            </div>
+            <div className="w-full min-w-0 lg:w-1/2">
+              {renderCalendarSection(
+                'Tasks (by due date)',
+                selfCalendarMonth,
+                (delta) => {
+                  setSelfCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
+                  setAssignedCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
+                },
+                selfCalendarData?.days,
+                assignedCalendarData?.days,
+                isSelfCalendarLoading || isAssignedCalendarLoading
+              )}
+            </div>
+          </div>
 
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800/95 p-4">
             <div className="mb-3 flex items-center justify-between">
