@@ -23,49 +23,21 @@ import {
   getEntityTypeOptionsForLevel,
   normalizeEntityTypeSelection,
 } from './organizationStructureEntityTypes';
+import {
+  CREATE_NODE_FIELD_SCHEMA,
+  buildEditFieldList,
+  type ExtendedFieldDef,
+} from './organizationStructureExtendedFieldCatalog';
+import {
+  OrganizationStructureNodeEditModal,
+  type NodeEditFormState,
+  type NodeModalPanelMode,
+} from './OrganizationStructureNodeEditModal';
 
-type NodeModalState =
-  | {
-      mode: 'create';
-      relation: 'root' | 'child' | 'sibling';
-      referenceNode?: OrganizationStructureNode;
-    }
-  | {
-      mode: 'edit';
-      node: OrganizationStructureNode;
-    }
-  | null;
-
-type NodeFormState = {
-  description: string;
-  status: 'active' | 'inactive' | 'archived';
-  fieldSchema: OrganizationStructureFieldSchemaField[];
-  fieldValues: Record<string, string>;
-};
-
-const emptyNodeForm: NodeFormState = {
-  description: '',
-  status: 'active',
-  fieldSchema: [],
-  fieldValues: {},
-};
-
-const DEFAULT_LEVEL_FIELDS: OrganizationStructureFieldSchemaField[] = [
-  {
-    id: 'name',
-    key: 'name',
-    label: 'Name',
-    type: 'text',
-    required: true,
-  },
-  {
-    id: 'code',
-    key: 'code',
-    label: 'Code',
-    type: 'text',
-    required: false,
-  },
-];
+type NodeModalState = {
+  node: OrganizationStructureNode;
+  panelMode: NodeModalPanelMode;
+} | null;
 
 const levelThemePalette = [
   {
@@ -136,19 +108,6 @@ const slugifyFieldKey = (value: string) =>
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
 
-const getDefaultLevelFields = (): OrganizationStructureFieldSchemaField[] => DEFAULT_LEVEL_FIELDS.map((field) => ({ ...field }));
-
-const getEffectiveFieldSchema = (level?: OrganizationStructureLevel | null): OrganizationStructureFieldSchemaField[] => {
-  if (!level?.fieldSchemaJson || level.fieldSchemaJson.length === 0) {
-    return getDefaultLevelFields();
-  }
-
-  return level.fieldSchemaJson.map((field) => ({
-    ...field,
-    options: Array.isArray(field.options) ? [...field.options] : undefined,
-  }));
-};
-
 const getNodeFieldValues = (node?: OrganizationStructureNode | null): Record<string, unknown> => {
   if (!node) {
     return {};
@@ -171,16 +130,6 @@ const createEmptyFieldValues = (
     acc[field.key] = rawValue === undefined || rawValue === null ? '' : String(rawValue);
     return acc;
   }, {});
-
-const createBlankFieldDefinition = (): OrganizationStructureFieldSchemaField => ({
-  id: `field_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-  key: '',
-  label: '',
-  type: 'text',
-  required: false,
-  options: undefined,
-  placeholder: null,
-});
 
 const serializeFieldValues = (
   schema: OrganizationStructureFieldSchemaField[],
@@ -274,7 +223,6 @@ export const OrganisationDefinitionScreen: React.FC = () => {
   const { toast } = useToast();
   const [selectedPathByLevel, setSelectedPathByLevel] = useState<Record<number, string>>({});
   const [nodeModalState, setNodeModalState] = useState<NodeModalState>(null);
-  const [nodeForm, setNodeForm] = useState<NodeFormState>(emptyNodeForm);
   const [inlineDraft, setInlineDraft] = useState<InlineDraftState | null>(null);
 
   const treeQuery = useQuery(
@@ -358,7 +306,6 @@ export const OrganisationDefinitionScreen: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries('organization-structure-tree');
       setNodeModalState(null);
-      setNodeForm(emptyNodeForm);
       toast.success('Hierarchy node saved successfully');
     },
     onError: (error: any) => {
@@ -373,7 +320,6 @@ export const OrganisationDefinitionScreen: React.FC = () => {
       onSuccess: () => {
         queryClient.invalidateQueries('organization-structure-tree');
         setNodeModalState(null);
-        setNodeForm(emptyNodeForm);
         toast.success('Hierarchy node updated successfully');
       },
       onError: (error: any) => {
@@ -392,20 +338,12 @@ export const OrganisationDefinitionScreen: React.FC = () => {
     },
   });
 
-  const openEditModal = (node: OrganizationStructureNode) => {
-    setNodeModalState({ mode: 'edit', node });
-    const levelSchema = getEffectiveFieldSchema(levelByNumber.get(node.levelNumber));
-    setNodeForm({
-      description: node.description || '',
-      status: node.status,
-      fieldSchema: levelSchema,
-      fieldValues: createEmptyFieldValues(levelSchema, getNodeFieldValues(node)),
-    });
+  const openNodeModal = (node: OrganizationStructureNode, panelMode: NodeModalPanelMode) => {
+    setNodeModalState({ node, panelMode });
   };
 
   const closeNodeModal = () => {
     setNodeModalState(null);
-    setNodeForm(emptyNodeForm);
   };
 
   const openInlineDraft = (relation: 'root' | 'child' | 'sibling', referenceNode?: OrganizationStructureNode) => {
@@ -420,8 +358,6 @@ export const OrganisationDefinitionScreen: React.FC = () => {
         ? existingLevel?.levelLabel || ''
         : getNodeEntityType(referenceNode);
     const normalizedType = normalizeEntityTypeSelection(defaultEntityType, targetLevelNumber);
-    const fieldSchema = getEffectiveFieldSchema(existingLevel);
-
     setInlineDraft({
       relation,
       referenceNode,
@@ -430,8 +366,7 @@ export const OrganisationDefinitionScreen: React.FC = () => {
       customEntityType: normalizedType.customEntityType,
       definitionSource: existingLevel?.definitionSource || (normalizedType.selectedEntityType && normalizedType.selectedEntityType !== 'Custom' ? 'preset' : 'custom'),
       presetKey: existingLevel?.presetKey || (normalizedType.selectedEntityType && normalizedType.selectedEntityType !== 'Custom' ? slugifyFieldKey(normalizedType.selectedEntityType) : null),
-      fieldSchema,
-      fieldValues: createEmptyFieldValues(fieldSchema),
+      fieldValues: createEmptyFieldValues(CREATE_NODE_FIELD_SCHEMA),
       description: '',
       status: 'active',
     });
@@ -455,97 +390,6 @@ export const OrganisationDefinitionScreen: React.FC = () => {
     );
   };
 
-  const updateNodeFormFieldValue = (fieldKey: string, value: string) => {
-    setNodeForm((prev) => ({
-      ...prev,
-      fieldValues: {
-        ...prev.fieldValues,
-        [fieldKey]: value,
-      },
-    }));
-  };
-
-  const updateInlineDraftSchemaField = (
-    index: number,
-    updates: Partial<OrganizationStructureFieldSchemaField>
-  ) => {
-    setInlineDraft((prev) => {
-      if (!prev) {
-        return prev;
-      }
-
-      let nextFieldValues: Record<string, string> | undefined;
-      const nextSchema = prev.fieldSchema.map((field, currentIndex) => {
-        if (currentIndex !== index) {
-          return field;
-        }
-
-        const merged = { ...field, ...updates };
-        const nextLabel = merged.label;
-
-        let normalizedKey: string;
-        if (field.key === 'name') {
-          normalizedKey = 'name';
-        } else {
-          const fromLabel = slugifyFieldKey(nextLabel);
-          normalizedKey = fromLabel || field.key || '';
-        }
-
-        if (field.key && field.key !== 'name' && normalizedKey && field.key !== normalizedKey) {
-          nextFieldValues = nextFieldValues ?? { ...prev.fieldValues };
-          if (Object.prototype.hasOwnProperty.call(nextFieldValues, field.key)) {
-            nextFieldValues[normalizedKey] = nextFieldValues[field.key];
-            delete nextFieldValues[field.key];
-          }
-        }
-
-        return {
-          ...merged,
-          label: nextLabel,
-          key: normalizedKey,
-        };
-      });
-
-      return {
-        ...prev,
-        fieldSchema: nextSchema,
-        ...(nextFieldValues ? { fieldValues: nextFieldValues } : {}),
-      };
-    });
-  };
-
-  const addInlineDraftSchemaField = () => {
-    setInlineDraft((prev) =>
-      prev
-        ? {
-            ...prev,
-            fieldSchema: [...prev.fieldSchema, createBlankFieldDefinition()],
-          }
-        : prev
-    );
-  };
-
-  const removeInlineDraftSchemaField = (index: number) => {
-    setInlineDraft((prev) => {
-      if (!prev) {
-        return prev;
-      }
-
-      const fieldToRemove = prev.fieldSchema[index];
-      const nextSchema = prev.fieldSchema.filter((_, currentIndex) => currentIndex !== index);
-      const nextFieldValues = { ...prev.fieldValues };
-      if (fieldToRemove?.key) {
-        delete nextFieldValues[fieldToRemove.key];
-      }
-
-      return {
-        ...prev,
-        fieldSchema: nextSchema,
-        fieldValues: nextFieldValues,
-      };
-    });
-  };
-
   const handleSelectNode = (node: OrganizationStructureNode) => {
     setSelectedPathByLevel(buildSelectedPathState(node));
   };
@@ -563,26 +407,14 @@ export const OrganisationDefinitionScreen: React.FC = () => {
     }
 
     const existingLevel = levelByNumber.get(inlineDraft.targetLevelNumber);
-    const normalizedFieldSchema = inlineDraft.fieldSchema.map((field) => {
-      const normalizedKey = slugifyFieldKey(field.key || field.label);
-      return {
-        ...field,
-        id: field.id || normalizedKey,
-        key: normalizedKey,
-        label: field.label.trim(),
-        options:
-          field.type === 'select' && field.options
-            ? field.options.map((option) => option.trim()).filter((option) => !!option)
-            : undefined,
-      };
-    });
-    const fieldSchemaError = validateFieldSchemaDraft(normalizedFieldSchema);
+    const createLevelFieldSchema = CREATE_NODE_FIELD_SCHEMA.map((field) => ({ ...field }));
+    const fieldSchemaError = validateFieldSchemaDraft(createLevelFieldSchema);
     if (!existingLevel && fieldSchemaError) {
       toast.error(fieldSchemaError);
       return;
     }
 
-    const fieldValues = serializeFieldValues(normalizedFieldSchema, inlineDraft.fieldValues);
+    const fieldValues = serializeFieldValues(createLevelFieldSchema, inlineDraft.fieldValues);
 
     await createNodeMutation.mutateAsync({
       relation: inlineDraft.relation,
@@ -594,42 +426,48 @@ export const OrganisationDefinitionScreen: React.FC = () => {
       createLevelLabel: existingLevel ? undefined : entityLabel,
       createLevelDefinitionSource: existingLevel ? undefined : inlineDraft.definitionSource,
       createLevelPresetKey: existingLevel ? undefined : inlineDraft.presetKey,
-      createLevelFieldSchema: existingLevel ? undefined : normalizedFieldSchema,
+      createLevelFieldSchema: existingLevel ? undefined : createLevelFieldSchema,
       fieldValues,
     });
 
     setInlineDraft(null);
   };
 
-  const handleSubmitNode = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const serializedFieldValues = serializeFieldValues(nodeForm.fieldSchema, nodeForm.fieldValues);
+  const schemaFieldsFromExtended = (fields: ExtendedFieldDef[]): OrganizationStructureFieldSchemaField[] =>
+    fields.map(({ category: _category, readOnly: _readOnly, ...field }) => field);
 
-    if (nodeModalState?.mode === 'create') {
-      await createNodeMutation.mutateAsync({
-        relation: nodeModalState.relation,
-        referenceNodeId: nodeModalState.referenceNode?.id,
-        name: typeof serializedFieldValues.name === 'string' ? String(serializedFieldValues.name) : undefined,
-        code: typeof serializedFieldValues.code === 'string' ? String(serializedFieldValues.code).toUpperCase() : undefined,
-        description: nodeForm.description,
-        status: nodeForm.status,
-        fieldValues: serializedFieldValues,
-      });
+  const handleEditNodeSubmit = async (form: NodeEditFormState) => {
+    if (!nodeModalState) {
       return;
     }
 
-    if (nodeModalState?.mode === 'edit') {
-      await updateNodeMutation.mutateAsync({
-        id: nodeModalState.node.id,
-        data: {
-          name: typeof serializedFieldValues.name === 'string' ? String(serializedFieldValues.name) : undefined,
-          code: typeof serializedFieldValues.code === 'string' ? String(serializedFieldValues.code).toUpperCase() : undefined,
-          description: nodeForm.description,
-          status: nodeForm.status,
-          fieldValues: serializedFieldValues,
-        },
-      });
-    }
+    const node = nodeModalState.node;
+    const entityLabel =
+      form.selectedEntityType === 'Custom' ? form.customEntityType.trim() : form.selectedEntityType.trim();
+    const editFields = buildEditFieldList(form.customFieldSchema);
+    const fieldValues = serializeFieldValues(schemaFieldsFromExtended(editFields), form.fieldValues);
+    const existingMeta =
+      node.metaJson && typeof node.metaJson === 'object'
+        ? { ...(node.metaJson as Record<string, unknown>) }
+        : {};
+    const metaJson: Record<string, unknown> = {
+      ...existingMeta,
+      entityType: entityLabel || node.levelLabel,
+      fieldValues,
+      customFieldSchema: form.customFieldSchema,
+    };
+
+    await updateNodeMutation.mutateAsync({
+      id: node.id,
+      data: {
+        name: typeof fieldValues.name === 'string' ? String(fieldValues.name) : undefined,
+        code: typeof fieldValues.code === 'string' ? String(fieldValues.code).toUpperCase() : undefined,
+        description: form.description.trim() || undefined,
+        status: form.status,
+        fieldValues,
+        metaJson,
+      },
+    });
   };
 
   const handleArchiveNode = (node: OrganizationStructureNode) => {
@@ -652,9 +490,6 @@ export const OrganisationDefinitionScreen: React.FC = () => {
         onClose={closeInlineDraft}
         onSubmit={handleInlineDraftSubmit}
         setInlineDraft={setInlineDraft}
-        addInlineDraftSchemaField={addInlineDraftSchemaField}
-        removeInlineDraftSchemaField={removeInlineDraftSchemaField}
-        updateInlineDraftSchemaField={updateInlineDraftSchemaField}
         updateInlineDraftFieldValue={updateInlineDraftFieldValue}
       />
     );
@@ -665,7 +500,7 @@ export const OrganisationDefinitionScreen: React.FC = () => {
       <div className="mx-auto w-full max-w-none px-2 py-3 pb-6 sm:px-3 md:px-4 md:py-4">
         {treeQuery.isLoading ? (
           <div className="rounded-lg border border-dashed border-slate-300 py-8 text-center text-sm text-slate-500 dark:border-slate-600 dark:text-slate-400">
-            Loading hierarchy…
+            Loading hierarchyâ€¦
           </div>
         ) : (
           <>
@@ -709,8 +544,17 @@ export const OrganisationDefinitionScreen: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    title="Edit selected node (all fields)"
-                    onClick={() => selectedNode && openEditModal(selectedNode)}
+                    title="View selected node"
+                    onClick={() => selectedNode && openNodeModal(selectedNode, 'view')}
+                    disabled={!selectedNode}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  >
+                    <span className="material-symbols-outlined text-[22px]">visibility</span>
+                  </button>
+                  <button
+                    type="button"
+                    title="Edit selected node"
+                    onClick={() => selectedNode && openNodeModal(selectedNode, 'edit')}
                     disabled={!selectedNode}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                   >
@@ -729,18 +573,14 @@ export const OrganisationDefinitionScreen: React.FC = () => {
                   nodes={nodes}
                   rootTreeNodes={rootTreeNodes}
                   childrenByParentId={childrenByParentId}
-                  levelByNumber={levelByNumber}
                   levelThemePalette={levelThemePalette}
                   selectedNode={selectedNode}
                   onSelectNode={handleSelectNode}
-                  getNodeEntityType={getNodeEntityType}
-                  getEffectiveFieldSchema={getEffectiveFieldSchema}
                   getNodeFieldValues={getNodeFieldValues}
-                  serializeFieldValues={serializeFieldValues}
                   openInlineDraft={openInlineDraft}
                   onArchiveNode={handleArchiveNode}
-                  onOpenFullEdit={openEditModal}
-                  onUpdateNode={(id, data) => updateNodeMutation.mutateAsync({ id, data })}
+                  onOpenNodeView={(node) => openNodeModal(node, 'view')}
+                  onOpenNodeEdit={(node) => openNodeModal(node, 'edit')}
                   inlineDraft={inlineDraft}
                   chartInlineDraft={(_box) => renderInlineDraftForm(0)}
                   maxLevelNumber={maxLevelNumber}
@@ -752,136 +592,21 @@ export const OrganisationDefinitionScreen: React.FC = () => {
       </div>
 
       {nodeModalState ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-800">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {nodeModalState.mode === 'edit'
-                    ? `Edit ${nodeModalState.node.levelLabel}`
-                    : nodeModalState.relation === 'root'
-                    ? 'Create Root Entity'
-                    : nodeModalState.relation === 'child'
-                    ? 'Add Child Node'
-                    : 'Add Sibling'}
-                </h3>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  {nodeModalState.mode === 'edit'
-                    ? nodeModalState.node.pathDisplay
-                    : nodeModalState.referenceNode?.pathDisplay || 'Root hierarchy creation'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={closeNodeModal}
-                className="rounded-lg p-2 text-gray-500 hover:bg-slate-100 dark:hover:bg-slate-700"
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-
-            <form className="mt-6 space-y-4" onSubmit={handleSubmitNode}>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-text-main">Entity Section</label>
-                <div className="rounded-lg border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-text-main dark:border-slate-600 dark:bg-slate-900">
-                  {nodeModalState.mode === 'edit' ? nodeModalState.node.levelLabel : 'New section'}
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {nodeForm.fieldSchema.map((field) => (
-                  <div key={field.id}>
-                    <label className="mb-1 block text-sm font-medium text-text-main">
-                      {field.label}
-                      {field.required ? ' *' : ''}
-                    </label>
-                    {field.type === 'textarea' ? (
-                      <textarea
-                        value={nodeForm.fieldValues[field.key] || ''}
-                        onChange={(event) => updateNodeFormFieldValue(field.key, event.target.value)}
-                        rows={3}
-                        className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-text-main dark:border-slate-600 dark:bg-slate-900"
-                        placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
-                      />
-                    ) : field.type === 'select' ? (
-                      <select
-                        value={nodeForm.fieldValues[field.key] || ''}
-                        onChange={(event) => updateNodeFormFieldValue(field.key, event.target.value)}
-                        className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-text-main dark:border-slate-600 dark:bg-slate-900"
-                      >
-                        <option value="">Select {field.label}</option>
-                        {(field.options || []).map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
-                        value={nodeForm.fieldValues[field.key] || ''}
-                        onChange={(event) =>
-                          updateNodeFormFieldValue(
-                            field.key,
-                            field.key === 'code' ? event.target.value.toUpperCase() : event.target.value
-                          )
-                        }
-                        className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-text-main dark:border-slate-600 dark:bg-slate-900"
-                        placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-text-main">Description</label>
-                <textarea
-                  value={nodeForm.description}
-                  onChange={(event) => setNodeForm((prev) => ({ ...prev, description: event.target.value }))}
-                  rows={3}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-text-main dark:border-slate-600 dark:bg-slate-900"
-                  placeholder="Optional description or operational notes"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-text-main">Status</label>
-                <select
-                  value={nodeForm.status}
-                  onChange={(event) =>
-                    setNodeForm((prev) => ({
-                      ...prev,
-                      status: event.target.value as NodeFormState['status'],
-                    }))
-                  }
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-text-main dark:border-slate-600 dark:bg-slate-900"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                  {nodeModalState.mode === 'edit' ? <option value="archived">Archived</option> : null}
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={closeNodeModal}
-                  className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-text-main hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createNodeMutation.isLoading || updateNodeMutation.isLoading}
-                  className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-60"
-                >
-                  {nodeModalState.mode === 'edit' ? 'Save Changes' : 'Create Node'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <OrganizationStructureNodeEditModal
+          key={`${nodeModalState.node.id}-${nodeModalState.panelMode}`}
+          node={nodeModalState.node}
+          initialMode={nodeModalState.panelMode}
+          parentName={
+            nodeModalState.node.parentNodeId
+              ? nodeById.get(nodeModalState.node.parentNodeId)?.name || null
+              : null
+          }
+          getNodeEntityType={getNodeEntityType}
+          getNodeFieldValues={getNodeFieldValues}
+          onClose={closeNodeModal}
+          onSubmit={handleEditNodeSubmit}
+          isSaving={updateNodeMutation.isLoading}
+        />
       ) : null}
     </AdminLayout>
   );

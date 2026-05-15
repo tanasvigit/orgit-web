@@ -81,12 +81,28 @@ export const LEVEL_ENTITY_TYPE_OPTIONS: Record<number, readonly string[]> = {
 
 const MAX_DEFINED_LEVEL = 11;
 
-export function getEntityTypeOptionsForLevel(levelNumber: number): readonly string[] {
-  const level = Math.max(1, Math.floor(levelNumber));
-  return LEVEL_ENTITY_TYPE_OPTIONS[level] ?? LEVEL_ENTITY_TYPE_OPTIONS[MAX_DEFINED_LEVEL];
+/** All preset section types from L1–L11 (deduped, stable order). Used for every level dropdown. */
+export function getAllEntityTypeOptions(): readonly string[] {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  for (let level = 1; level <= MAX_DEFINED_LEVEL; level += 1) {
+    const options = LEVEL_ENTITY_TYPE_OPTIONS[level];
+    if (!options) continue;
+    for (const option of options) {
+      if (!seen.has(option)) {
+        seen.add(option);
+        merged.push(option);
+      }
+    }
+  }
+  return merged;
 }
 
-export function normalizeEntityTypeSelection(rawType: string, levelNumber: number) {
+export function getEntityTypeOptionsForLevel(_levelNumber?: number): readonly string[] {
+  return getAllEntityTypeOptions();
+}
+
+export function normalizeEntityTypeSelection(rawType: string, _levelNumber?: number) {
   const normalized = rawType.trim();
   if (!normalized) {
     return {
@@ -95,7 +111,7 @@ export function normalizeEntityTypeSelection(rawType: string, levelNumber: numbe
     };
   }
 
-  const options = getEntityTypeOptionsForLevel(levelNumber);
+  const options = getAllEntityTypeOptions();
   if (options.includes(normalized)) {
     return {
       selectedEntityType: normalized,

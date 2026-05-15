@@ -1,26 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  OrganizationStructureFieldSchemaField,
   OrganizationStructureLevel,
   OrganizationStructureNode,
 } from '../../../services/settingsService';
 import type { InlineDraftState } from './OrganizationStructureInlineDraftForm';
-import {
-  getEntityTypeOptionsForLevel,
-  normalizeEntityTypeSelection,
-} from './organizationStructureEntityTypes';
 
 /** Horizontal org-chart layout — compact so ~5 levels fit typical content width (~1000px). */
 export const CHART = {
-  COL_W: 196,
-  CARD_W: 186,
-  /** Minimum card height in CSS; layout reserves at least CARD_SLOT_H per row. */
-  CARD_H: 162,
-  /** Default vertical slot per node; layout remeasures real card height after paint. */
-  CARD_SLOT_H: 248,
-  GAP_Y: 16,
-  ROOT_GAP_Y: 18,
-  PAD_TOP: 10,
+  COL_W: 168,
+  CARD_W: 158,
+  /** Inline create form is wider than node cards so fields are not clipped. */
+  DRAFT_W: 228,
+  DRAFT_MIN_H: 236,
+  /** Minimum card height; layout remeasures after paint. */
+  CARD_H: 88,
+  /** Default vertical slot per node (compact name + code only). */
+  CARD_SLOT_H: 102,
+  GAP_Y: 12,
+  ROOT_GAP_Y: 14,
+  PAD_TOP: 8,
 } as const;
 
 export type ChartPosition = {
@@ -150,28 +148,14 @@ type OrgChartNodeCardProps = {
   slotH: number;
   selected: boolean;
   theme: LevelTheme;
-  levelSchema: OrganizationStructureFieldSchemaField[];
-  getNodeEntityType: (node?: OrganizationStructureNode | null) => string;
   getNodeFieldValues: (node?: OrganizationStructureNode | null) => Record<string, unknown>;
-  serializeFieldValues: (
-    schema: OrganizationStructureFieldSchemaField[],
-    fieldValues: Record<string, string>
-  ) => Record<string, unknown>;
   onSelect: () => void;
   onAddSibling: () => void;
   onAddChild: () => void;
   onArchive: () => void;
-  onOpenFullEdit: () => void;
-  onPatch: (
-    data: {
-      name?: string;
-      code?: string | null;
-      metaJson?: Record<string, unknown>;
-      fieldValues?: Record<string, unknown>;
-    }
-  ) => Promise<void>;
+  onOpenView: () => void;
+  onOpenEdit: () => void;
   disableSibling: boolean;
-  isSaving: boolean;
 };
 
 function OrgChartNodeCard({
@@ -181,76 +165,23 @@ function OrgChartNodeCard({
   slotH,
   selected,
   theme,
-  levelSchema,
-  getNodeEntityType,
   getNodeFieldValues,
-  serializeFieldValues,
   onSelect,
   onAddSibling,
   onAddChild,
   onArchive,
-  onOpenFullEdit,
-  onPatch,
+  onOpenView,
+  onOpenEdit,
   disableSibling,
-  isSaving,
 }: OrgChartNodeCardProps) {
   const rawFv = getNodeFieldValues(node);
-  const initialName = String(rawFv.name ?? node.name ?? '');
-  const initialCode = String(rawFv.code ?? node.code ?? '');
-
-  const [name, setName] = useState(initialName);
-  const [code, setCode] = useState(initialCode);
-  const entityTypeOptions = useMemo(
-    () => getEntityTypeOptionsForLevel(node.levelNumber),
-    [node.levelNumber]
-  );
-  const et = getNodeEntityType(node);
-  const norm = normalizeEntityTypeSelection(et, node.levelNumber);
-  const [selectedType, setSelectedType] = useState(norm.selectedEntityType);
-  const [customType, setCustomType] = useState(norm.customEntityType);
-
-  useEffect(() => {
-    setName(String(rawFv.name ?? node.name ?? ''));
-    setCode(String(rawFv.code ?? node.code ?? ''));
-    const n2 = normalizeEntityTypeSelection(getNodeEntityType(node), node.levelNumber);
-    setSelectedType(n2.selectedEntityType);
-    setCustomType(n2.customEntityType);
-  }, [node.id, node.name, node.code, node.levelLabel, node.levelNumber, node.fieldValues, getNodeEntityType]);
-
-  const entityLabel =
-    selectedType === 'Custom' ? customType.trim() : selectedType.trim();
-
-  const flushSave = useCallback(async () => {
-    const trimmedName = name.trim();
-    const trimmedCode = code.trim().toUpperCase();
-    const fvSource = getNodeFieldValues(node);
-    const baseMeta =
-      node.metaJson && typeof node.metaJson === 'object' ? { ...(node.metaJson as Record<string, unknown>) } : {};
-    baseMeta.entityType = entityLabel || node.levelLabel;
-
-    const fvStrings: Record<string, string> = {};
-    for (const f of levelSchema) {
-      const v =
-        f.key === 'name' ? trimmedName : f.key === 'code' ? trimmedCode : String(fvSource[f.key] ?? '');
-      fvStrings[f.key] = v;
-    }
-    const fieldValues = serializeFieldValues(levelSchema, fvStrings);
-
-    await onPatch({
-      name: trimmedName || undefined,
-      code: trimmedCode || null,
-      metaJson: baseMeta,
-      fieldValues,
-    });
-  }, [name, code, entityLabel, node, levelSchema, getNodeFieldValues, onPatch, serializeFieldValues]);
-
-  const hasExtraSchemaFields = levelSchema.some((f) => f.key !== 'name' && f.key !== 'code');
-
+  const displayName = String(rawFv.name ?? node.name ?? '').trim() || '—';
+  const displayCode = String(rawFv.code ?? node.code ?? '').trim() || '—';
   const archived = node.status === 'archived';
 
   return (
     <div
-      className={`absolute z-[2] flex flex-col rounded-lg border bg-white shadow-sm transition-shadow dark:bg-slate-800 ${
+      className={`absolute z-[2] flex flex-col rounded-md border bg-white shadow-sm transition-shadow dark:bg-slate-800 ${
         selected
           ? 'border-primary ring-1 ring-primary/25'
           : 'border-slate-200 dark:border-slate-600'
@@ -260,14 +191,13 @@ function OrgChartNodeCard({
         left,
         top,
         width: CHART.CARD_W,
-        height: slotH,
-        minHeight: slotH,
+        minHeight: Math.max(CHART.CARD_H, slotH),
+        height: 'auto',
         boxSizing: 'border-box',
-        overflowY: 'auto',
       }}
       onClick={(e) => {
         const el = e.target as HTMLElement;
-        if (el.closest('input, select, button, textarea')) return;
+        if (el.closest('button')) return;
         onSelect();
       }}
       role="button"
@@ -279,25 +209,34 @@ function OrgChartNodeCard({
         }
       }}
     >
-      <div className={`rounded-t-lg border-b px-1.5 py-1 ${theme.header}`}>
+      <div className={`shrink-0 rounded-t-md border-b px-1 py-0.5 ${theme.header}`}>
         <div className="flex items-center justify-between gap-0.5">
-          <span className="truncate text-[9px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+          <span className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
             {node.levelLabel}
           </span>
-          <div className="flex shrink-0 items-center gap-0">
-            {hasExtraSchemaFields ? (
-              <button
-                type="button"
-                title="All fields"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenFullEdit();
-                }}
-                className="rounded p-0.5 text-slate-500 hover:bg-white/60 dark:hover:bg-slate-900/40"
-              >
-                <span className="material-symbols-outlined text-[14px]">tune</span>
-              </button>
-            ) : null}
+          <div className="flex shrink-0 items-center">
+            <button
+              type="button"
+              title="View"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenView();
+              }}
+              className="rounded p-0.5 text-slate-500 hover:bg-white/60 dark:hover:bg-slate-900/40"
+            >
+              <span className="material-symbols-outlined text-[15px]">visibility</span>
+            </button>
+            <button
+              type="button"
+              title="Edit"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenEdit();
+              }}
+              className="rounded p-0.5 text-slate-500 hover:bg-white/60 dark:hover:bg-slate-900/40"
+            >
+              <span className="material-symbols-outlined text-[15px]">edit</span>
+            </button>
             <button
               type="button"
               title="Archive"
@@ -308,108 +247,50 @@ function OrgChartNodeCard({
               }}
               className="rounded p-0.5 text-amber-600 hover:bg-white/60 disabled:opacity-30 dark:hover:bg-slate-900/40"
             >
-              <span className="material-symbols-outlined text-[14px]">archive</span>
+              <span className="material-symbols-outlined text-[15px]">archive</span>
             </button>
           </div>
         </div>
       </div>
 
-      <div className="flex flex-1 flex-col gap-1 p-1.5">
-        <div>
-          <label className="text-[9px] font-medium uppercase tracking-wide text-slate-400">Type</label>
-          <select
-            value={selectedType || ''}
-            onChange={async (e) => {
-              const v = e.target.value;
-              setSelectedType(v);
-              const nextLabel = v === 'Custom' ? customType.trim() : v.trim();
-              const baseMeta =
-                node.metaJson && typeof node.metaJson === 'object'
-                  ? { ...(node.metaJson as Record<string, unknown>) }
-                  : {};
-              baseMeta.entityType = nextLabel || node.levelLabel;
-              await onPatch({ metaJson: baseMeta });
-            }}
-            onClick={(e) => e.stopPropagation()}
-            className="mt-0.5 w-full rounded border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-medium text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
-          >
-            <option value="">—</option>
-            {entityTypeOptions.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-          </select>
-          {selectedType === 'Custom' ? (
-            <input
-              type="text"
-              value={customType}
-              onChange={(e) => setCustomType(e.target.value)}
-              onBlur={async () => {
-                const baseMeta =
-                  node.metaJson && typeof node.metaJson === 'object'
-                    ? { ...(node.metaJson as Record<string, unknown>) }
-                    : {};
-                baseMeta.entityType = customType.trim() || node.levelLabel;
-                await onPatch({ metaJson: baseMeta });
-              }}
-              onClick={(e) => e.stopPropagation()}
-              className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-0.5 text-[11px] dark:border-slate-600 dark:bg-slate-900"
-              placeholder="Custom type"
-            />
-          ) : null}
-        </div>
+      <div
+        className="relative flex min-h-[58px] flex-1 cursor-pointer flex-col px-2 pb-7 pt-1.5"
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenView();
+        }}
+        role="presentation"
+      >
+        <p className="line-clamp-2 text-[13px] font-semibold leading-snug text-slate-900 dark:text-white">
+          {displayName}
+        </p>
+        <p className="mt-0.5 truncate font-mono text-[12px] text-slate-600 dark:text-slate-300">{displayCode}</p>
 
-        <div>
-          <label className="text-[9px] font-medium uppercase tracking-wide text-slate-400">Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={() => void flushSave()}
-            onClick={(e) => e.stopPropagation()}
-            className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-[11px] font-semibold text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
-          />
-        </div>
-
-        <div>
-          <label className="text-[9px] font-medium uppercase tracking-wide text-slate-400">Code</label>
-          <input
-            type="text"
-            value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            onBlur={() => void flushSave()}
-            onClick={(e) => e.stopPropagation()}
-            className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 font-mono text-[11px] text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
-          />
-        </div>
-
-        <div
-          className="mt-auto flex items-center justify-end gap-1 pt-0.5"
-          onMouseDown={(e) => e.stopPropagation()}
+        <button
+          type="button"
+          title="Add sibling"
+          disabled={disableSibling}
+          onClick={(e) => {
+            e.stopPropagation();
+            onAddSibling();
+          }}
+          className="absolute bottom-1 left-1 inline-flex h-7 w-7 items-center justify-center rounded-full bg-sky-600 text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-600"
         >
-          <button
-            type="button"
-            title="Add sibling (same level)"
-            disabled={disableSibling}
-            onClick={onAddSibling}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-sky-600 text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-          >
-            <span className="material-symbols-outlined text-[16px]">add</span>
-          </button>
-          <button
-            type="button"
-            title="Add child (next level)"
-            onClick={onAddChild}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
-          >
-            <span className="material-symbols-outlined text-[16px]">add</span>
-          </button>
-        </div>
-        {isSaving ? (
-          <p className="text-[9px] text-slate-400">Saving…</p>
-        ) : null}
+          <span className="material-symbols-outlined text-[16px]">add</span>
+        </button>
+        <button
+          type="button"
+          title="Add child"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAddChild();
+          }}
+          className="absolute bottom-1 right-1 inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
+        >
+          <span className="material-symbols-outlined text-[16px]">add</span>
+        </button>
       </div>
+
     </div>
   );
 }
@@ -420,29 +301,14 @@ export type OrganizationStructureHorizontalChartProps = {
   nodes: OrganizationStructureNode[];
   rootTreeNodes: OrganizationStructureNode[];
   childrenByParentId: Map<string, OrganizationStructureNode[]>;
-  levelByNumber: Map<number, OrganizationStructureLevel>;
   levelThemePalette: LevelTheme[];
   selectedNode: OrganizationStructureNode | null;
   onSelectNode: (node: OrganizationStructureNode) => void;
-  getNodeEntityType: (node?: OrganizationStructureNode | null) => string;
-  getEffectiveFieldSchema: (level?: OrganizationStructureLevel | null) => OrganizationStructureFieldSchemaField[];
   getNodeFieldValues: (node?: OrganizationStructureNode | null) => Record<string, unknown>;
-  serializeFieldValues: (
-    schema: OrganizationStructureFieldSchemaField[],
-    fieldValues: Record<string, string>
-  ) => Record<string, unknown>;
   openInlineDraft: (relation: 'root' | 'child' | 'sibling', referenceNode?: OrganizationStructureNode) => void;
   onArchiveNode: (node: OrganizationStructureNode) => void;
-  onOpenFullEdit: (node: OrganizationStructureNode) => void;
-  onUpdateNode: (
-    id: string,
-    data: {
-      name?: string;
-      code?: string | null;
-      metaJson?: Record<string, unknown>;
-      fieldValues?: Record<string, unknown>;
-    }
-  ) => Promise<unknown>;
+  onOpenNodeView: (node: OrganizationStructureNode) => void;
+  onOpenNodeEdit: (node: OrganizationStructureNode) => void;
   /** When set, chart positions the draft card near the reference node. */
   inlineDraft: InlineDraftState | null;
   chartInlineDraft: (box: { top: number; left: number }) => React.ReactNode;
@@ -457,31 +323,27 @@ export function OrganizationStructureHorizontalChart({
   nodes,
   rootTreeNodes,
   childrenByParentId,
-  levelByNumber,
   levelThemePalette,
   selectedNode,
   onSelectNode,
-  getNodeEntityType,
-  getEffectiveFieldSchema,
   getNodeFieldValues,
-  serializeFieldValues,
   openInlineDraft,
   onArchiveNode,
-  onOpenFullEdit,
-  onUpdateNode,
+  onOpenNodeView,
+  onOpenNodeEdit,
   inlineDraft,
   chartInlineDraft,
   maxLevelNumber,
   showChartIntro = true,
 }: OrganizationStructureHorizontalChartProps) {
   const chartBodyRef = React.useRef<HTMLDivElement>(null);
-  const [cardSlotH, setCardSlotH] = useState(CHART.CARD_SLOT_H);
+  const [cardSlotH, setCardSlotH] = useState<number>(CHART.CARD_SLOT_H);
 
   const measureCardSlots = useCallback(() => {
     const body = chartBodyRef.current;
     if (!body) return;
     const cards = body.querySelectorAll<HTMLElement>('[data-org-chart-card]');
-    let max = CHART.CARD_SLOT_H;
+    let max: number = CHART.CARD_SLOT_H;
     cards.forEach((card) => {
       const h = Math.ceil(card.scrollHeight);
       if (h > 0) max = Math.max(max, h);
@@ -510,28 +372,6 @@ export function OrganizationStructureHorizontalChart({
     }
     return merged;
   }, [treePositions, nodes, fallbackPositions]);
-
-  const [savingId, setSavingId] = useState<string | null>(null);
-
-  const patchNode = useCallback(
-    async (
-      id: string,
-      data: {
-        name?: string;
-        code?: string | null;
-        metaJson?: Record<string, unknown>;
-        fieldValues?: Record<string, unknown>;
-      }
-    ) => {
-      setSavingId(id);
-      try {
-        await onUpdateNode(id, data);
-      } finally {
-        setSavingId(null);
-      }
-    },
-    [onUpdateNode]
-  );
 
   const columnCount = Math.max(1, maxLevelNumber);
 
@@ -574,7 +414,9 @@ export function OrganizationStructureHorizontalChart({
     }
     const childCol = Math.max(0, inlineDraft.targetLevelNumber - 1);
     const top = (refPos?.cardTop ?? CHART.PAD_TOP) + cardSlotH + CHART.GAP_Y;
-    return { top, left: colLeft(childCol) };
+    const colStart = childCol * CHART.COL_W;
+    const centeredLeft = colStart + Math.max(0, (CHART.COL_W - CHART.DRAFT_W) / 2);
+    return { top, left: centeredLeft };
   }, [inlineDraft, positions, cardSlotH]);
 
   const chartWidth = columnCount * CHART.COL_W;
@@ -585,7 +427,7 @@ export function OrganizationStructureHorizontalChart({
       bottom = Math.max(bottom, p.cardTop + cardSlotH);
     }
     if (draftPlacement) {
-      bottom = Math.max(bottom, draftPlacement.top + cardSlotH + CHART.GAP_Y);
+      bottom = Math.max(bottom, draftPlacement.top + CHART.DRAFT_MIN_H + CHART.GAP_Y);
     }
     return Math.max(totalHeight, bottom + CHART.PAD_TOP, cardSlotH + CHART.PAD_TOP * 2);
   }, [positions, draftPlacement, totalHeight, cardSlotH]);
@@ -631,7 +473,7 @@ export function OrganizationStructureHorizontalChart({
       ) : null}
 
       <div className="rounded-xl border border-slate-200 bg-slate-100/80 dark:border-slate-700 dark:bg-slate-900/40">
-        <div className="max-w-full overflow-x-auto" style={{ overflowY: 'visible' }}>
+        <div className="max-w-full overflow-x-auto overflow-y-visible pb-2">
           <div className="relative" style={{ width: chartWidth }}>
           {Array.from({ length: columnCount }, (_, i) => {
             const theme = levelThemePalette[i % levelThemePalette.length];
@@ -696,8 +538,6 @@ export function OrganizationStructureHorizontalChart({
               const left = col * CHART.COL_W + (CHART.COL_W - CHART.CARD_W) / 2;
               const top = pos.cardTop;
               const theme = levelThemePalette[col % levelThemePalette.length];
-              const schema = getEffectiveFieldSchema(levelByNumber.get(node.levelNumber));
-
               return (
                 <OrgChartNodeCard
                   key={node.id}
@@ -707,18 +547,14 @@ export function OrganizationStructureHorizontalChart({
                   slotH={cardSlotH}
                   selected={selectedNode?.id === node.id}
                   theme={theme}
-                  levelSchema={schema}
-                  getNodeEntityType={getNodeEntityType}
                   getNodeFieldValues={getNodeFieldValues}
-                  serializeFieldValues={serializeFieldValues}
                   onSelect={() => onSelectNode(node)}
                   onAddSibling={() => openInlineDraft('sibling', node)}
                   onAddChild={() => openInlineDraft('child', node)}
                   onArchive={() => onArchiveNode(node)}
-                  onOpenFullEdit={() => onOpenFullEdit(node)}
-                  onPatch={(data) => patchNode(node.id, data)}
+                  onOpenView={() => onOpenNodeView(node)}
+                  onOpenEdit={() => onOpenNodeEdit(node)}
                   disableSibling={node.levelNumber === 1}
-                  isSaving={savingId === node.id}
                 />
               );
             })}
@@ -726,8 +562,13 @@ export function OrganizationStructureHorizontalChart({
             {draftPlacement ? (
               <div
                 data-org-chart-draft
-                className="absolute z-20"
-                style={{ top: draftPlacement.top, left: draftPlacement.left, width: CHART.CARD_W }}
+                className="absolute z-30"
+                style={{
+                  top: draftPlacement.top,
+                  left: draftPlacement.left,
+                  width: CHART.DRAFT_W,
+                  minHeight: CHART.DRAFT_MIN_H,
+                }}
               >
                 {chartInlineDraft(draftPlacement)}
               </div>
