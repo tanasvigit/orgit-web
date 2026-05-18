@@ -16,6 +16,8 @@ import { TaskTransitionAnimation } from '../../components/dashboard/TaskTransiti
 import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
 import { waitForSocketConnection } from '../../services/socketService';
 import { getTaskCreationUserConfig } from '../../services/userTaskCreationConfigService';
+import { AppIcon } from '../../components/shared/AppIcon';
+import { DashboardCalendarDayBadge } from '../../components/dashboard/DashboardCalendarDayBadge';
 
 type CalendarDaySnapshot = {
   date: string;
@@ -632,16 +634,20 @@ export const AdminDashboard: React.FC = () => {
               warehouse: { label: 'Warehouse', keys: ['warehouse_name', 'warehouseName', 'warehouse'] },
               project: { label: 'Project', keys: ['project_name', 'projectName', 'project'] },
               factory: { label: 'Factory', keys: ['factory_name', 'factoryName', 'factory'] },
-              org_node: { label: 'Organization node', keys: ['org_structure_path', 'orgStructurePath', 'task_unit', 'taskUnit'] },
+              org_unit: { label: 'Organization unit', keys: ['org_structure_path', 'orgStructurePath', 'task_unit', 'taskUnit'] },
             };
-            const chosen = map[preference] || map.org_node;
+            const prefKey = preference === 'org_node' ? 'org_unit' : preference;
+            const chosen = map[prefKey] || map.org_unit;
             // Backend stores the user-entered unit value as a single column (`task_unit`,
             // legacy `task_unit_name`); type-specific keys above are kept for forward-compat.
             const lookupKeys = [...chosen.keys, 'task_unit', 'taskUnit', 'task_unit_name', 'taskUnitName'];
             const value = lookupKeys.map((k) => taskLike?.[k]).find((v) => typeof v === 'string' && v.trim()) || '-';
             return { unitType: chosen.label, unitName: String(value) };
           };
-          const unitPref = userTaskConfig?.taskUnitPreference || 'org_node';
+          const unitPref =
+            userTaskConfig?.taskUnitPreference === 'org_node' || userTaskConfig?.taskUnitPreference === 'org_unit'
+              ? 'org_unit'
+              : userTaskConfig?.taskUnitPreference || 'org_unit';
           const chosenUnit = resolveTaskUnitDisplay(merged, unitPref);
           return (
             <TaskCard
@@ -772,8 +778,8 @@ export const AdminDashboard: React.FC = () => {
             onClick={() => navigate(`/admin/tasks?view=${viewType}&status=todo`)}
             className="relative mx-auto flex w-full max-w-[220px] flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-blue-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:max-w-[200px] max-[1366px]:p-2.5"
           >
-            <div ref={toDoIconRef} className="mb-2 flex size-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 max-[1366px]:size-[30px]">
-              <span className="material-symbols-outlined text-[18px] max-[1366px]:text-base">today</span>
+            <div ref={toDoIconRef} className="mb-2 flex size-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 max-[1366px]:size-8">
+              <AppIcon name="todo" variant="card" />
             </div>
             <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
               {getStatusCount('todo', viewType)}
@@ -789,8 +795,8 @@ export const AdminDashboard: React.FC = () => {
             onClick={() => navigate(`/admin/tasks?view=${viewType}&status=inprogress`)}
             className="relative mx-auto flex w-full max-w-[220px] flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-purple-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:max-w-[200px] max-[1366px]:p-2.5"
           >
-            <div ref={inProgressIconRef} className="mb-2 flex size-8 items-center justify-center rounded-lg bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400 max-[1366px]:size-[30px]">
-              <span className="material-symbols-outlined text-[18px] max-[1366px]:text-base">pending_actions</span>
+            <div ref={inProgressIconRef} className="mb-2 flex size-9 items-center justify-center rounded-lg bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400 max-[1366px]:size-8">
+              <AppIcon name="inprogress" variant="card" />
             </div>
             <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
               {getStatusCount('inprogress', viewType)}
@@ -806,8 +812,8 @@ export const AdminDashboard: React.FC = () => {
             onClick={() => navigate(`/admin/tasks?view=${viewType}&status=duesoon`)}
             className="relative mx-auto flex w-full max-w-[220px] flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-amber-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:max-w-[200px] max-[1366px]:p-2.5"
           >
-            <div className="mb-2 flex size-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400 max-[1366px]:size-[30px]">
-              <span className="material-symbols-outlined text-[18px] max-[1366px]:text-base">hourglass_top</span>
+            <div className="mb-2 flex size-9 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400 max-[1366px]:size-8">
+              <AppIcon name="duesoon" variant="card" />
             </div>
             <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
               {getStatusCount('duesoon', viewType)}
@@ -823,8 +829,8 @@ export const AdminDashboard: React.FC = () => {
             onClick={() => navigate(`/admin/tasks?view=${viewType}&status=overdue`)}
             className="relative mx-auto flex w-full max-w-[220px] flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-red-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:max-w-[200px] max-[1366px]:p-2.5"
           >
-            <div className="mb-2 flex size-8 items-center justify-center rounded-lg bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 max-[1366px]:size-[30px]">
-              <span className="material-symbols-outlined text-[18px] max-[1366px]:text-base">priority_high</span>
+            <div className="mb-2 flex size-9 items-center justify-center rounded-lg bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 max-[1366px]:size-8">
+              <AppIcon name="overdue" variant="card" />
             </div>
             <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
               {getStatusCount('overdue', viewType)}
@@ -840,8 +846,8 @@ export const AdminDashboard: React.FC = () => {
             onClick={() => navigate(`/admin/tasks?view=${viewType}&status=completed`)}
             className="relative mx-auto flex w-full max-w-[220px] flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-emerald-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:max-w-[200px] max-[1366px]:p-2.5"
           >
-            <div ref={completedIconRef} className="mb-2 flex size-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400 max-[1366px]:size-[30px]">
-              <span className="material-symbols-outlined text-[18px] max-[1366px]:text-base">task_alt</span>
+            <div ref={completedIconRef} className="mb-2 flex size-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400 max-[1366px]:size-8">
+              <AppIcon name="completed" variant="card" />
             </div>
             <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
               {getStatusCount('completed', viewType)}
@@ -883,29 +889,12 @@ export const AdminDashboard: React.FC = () => {
     while (cells.length % 7 !== 0) cells.push(null);
     const monthLabel = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(monthDate);
 
-    const dueDayBox = (day: any) => {
-      const selfCount = day.selfCount || 0;
-      const assignedCount = day.assignedCount || 0;
-      const hasAnyCount = selfCount > 0 || assignedCount > 0;
-      if (!hasAnyCount) return null;
-
-      return (
-        <div className="mt-1 rounded-md border border-primary/30 bg-primary/5 px-1 py-1 dark:bg-primary/10">
-          <div className="mb-0.5 grid grid-cols-2 gap-1 text-[8px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-            <div className="text-center">Self</div>
-            <div className="text-center">Assigned</div>
-          </div>
-          <div className="grid grid-cols-2 gap-1">
-            <div className="text-center text-[11px] font-bold text-primary dark:text-indigo-300">
-              {selfCount > 0 ? selfCount : ''}
-            </div>
-            <div className="text-center text-[11px] font-bold text-primary dark:text-indigo-300">
-              {assignedCount > 0 ? assignedCount : ''}
-            </div>
-          </div>
-        </div>
-      );
-    };
+    const dueDayBox = (day: any) => (
+      <DashboardCalendarDayBadge
+        selfCount={day.selfCount || 0}
+        assignedCount={day.assignedCount || 0}
+      />
+    );
 
     return (
       <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800/95 p-3">
@@ -913,7 +902,7 @@ export const AdminDashboard: React.FC = () => {
           <div>
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
             <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">
-              By due date · Self + Assigned (0 hidden)
+              By due date · Self + Asgn (Assigned)
             </p>
           </div>
           <div className="flex items-center gap-1 shrink-0">
@@ -936,7 +925,7 @@ export const AdminDashboard: React.FC = () => {
             {cells.map((day: any, idx) => (
               <div
                 key={`${day?.date || 'blank'}-${idx}`}
-                className={`min-h-[62px] rounded border p-1 ${day ? 'border-gray-200 dark:border-gray-700' : 'border-transparent'}`}
+                className={`min-h-[72px] rounded border p-1 ${day ? 'border-gray-200 dark:border-gray-700' : 'border-transparent'}`}
               >
                 {day ? (
                   <>

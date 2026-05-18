@@ -1,16 +1,18 @@
+import { TASK_UNIT_PREFERENCE_ORG, type TaskUnitPreferenceOrg } from './orgUnitLabel';
+
 /** Mirrors backend DEFAULT_TASK_CREATION_USER_CONFIG for offline/fallback use. */
 export const FALLBACK_TASK_CREATION_USER_CONFIG = {
   dueDaysFromStart: 10,
   targetDaysBeforeDue: 3,
   autoEscalateTrigger: 'target_date' as const,
-  taskUnitPreference: 'org_node' as const,
+  taskUnitPreference: TASK_UNIT_PREFERENCE_ORG,
 };
 
 export type TaskCreationUserConfig = {
   dueDaysFromStart: number;
   targetDaysBeforeDue: number;
   autoEscalateTrigger: 'target_date' | 'due_date';
-  taskUnitPreference: 'org_node';
+  taskUnitPreference: TaskUnitPreferenceOrg;
 };
 
 /** Start date at 9:00; target = due minus N days; due = start plus M days. */

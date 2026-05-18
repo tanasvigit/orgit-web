@@ -5,6 +5,26 @@
  */
 
 const IST_OFFSET_MINUTES = 330; // UTC+5:30
+const IST_OFFSET_MS = IST_OFFSET_MINUTES * 60 * 1000;
+
+/** PostgreSQL `timestamp without time zone` in this app = IST wall clock. */
+function parseNaiveTimestampAsIst(s: string): Date | null {
+  const m = s.match(
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,6}))?$/
+  );
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]) - 1;
+  const day = Number(m[3]);
+  const hour = Number(m[4]);
+  const minute = Number(m[5]);
+  const second = Number(m[6] || '0');
+  const microRaw = m[7] || '0';
+  const ms = Number(microRaw.padEnd(3, '0').slice(0, 3));
+  const utcMs = Date.UTC(year, month, day, hour, minute, second, ms) - IST_OFFSET_MS;
+  const d = new Date(utcMs);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
 function toIstDate(d: Date): Date {
   // Convert local time to UTC, then shift to IST
@@ -51,6 +71,12 @@ export function parseTimestamp(value: string | number | Date | null | undefined)
     const s = value.trim();
     if (!s) return null;
 
+    // Absolute instants from API/socket (always prefer this)
+    if (/[zZ]$/.test(s) || /[+-]\d{2}:?\d{2}$/.test(s)) {
+      const d = new Date(s);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+
     if (/^\d+$/.test(s)) {
       const n = Number(s);
       if (!Number.isFinite(n)) return null;
@@ -59,25 +85,8 @@ export function parseTimestamp(value: string | number | Date | null | undefined)
       return Number.isNaN(d.getTime()) ? null : d;
     }
 
-    // "YYYY-MM-DD HH:mm:ss" or "YYYY-MM-DDTHH:mm:ss" – treat as UTC from backend, then shift to IST on format
-    const m = s.match(
-      /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,6}))?$/
-    );
-    if (m) {
-      const year = Number(m[1]);
-      const month = Number(m[2]) - 1;
-      const day = Number(m[3]);
-      const hour = Number(m[4]);
-      const minute = Number(m[5]);
-      const second = Number(m[6] || '0');
-      const microRaw = m[7] || '0';
-      // DB often stores microseconds; keep only first 3 digits as milliseconds
-      const ms = Number(microRaw.padEnd(3, '0').slice(0, 3));
-      // Interpret as UTC instant
-      const utcMs = Date.UTC(year, month, day, hour, minute, second, ms);
-      const d = new Date(utcMs);
-      return Number.isNaN(d.getTime()) ? null : d;
-    }
+    const naiveIst = parseNaiveTimestampAsIst(s);
+    if (naiveIst) return naiveIst;
 
     const md = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (md) {

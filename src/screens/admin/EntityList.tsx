@@ -207,7 +207,7 @@ export const EntityList: React.FC = () => {
     setIsDownloadingTemplate(true);
     try {
       await entityMasterBulkService.getTemplate('entity-list');
-      toast.success('Entity List template downloaded. Fill client details and org-node assignments, then upload.');
+      toast.success('Entity List template downloaded. Fill client details and org-unit assignments, then upload.');
     } catch (err: any) {
       toast.error(err.response?.data?.error || err.message || 'Failed to download template');
     } finally {

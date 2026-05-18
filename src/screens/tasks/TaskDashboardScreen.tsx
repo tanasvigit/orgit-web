@@ -18,6 +18,8 @@ import { isTaskDeleted } from '../../utils/taskUtils';
 import { formatChatListTimestamp, timestampToMs } from '../../utils/chatTime';
 import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
 import { getTaskCreationUserConfig } from '../../services/userTaskCreationConfigService';
+import { AppIcon } from '../../components/shared/AppIcon';
+import { taskStatusToAppIcon } from '../../constants/appIcons';
 
 type TaskDashboardStatus = TaskStatusCategory;
 
@@ -28,14 +30,6 @@ const STATUS_LABELS: Record<Exclude<StatusFilter, 'all'>, string> = {
   duesoon: 'Due Soon',
   overdue: 'Overdue',
   completed: 'Completed',
-};
-const STATUS_ICONS: Record<Exclude<StatusFilter, 'all'>, string> = {
-  scheduled: 'event_note',
-  todo: 'today',
-  inprogress: 'pending_actions',
-  duesoon: 'schedule',
-  overdue: 'priority_high',
-  completed: 'task_alt',
 };
 const STATUS_COLORS: Record<Exclude<StatusFilter, 'all'>, string> = {
   scheduled: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300',
@@ -56,6 +50,23 @@ const STATUS_ICON_COLORS: Record<Exclude<StatusFilter, 'all'>, string> = {
 
 export type StatusFilter = 'all' | TaskDashboardStatus;
 type ViewFilter = 'all' | 'self' | 'assigned';
+
+function TaskStatusIcon({ category }: { category: Exclude<StatusFilter, 'all'> }) {
+  const appIcon = taskStatusToAppIcon(category);
+  const title = STATUS_LABELS[category];
+  if (appIcon) {
+    return <AppIcon name={appIcon} variant="inline" alt={title} />;
+  }
+  return (
+    <span
+      className={`material-icons-round text-base ${STATUS_ICON_COLORS[category]}`}
+      title={title}
+      aria-hidden
+    >
+      event_note
+    </span>
+  );
+}
 
 export const TaskDashboardScreen: React.FC = () => {
   const navigate = useNavigate();
@@ -114,7 +125,10 @@ export const TaskDashboardScreen: React.FC = () => {
   };
 
   const resolveTaskUnitDisplay = (taskLike: any) => {
-    const preference = userTaskConfig?.taskUnitPreference || 'org_node';
+    const preference =
+      userTaskConfig?.taskUnitPreference === 'org_node' || userTaskConfig?.taskUnitPreference === 'org_unit'
+        ? 'org_unit'
+        : userTaskConfig?.taskUnitPreference || 'org_unit';
     const map: Record<string, { label: string; keys: string[] }> = {
       cost_centre: {
         label: 'Cost centre',
@@ -127,9 +141,10 @@ export const TaskDashboardScreen: React.FC = () => {
       warehouse: { label: 'Warehouse', keys: ['warehouse_name', 'warehouseName', 'warehouse'] },
       project: { label: 'Project', keys: ['project_name', 'projectName', 'project'] },
       factory: { label: 'Factory', keys: ['factory_name', 'factoryName', 'factory'] },
-      org_node: { label: 'Organization node', keys: ['org_structure_path', 'orgStructurePath', 'task_unit', 'taskUnit'] },
+      org_unit: { label: 'Organization unit', keys: ['org_structure_path', 'orgStructurePath', 'task_unit', 'taskUnit'] },
     };
-    const chosen = map[preference] || map.org_node;
+    const prefKey = preference === 'org_node' ? 'org_unit' : preference;
+    const chosen = map[prefKey] || map.org_unit;
     // Backend stores the user-entered unit value as a single column (`task_unit`,
     // legacy `task_unit_name`); type-specific keys above are kept for forward-compat.
     const lookupKeys = [...chosen.keys, 'task_unit', 'taskUnit', 'task_unit_name', 'taskUnitName'];
@@ -1408,11 +1423,7 @@ export const TaskDashboardScreen: React.FC = () => {
                         {displayTaskTitle}
                       </h4>
                       <div className="flex justify-end">
-                        {taskStatusCategory ? (
-                          <span className={`material-icons-round text-base ${STATUS_ICON_COLORS[taskStatusCategory]}`} title={STATUS_LABELS[taskStatusCategory]}>
-                            {STATUS_ICONS[taskStatusCategory]}
-                          </span>
-                        ) : null}
+                        {taskStatusCategory ? <TaskStatusIcon category={taskStatusCategory} /> : null}
                       </div>
 
                       {taskTagOrClient ? (
@@ -1477,11 +1488,7 @@ export const TaskDashboardScreen: React.FC = () => {
                       {taskTitle}
                     </h4>
                     <div className="flex justify-end">
-                      {taskStatusCategory ? (
-                        <span className={`material-icons-round text-base ${STATUS_ICON_COLORS[taskStatusCategory]}`} title={STATUS_LABELS[taskStatusCategory]}>
-                          {STATUS_ICONS[taskStatusCategory]}
-                        </span>
-                      ) : null}
+                      {taskStatusCategory ? <TaskStatusIcon category={taskStatusCategory} /> : null}
                     </div>
 
                     {taskTagOrClient ? (

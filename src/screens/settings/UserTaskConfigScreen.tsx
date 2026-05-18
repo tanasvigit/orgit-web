@@ -157,10 +157,10 @@ export const UserTaskConfigScreen: React.FC = () => {
                 Task card unit display
               </label>
               <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
-                Task cards now always show the selected organization-node path.
+                Task cards show the selected organization unit (level and name).
               </p>
               <div className="inline-flex px-4 py-2 rounded-xl text-sm font-semibold border-2 border-primary bg-primary/10 text-primary">
-                Organization node
+                Organization unit
               </div>
             </div>
 

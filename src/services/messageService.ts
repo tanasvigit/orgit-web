@@ -80,26 +80,39 @@ export const messageService = {
    * Get messages by conversationId (supports both UUID and "direct_<userId>" format)
    * Matches mobile implementation with proper fallback handling
    */
-  getMessagesByConversationId: async (conversationId: string, limit = 50, offset = 0) => {
+  getMessagesByConversationId: async (
+    conversationId: string,
+    limit = 50,
+    offset = 0
+  ): Promise<{
+    messages: any[];
+    conversationId?: string;
+    requestedConversationId?: string;
+  }> => {
     const params = new URLSearchParams({
       limit: limit.toString(),
       offset: offset.toString(),
     });
     const response = await api.get(`/messages/${conversationId}?${params.toString()}`);
-    
-    // Backend returns: { messages: [...] } (no success field)
-    if (response.data && response.data.messages) {
-      return response.data.messages;
+    const data = response.data;
+
+    if (data?.messages) {
+      return {
+        messages: data.messages,
+        conversationId: data.conversationId,
+        requestedConversationId: data.requestedConversationId,
+      };
     }
-    // Fallback for old format
-    if (response.data && response.data.success && response.data.messages) {
-      return response.data.messages;
+    if (data?.success && data.messages) {
+      return { messages: data.messages, conversationId: data.conversationId };
     }
-    // Another fallback
-    if (response.data && response.data.data) {
-      return response.data.data;
+    if (Array.isArray(data?.data)) {
+      return { messages: data.data };
     }
-    return [];
+    if (Array.isArray(data)) {
+      return { messages: data };
+    }
+    return { messages: [] };
   },
 
   /**

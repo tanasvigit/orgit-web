@@ -19,6 +19,7 @@ import { waitForSocketConnection } from '../../services/socketService';
 import { setTaskFinancial } from '../../utils/taskFinancialStorage';
 import { CustomDatePicker } from '../shared/CustomDatePicker';
 import api from '../../services/api';
+import { formatOrgUnitLabel } from '../../utils/orgUnitLabel';
 
 interface TaskCreateModalProps {
   visible: boolean;
@@ -50,13 +51,6 @@ type TaskUnitSection = {
   key: string;
   label: string;
   units: string[];
-};
-
-const formatOrgNodeTaskUnit = (node: any) => {
-  const pathDisplay = String(node?.pathDisplay || node?.name || '').trim();
-  const code = String(node?.code || '').trim();
-  if (!pathDisplay) return '';
-  return code ? `${pathDisplay} [${code}]` : pathDisplay;
 };
 
 const introMessageClass =
@@ -317,26 +311,26 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     const org = orgDataForTaskUnit || {};
     const sections: TaskUnitSection[] = [
       {
-        key: 'org_node',
+        key: 'org_unit',
         label: 'Org Structure',
         units: (Array.isArray(org.orgStructureOperationalOptions?.nodes)
           ? org.orgStructureOperationalOptions.nodes
           : []
         )
-          .map((node: any) => formatOrgNodeTaskUnit(node))
+          .map((node: any) => formatOrgUnitLabel(node))
           .filter(Boolean),
       },
     ];
     return sections.filter((section) => section.units.length > 0);
   }, [orgDataForTaskUnit]);
-  const taskUnitOrgNodeIdMap = useMemo(() => {
+  const taskUnitOrgUnitIdMap = useMemo(() => {
     const org = orgDataForTaskUnit || {};
     const map = new Map<string, string>();
     const orgNodes = Array.isArray(org.orgStructureOperationalOptions?.nodes)
       ? org.orgStructureOperationalOptions.nodes
       : [];
     orgNodes.forEach((node: any) => {
-      const label = formatOrgNodeTaskUnit(node);
+      const label = formatOrgUnitLabel(node);
       if (label && node?.id) {
         map.set(label, String(node.id));
       }
@@ -456,7 +450,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const applyTaskUnitName = (unitName?: string) => {
     const nextTaskUnit = (unitName || taskUnit).trim();
     setTaskUnit(nextTaskUnit);
-    setSelectedOrgStructureNodeId(taskUnitOrgNodeIdMap.get(nextTaskUnit) || null);
+    setSelectedOrgStructureNodeId(taskUnitOrgUnitIdMap.get(nextTaskUnit) || null);
     setShowTaskUnitSuggestions(false);
     setTaskUnitHighlightedIndex(-1);
     setBasicInfoConfirmed(false);
@@ -776,14 +770,14 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
               </div>
             </div>
             <div className="flex items-start gap-3">
-              <label className="w-24 shrink-0 pt-2 text-xs font-medium text-[#6B7280]">Org Node</label>
+              <label className="w-24 shrink-0 pt-2 text-xs font-medium text-[#6B7280]">Org Unit</label>
               <div className="min-w-0 flex-1 flex items-start gap-2">
                 <div className="relative min-w-0 flex-1">
                   <input
                     value={taskUnit}
                     onChange={(e) => {
                       setTaskUnit(e.target.value);
-                      setSelectedOrgStructureNodeId(taskUnitOrgNodeIdMap.get(e.target.value.trim()) || null);
+                      setSelectedOrgStructureNodeId(taskUnitOrgUnitIdMap.get(e.target.value.trim()) || null);
                       setShowTaskUnitSuggestions(true);
                       setTaskUnitHighlightedIndex(-1);
                       setBasicInfoConfirmed(false);
@@ -802,7 +796,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                         onEnterWithoutSuggestions: () => applyTaskUnitName(),
                       })
                     }
-                    placeholder="Select organization node"
+                    placeholder="Select organization unit"
                     className={inputClass}
                     autoComplete="off"
                     role="combobox"

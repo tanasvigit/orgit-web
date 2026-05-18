@@ -1,5 +1,7 @@
 import React from 'react';
 import type { TaskStatusCategory } from '../../utils/taskStatus';
+import { taskStatusToAppIcon } from '../../constants/appIcons';
+import { AppIcon } from './AppIcon';
 
 interface TaskCardProps {
   id: string;
@@ -48,25 +50,6 @@ function formatTaskDueDate(dateString: string | undefined | null): string {
     return `Tomorrow, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   }
   return date.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-function lifecycleIconName(display: TaskStatusCategory | null): string {
-  switch (display) {
-    case 'scheduled':
-      return 'event_note';
-    case 'todo':
-      return 'today';
-    case 'inprogress':
-      return 'pending_actions';
-    case 'duesoon':
-      return 'hourglass_top';
-    case 'overdue':
-      return 'priority_high';
-    case 'completed':
-      return 'check_circle';
-    default:
-      return 'help_outline';
-  }
 }
 
 function lifecycleIconColor(display: TaskStatusCategory | null): string {
@@ -133,7 +116,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const frequencyText = String(frequency || 'One-Time').replace(/_/g, ' ');
   const unitText = taskUnitName && taskUnitName !== '-' ? String(taskUnitName).trim() : '';
 
-  const iconName = lifecycleIconName(status);
+  const statusAppIcon = taskStatusToAppIcon(status);
   const iconColor = lifecycleIconColor(status);
   const overduePill = showOverduePill(status, hideUserStatus, rawTaskStatus, dueDate || null);
 
@@ -174,11 +157,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         </div>
 
         <div className="flex items-start justify-end">
-          {hideUserStatus ? null : (
+          {hideUserStatus ? null : statusAppIcon ? (
+            <AppIcon name={statusAppIcon} variant="inline" />
+          ) : status === 'scheduled' ? (
             <span className="material-icons-round text-[20px]" style={{ color: iconColor }} aria-hidden>
-              {iconName}
+              event_note
             </span>
-          )}
+          ) : null}
         </div>
 
         {tagOrClient ? (

@@ -702,7 +702,7 @@ export const OrganisationStructureScreen: React.FC = () => {
     {
       icon: 'groups',
       title: 'Entity List',
-      subtitle: 'Assign client entities directly to org nodes once the hierarchy is defined.',
+      subtitle: 'Assign client entities directly to org units once the hierarchy is defined.',
       actionLabel: 'Open Entity List',
       screen: '/admin/entities',
       tone: 'neutral',
@@ -710,7 +710,7 @@ export const OrganisationStructureScreen: React.FC = () => {
     {
       icon: 'group',
       title: 'Employees',
-      subtitle: 'Employee mappings and org-node assignments are applied after org definition is created.',
+      subtitle: 'Employee mappings and org-unit assignments are applied after org definition is created.',
       actionLabel: 'Open Employees',
       screen: '/admin/users',
       tone: 'neutral',

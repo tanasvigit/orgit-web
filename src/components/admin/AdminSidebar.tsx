@@ -3,10 +3,12 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { showLogoutConfirm } from '../../utils/logoutConfirm';
+import { AppIcon } from '../shared/AppIcon';
+import type { AppIconName } from '../../constants/appIcons';
 
 interface NavItem {
   path: string;
-  icon: string;
+  icon: AppIconName;
   label: string;
 }
 
@@ -19,10 +21,10 @@ const collapsedLabelMap: Record<string, string> = {
 };
 
 const navItems: NavItem[] = [
-  { path: '/admin', icon: 'grid_view', label: 'Dashboard' },
+  { path: '/admin', icon: 'dashboard', label: 'Dashboard' },
   { path: '/admin/messages', icon: 'chat', label: 'Chats' },
-  { path: '/admin/tasks', icon: 'check_circle', label: 'Task Management' },
-  { path: '/admin/documents', icon: 'description', label: 'Document Management' },
+  { path: '/admin/tasks', icon: 'task', label: 'Task Management' },
+  { path: '/admin/documents', icon: 'document', label: 'Document Management' },
 ];
 
 const ADMIN_STORAGE_KEY = 'admin-sidebar-minimized-by-messages';
@@ -303,15 +305,11 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
               }`}
               title={isCollapsed ? item.label : item.label}
             >
-              <span
-                className={`material-symbols-outlined text-[22px] shrink-0 max-[1366px]:text-xl ${
-                  isActive
-                    ? ''
-                    : 'text-slate-400 group-hover:text-slate-600 transition-colors'
-                }`}
-              >
-                {item.icon}
-              </span>
+              <AppIcon
+                name={item.icon}
+                variant="nav"
+                className={isActive ? '' : 'opacity-70 group-hover:opacity-100 transition-opacity'}
+              />
               {isCollapsed ? (
                 <span className="text-[9px] leading-tight text-center whitespace-nowrap max-[1366px]:text-[8px]">
                   {collapsedLabelMap[item.label] || item.label}
@@ -346,13 +344,11 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
               }`}
               title={isCollapsed ? collapsedLabelMap.Settings : 'Settings'}
             >
-              <span
-                className={`material-symbols-outlined text-[22px] shrink-0 max-[1366px]:text-xl ${
-                  isSettingsActive ? '' : 'text-slate-400 group-hover:text-slate-600 transition-colors'
-                }`}
-              >
-                settings
-              </span>
+              <AppIcon
+                name="settings"
+                variant="nav"
+                className={isSettingsActive ? '' : 'opacity-70 group-hover:opacity-100 transition-opacity'}
+              />
               {isCollapsed ? (
                 <span className="text-[9px] leading-tight text-center whitespace-nowrap max-[1366px]:text-[8px]">
                   {collapsedLabelMap.Settings}

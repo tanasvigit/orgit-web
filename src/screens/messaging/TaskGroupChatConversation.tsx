@@ -29,6 +29,7 @@ import { MediaUpload } from '../../components/messaging/MediaUpload';
 import { VoiceRecorder } from '../../components/messaging/VoiceRecorder';
 import { LocationPicker } from '../../components/messaging/LocationPicker';
 import { extractUploadedMedia } from '../../utils/chatMedia';
+import { messageMatchesConversation } from '../../utils/conversationId';
 import { isTaskDeleted } from '../../utils/taskUtils';
 import { getTaskStatusCategoryFromTask } from '../../utils/taskStatus';
 import { Avatar } from '../../components/shared';
@@ -196,16 +197,12 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     
     try {
       setLoading(true);
-      const data = await messageService.getMessagesByConversationId(conversationId, 50, 0);
-      console.log('TaskGroupChat: Loaded messages from API:', data);
-      
-      // Handle different response formats
-      let rawMessages: any[] = [];
-      if (Array.isArray(data)) {
-        rawMessages = data;
-      } else if (data && typeof data === 'object') {
-        rawMessages = data.messages || data.data || [];
-      }
+      const { messages: rawMessages } = await messageService.getMessagesByConversationId(
+        conversationId,
+        50,
+        0
+      );
+      console.log('TaskGroupChat: Loaded messages from API:', rawMessages.length);
       
       // Normalize messages to ensure consistent field names
       const normalizedMessages = rawMessages.map((msg: any) => normalizeMessage(msg)).filter((msg: any) => msg !== null);
@@ -289,7 +286,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         await joinConversationRoom(conversationId);
 
         const handleNewMessage = (newMsg: any) => {
-          if (newMsg.conversation_id !== conversationId) return;
+          if (!messageMatchesConversation(newMsg, conversationId!, null)) return;
           
           const currentUserId = user?.id || user?.userId;
           const isMyMessage = newMsg.sender_id === currentUserId || newMsg.senderId === currentUserId;
@@ -733,17 +730,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   };
 
   // Handle send message
-  const getDeviceLocalTimestamp = () => {
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const year = now.getFullYear();
-    const month = pad(now.getMonth() + 1);
-    const day = pad(now.getDate());
-    const hours = pad(now.getHours());
-    const minutes = pad(now.getMinutes());
-    const seconds = pad(now.getSeconds());
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-  };
+  const getDeviceTimestamp = () => new Date().toISOString();
 
   const handleSend = async () => {
     if ((!message.trim() && !replyingTo && !editingMessage && pendingAttachments.length === 0) || !conversationId) return;
@@ -758,7 +745,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           messageType: 'text', 
           isEdit: true, 
           messageId: editingMessage.id,
-          deviceTimestamp: getDeviceLocalTimestamp(),
+          deviceTimestamp: getDeviceTimestamp(),
         });
         setEditingMessage(null);
         setMessage('');
@@ -788,7 +775,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             content: caption, 
             messageType: 'text', 
             replyToMessageId: replyingTo?.id || null,
-            deviceTimestamp: getDeviceLocalTimestamp(),
+            deviceTimestamp: getDeviceTimestamp(),
             // Only send visibilityMode for task groups
             ...(isTaskGroup && { visibilityMode }),
           });
@@ -818,7 +805,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             }
             const { storedValue } = extractUploadedMedia(uploadResponse);
             if (!storedValue) throw new Error('Upload did not return key');
-            mediaSocket.emit('send_message', { conversationId, messageType: item.type, mediaUrl: storedValue, fileName: item.name, fileSize: item.size, mimeType: item.file.type, replyToMessageId: replyingTo?.id || null, deviceTimestamp: getDeviceLocalTimestamp() });
+            mediaSocket.emit('send_message', { conversationId, messageType: item.type, mediaUrl: storedValue, fileName: item.name, fileSize: item.size, mimeType: item.file.type, replyToMessageId: replyingTo?.id || null, deviceTimestamp: getDeviceTimestamp() });
           } catch (err) {
             console.error('Upload error:', err);
             toast.error(`Failed to upload ${item.name}. Please try again.`);
@@ -857,7 +844,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           content: message.trim(), 
           messageType: 'text', 
           replyToMessageId: replyingTo?.id || null,
-          deviceTimestamp: getDeviceLocalTimestamp(),
+          deviceTimestamp: getDeviceTimestamp(),
           // Only send visibilityMode for task groups; backend will use 'private' for personal chats
           ...(isTaskGroup && { visibilityMode }),
         });
@@ -1163,7 +1150,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     try {
       const offset = messages.length;
       const response = await messageService.getMessagesByConversationId(conversationId, 50, offset);
-      const rawMessages = response.messages || response.data || [];
+      const rawMessages = response.messages || [];
       const newMessages = rawMessages.map((msg: any) => normalizeMessage(msg)).filter((msg: any) => msg !== null);
       
       if (newMessages.length > 0) {
@@ -1332,10 +1319,11 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       warehouse: { label: 'Warehouse', keys: ['warehouse_name', 'warehouseName', 'warehouse'] },
       project: { label: 'Project', keys: ['project_name', 'projectName', 'project'] },
       factory: { label: 'Factory', keys: ['factory_name', 'factoryName', 'factory'] },
-      org_node: { label: 'Organization node', keys: ['org_structure_path', 'orgStructurePath', 'task_unit', 'taskUnit'] },
+      org_unit: { label: 'Organization unit', keys: ['org_structure_path', 'orgStructurePath', 'task_unit', 'taskUnit'] },
     };
-    const pref = (userTaskConfig as any)?.taskUnitPreference || 'org_node';
-    const chosen = unitMap[pref] || unitMap.org_node;
+    const rawPref = (userTaskConfig as any)?.taskUnitPreference;
+    const pref = rawPref === 'org_node' || rawPref === 'org_unit' ? 'org_unit' : rawPref || 'org_unit';
+    const chosen = unitMap[pref] || unitMap.org_unit;
     const lookupKeys = [...chosen.keys, 'task_unit', 'taskUnit', 'task_unit_name', 'taskUnitName'];
     const unitName =
       lookupKeys.map((k) => (task as any)?.[k]).find((v) => typeof v === 'string' && v.trim()) || '';

@@ -76,7 +76,7 @@ export const SettingsScreen: React.FC = () => {
     { 
       icon: 'groups', 
       title: 'Entity List', 
-      subtitle: 'Assign clients to org nodes and manage service coverage', 
+      subtitle: 'Assign clients to org units and manage service coverage', 
       screen: '/admin/entities',
       color: 'pink'
     },

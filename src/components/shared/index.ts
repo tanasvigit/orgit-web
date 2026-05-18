@@ -6,5 +6,6 @@ export { StatusBadge } from './StatusBadge';
 export { Avatar } from './Avatar';
 export { ToggleSwitch } from './ToggleSwitch';
 export { TaskCard } from './TaskCard';
+export { AppIcon } from './AppIcon';
 export { ChatListItem } from './ChatListItem';
 

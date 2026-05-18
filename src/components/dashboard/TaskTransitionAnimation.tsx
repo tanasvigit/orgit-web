@@ -1,6 +1,8 @@
 import React, { useEffect, useState, RefObject } from 'react';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import { createPortal } from 'react-dom';
+import { AppIcon } from '../shared/AppIcon';
+import type { TaskStatusAppIconName } from '../../constants/appIcons';
 
 interface TaskTransitionAnimationProps {
   sourceRef: RefObject<HTMLElement>;
@@ -34,10 +36,10 @@ export const TaskTransitionAnimation: React.FC<TaskTransitionAnimationProps> = (
   const boxShadow = useTransform(shadowOpacity, (opacity) =>
     `0 ${4 * opacity}px ${12 * opacity}px rgba(0, 0, 0, ${0.3 * opacity})`
   );
-  const palette =
+  const palette: { from: string; to: string; icon: TaskStatusAppIconName } =
     toStatus === 'completed'
-      ? { from: 'rgb(243, 232, 255)', to: 'rgb(236, 253, 245)', icon: 'task_alt' } // purple-50 -> emerald-50
-      : { from: 'rgb(239, 246, 255)', to: 'rgb(243, 232, 255)', icon: 'pending_actions' }; // blue-50 -> purple-50
+      ? { from: 'rgb(243, 232, 255)', to: 'rgb(236, 253, 245)', icon: 'completed' }
+      : { from: 'rgb(239, 246, 255)', to: 'rgb(243, 232, 255)', icon: 'inprogress' };
   const backgroundColor = useTransform(progress, [0, 1], [palette.from, palette.to]);
 
   useEffect(() => {
@@ -162,7 +164,7 @@ export const TaskTransitionAnimation: React.FC<TaskTransitionAnimationProps> = (
         className="mb-2.5 p-2.5 rounded-lg text-purple-600 dark:text-purple-400"
         style={{ backgroundColor }}
       >
-        <span className="material-symbols-outlined text-xl">{palette.icon}</span>
+        <AppIcon name={palette.icon} variant="inline" />
       </motion.div>
     </motion.div>,
     portalRoot

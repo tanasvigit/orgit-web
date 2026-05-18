@@ -1,5 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { AppIcon } from './AppIcon';
+import type { AppIconName } from '../../constants/appIcons';
 
 export const BottomNav: React.FC = () => {
   const location = useLocation();
@@ -11,12 +13,11 @@ export const BottomNav: React.FC = () => {
     return false;
   };
 
-  const navItems = [
+  const navItems: { path: string; icon: AppIconName; label: string; badge?: number }[] = [
     { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-    { path: '/messages', icon: 'chat_bubble', label: 'Chat', badge: 4 },
-    { path: '/tasks', icon: 'check_circle', label: 'Task' },
-    { path: '/documents', icon: 'description', label: 'Document' },
-    // { path: '/compliance', icon: 'policy', label: 'Compliance' },
+    { path: '/messages', icon: 'chat', label: 'Chat', badge: 4 },
+    { path: '/tasks', icon: 'task', label: 'Task' },
+    { path: '/documents', icon: 'document', label: 'Document' },
     { path: '/settings', icon: 'settings', label: 'Settings' },
   ];
 
@@ -32,12 +33,11 @@ export const BottomNav: React.FC = () => {
               className="flex flex-col items-center justify-center w-full h-full gap-1 pt-2 group"
             >
               <div className="relative">
-                <span
-                  className={`material-symbols-outlined transition-colors ${active ? 'text-primary filled' : 'text-gray-400 dark:text-gray-500 group-hover:text-primary'}`}
-                  style={active ? { fontVariationSettings: '"FILL" 1, "wght" 700' } : {}}
-                >
-                  {item.icon}
-                </span>
+                <AppIcon
+                  name={item.icon}
+                  variant="nav"
+                  className={active ? '' : 'opacity-60 group-hover:opacity-100 transition-opacity'}
+                />
                 {item.badge && (
                   <span className="absolute -top-1 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
                     {item.badge}

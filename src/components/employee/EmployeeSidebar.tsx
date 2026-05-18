@@ -3,10 +3,12 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { showLogoutConfirm } from '../../utils/logoutConfirm';
+import { AppIcon } from '../shared/AppIcon';
+import type { AppIconName } from '../../constants/appIcons';
 
 interface NavItem {
   path: string;
-  icon: string;
+  icon: AppIconName;
   label: string;
 }
 
@@ -19,10 +21,10 @@ const collapsedLabelMap: Record<string, string> = {
 };
 
 const navItems: NavItem[] = [
-  { path: '/dashboard', icon: 'grid_view', label: 'Dashboard' },
+  { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
   { path: '/messages', icon: 'chat', label: 'Chats' },
-  { path: '/tasks', icon: 'check_circle', label: 'Task Management' },
-  { path: '/documents', icon: 'description', label: 'Document Management' },
+  { path: '/tasks', icon: 'task', label: 'Task Management' },
+  { path: '/documents', icon: 'document', label: 'Document Management' },
 ];
 
 const STORAGE_KEY = 'employee-sidebar-minimized-by-messages';
@@ -314,9 +316,11 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
               }`}
               title={isCollapsed ? item.label : ''}
             >
-              <span className={`material-icons-outlined text-2xl shrink-0 max-[1366px]:text-xl ${active ? '' : 'group-hover:text-primary'}`}>
-                {item.icon}
-              </span>
+              <AppIcon
+                name={item.icon}
+                variant="nav"
+                className={active ? '' : 'opacity-70 group-hover:opacity-100 transition-opacity'}
+              />
               {isCollapsed ? (
                 <span className="text-[9px] leading-tight text-center whitespace-nowrap max-[1366px]:text-[8px]">
                   {collapsedLabelMap[item.label] || item.label}
@@ -350,9 +354,11 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
               }`}
               title={isCollapsed ? 'Settings' : ''}
             >
-              <span className={`material-icons-outlined text-2xl shrink-0 max-[1366px]:text-xl ${isSettingsActive ? '' : 'group-hover:text-primary'}`}>
-                settings
-              </span>
+              <AppIcon
+                name="settings"
+                variant="nav"
+                className={isSettingsActive ? '' : 'opacity-70 group-hover:opacity-100 transition-opacity'}
+              />
               {isCollapsed ? (
                 <span className="text-[9px] leading-tight text-center whitespace-nowrap max-[1366px]:text-[8px]">
                   Settings
@@ -398,7 +404,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
                     : 'text-gray-400 hover:text-primary hover:bg-secondary/50 dark:hover:bg-primary/10'
                 }`}
               >
-                <span className="material-icons-outlined text-lg shrink-0">settings</span>
+                <AppIcon name="settings" variant="nav" />
                 <span className="font-medium text-sm whitespace-nowrap">Settings</span>
               </Link>
             </div>

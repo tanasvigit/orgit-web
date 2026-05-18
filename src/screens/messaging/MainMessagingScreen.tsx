@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from 'react-query';
 import { conversationService } from '../../services/conversationService';
 import { waitForSocketConnection } from '../../services/socketService';
 import { useAuth } from '../../context/AuthContext';
+import { conversationListMatchesMessage } from '../../utils/conversationId';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { ConversationList } from '../../components/messaging/ConversationList';
@@ -75,19 +76,26 @@ export const MainMessagingScreen: React.FC = () => {
     }
 
     queryClient.setQueryData(['conversations', 'chat'], (oldData: any[] = []) => {
-      const conversationId = message.conversation_id;
-      const conversationIndex = oldData.findIndex(
-        (conv: any) => (conv.id || conv.conversationId) === conversationId
+      const messageConversationId = message.conversation_id;
+      const conversationIndex = oldData.findIndex((conv: any) =>
+        conversationListMatchesMessage(conv, message)
       );
 
       if (conversationIndex === -1) {
-        // Conversation not found, refetch to get it
         queryClient.invalidateQueries(['conversations', 'chat']);
         return oldData;
       }
 
       const updated = [...oldData];
       const conversation = { ...updated[conversationIndex] };
+
+      if (
+        messageConversationId &&
+        (conversation.id || conversation.conversationId) !== messageConversationId
+      ) {
+        conversation.id = messageConversationId;
+        conversation.conversationId = messageConversationId;
+      }
 
       // Update last message
       conversation.lastMessage = {

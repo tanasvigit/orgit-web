@@ -25,6 +25,7 @@ import { VoiceRecorder } from '../../components/messaging/VoiceRecorder';
 import { LocationPicker } from '../../components/messaging/LocationPicker';
 import { UserProfileModal } from '../../components/messaging/UserProfileModal';
 import { extractUploadedMedia } from '../../utils/chatMedia';
+import { messageMatchesConversation } from '../../utils/conversationId';
 import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
 
 export const DirectChatConversation: React.FC = () => {
@@ -57,6 +58,9 @@ export const DirectChatConversation: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [typing, setTyping] = useState(false);
   const [otherUserId, setOtherUserId] = useState<string | null>(null);
+  /** UUID resolved from `direct_<userId>` by the API or socket */
+  const [resolvedConversationId, setResolvedConversationId] = useState<string | null>(null);
+  const activeConversationId = resolvedConversationId || conversationId || '';
   const [showMediaUpload, setShowMediaUpload] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
@@ -181,11 +185,20 @@ export const DirectChatConversation: React.FC = () => {
     
     try {
       setLoading(true);
-      const data = await messageService.getMessagesByConversationId(conversationId, 50, 0);
-      console.log('Loaded messages from API:', data.length);
-      
-      // Normalize messages to ensure consistent field names
-      const normalizedMessages = data.map((msg: any) => normalizeMessage(msg)).filter((msg: any) => msg !== null);
+      const { messages: rawMessages, conversationId: apiConversationId } =
+        await messageService.getMessagesByConversationId(conversationId, 50, 0);
+      if (
+        apiConversationId &&
+        apiConversationId !== conversationId &&
+        !apiConversationId.startsWith('direct_')
+      ) {
+        setResolvedConversationId(apiConversationId);
+      }
+      console.log('Loaded messages from API:', rawMessages.length);
+
+      const normalizedMessages = rawMessages
+        .map((msg: any) => normalizeMessage(msg))
+        .filter((msg: any) => msg !== null);
         
         // Remove any temp messages when loading from API (they should have been replaced by real messages)
       const currentUserId = user?.id;
@@ -209,7 +222,7 @@ export const DirectChatConversation: React.FC = () => {
       
       console.log('Normalized and sorted messages:', messagesWithoutTemp.length);
         setMessages(messagesWithoutTemp);
-        setHasMoreMessages(data.length >= 50);
+        setHasMoreMessages(rawMessages.length >= 50);
         
       // Calculate unread count (messages from other users that are not read)
         const unread = messagesWithoutTemp.filter(
@@ -224,10 +237,11 @@ export const DirectChatConversation: React.FC = () => {
       if (unread > 0) {
         setTimeout(async () => {
           try {
-            await messageService.markMessagesAsReadByConversationId(conversationId);
+            const readConvId = resolvedConversationId || conversationId;
+            await messageService.markMessagesAsReadByConversationId(readConvId);
             const socket = await waitForSocketConnection();
             socket.emit('message_read', {
-              conversationId,
+              conversationId: readConvId,
             });
           } catch (error) {
             console.error('Error marking messages as read after load:', error);
@@ -242,6 +256,10 @@ export const DirectChatConversation: React.FC = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    setResolvedConversationId(null);
+  }, [conversationId]);
 
   // Load messages when conversationId changes
   useEffect(() => {
@@ -302,7 +320,10 @@ export const DirectChatConversation: React.FC = () => {
 
   // Mark messages as read
   const markAsReadMutation = useMutation(
-    () => messageService.markMessagesAsReadByConversationId(conversationId!),
+    () =>
+      messageService.markMessagesAsReadByConversationId(
+        resolvedConversationId || conversationId!
+      ),
     {
       onSuccess: () => {
         queryClient.invalidateQueries(['conversations', 'chat']);
@@ -327,6 +348,18 @@ export const DirectChatConversation: React.FC = () => {
     }
   );
 
+  useEffect(() => {
+    if (
+      !resolvedConversationId ||
+      !conversationId ||
+      resolvedConversationId === conversationId
+    ) {
+      return;
+    }
+    const base = isAdmin ? '/admin/messages' : '/messages';
+    navigate(`${base}/${resolvedConversationId}`, { replace: true });
+  }, [resolvedConversationId, conversationId, navigate, isAdmin]);
+
   // Setup socket and join conversation room
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -347,8 +380,31 @@ export const DirectChatConversation: React.FC = () => {
         // This ensures we don't miss any events that are emitted immediately after joining
 
         // ========== MESSAGE LISTENERS (set up first) ==========
+        const handleConversationResolved = (payload: {
+          legacyConversationId?: string;
+          conversationId?: string;
+        }) => {
+          const nextId = payload?.conversationId;
+          if (!nextId) return;
+          if (
+            payload.legacyConversationId === conversationId ||
+            conversationId?.startsWith('direct_')
+          ) {
+            setResolvedConversationId(nextId);
+          }
+        };
+
         const handleNewMessage = (newMsg: any) => {
-          if (newMsg.conversation_id !== conversationId) return;
+          if (!messageMatchesConversation(newMsg, conversationId!, resolvedConversationId)) {
+            return;
+          }
+          if (
+            newMsg.conversation_id &&
+            conversationId?.startsWith('direct_') &&
+            newMsg.conversation_id !== conversationId
+          ) {
+            setResolvedConversationId(newMsg.conversation_id);
+          }
           const currentUserId = user?.id;
           const isMyMessage = newMsg.sender_id === currentUserId || newMsg.senderId === currentUserId;
           console.log('[socket] message received', { messageId: newMsg.id, conversationId: newMsg.conversation_id, senderId: newMsg.sender_id });
@@ -554,11 +610,10 @@ export const DirectChatConversation: React.FC = () => {
             setTimeout(async () => {
               try {
                 // Mark all unread messages in conversation as read
-                await messageService.markMessagesAsReadByConversationId(conversationId);
-                // Emit read receipt for this conversation
-              socket.emit('message_read', {
-                conversationId,
-              });
+                await messageService.markMessagesAsReadByConversationId(activeConversationId);
+                socket.emit('message_read', {
+                  conversationId: activeConversationId,
+                });
                 console.log('✅ Marked messages as read when new message arrived');
               } catch (err) {
                 console.error('Mark as read error:', err);
@@ -584,7 +639,14 @@ export const DirectChatConversation: React.FC = () => {
           const currentUserId = user?.id;
           
           // CRITICAL FIX: Only process updates for this conversation
-          if (update.conversationId && update.conversationId !== conversationId) {
+          if (
+            update.conversationId &&
+            !messageMatchesConversation(
+              { conversation_id: update.conversationId },
+              conversationId!,
+              resolvedConversationId
+            )
+          ) {
             console.log('⚠️ Status update ignored - different conversation:', {
               updateConversationId: update.conversationId,
               currentConversationId: conversationId,
@@ -698,7 +760,7 @@ export const DirectChatConversation: React.FC = () => {
         };
 
         const handleMessageEdited = (editedMsg: any) => {
-          if (editedMsg.conversation_id !== conversationId) return;
+          if (!messageMatchesConversation(editedMsg, conversationId!, resolvedConversationId)) return;
           
           setMessages((prev) =>
             prev.map(msg => {
@@ -712,7 +774,7 @@ export const DirectChatConversation: React.FC = () => {
         };
 
         const handleMessageDeleted = (deletedMsg: any) => {
-          if (deletedMsg.conversation_id !== conversationId) return;
+          if (!messageMatchesConversation(deletedMsg, conversationId!, resolvedConversationId)) return;
           
           setMessages((prev) =>
             prev.map(msg => {
@@ -842,8 +904,12 @@ export const DirectChatConversation: React.FC = () => {
         socket.on('online_users', handleOnlineUsers);
         socket.emit('get_online_users');
 
-        socket.emit('join_conversation', conversationId);
-        console.log('[socket] joined conversation room:', conversationId);
+        socket.on('conversation_resolved', handleConversationResolved);
+        socket.emit('join_conversation', activeConversationId);
+        if (conversationId !== activeConversationId) {
+          socket.emit('join_conversation', conversationId);
+        }
+        console.log('[socket] joined conversation room:', activeConversationId);
 
         socketRef.current = socket;
 
@@ -909,7 +975,11 @@ export const DirectChatConversation: React.FC = () => {
             if (tempMessageCleanupInterval) {
               clearInterval(tempMessageCleanupInterval);
             }
-            socket.emit('leave_conversation', conversationId);
+            socket.emit('leave_conversation', activeConversationId);
+            if (conversationId !== activeConversationId) {
+              socket.emit('leave_conversation', conversationId);
+            }
+            socket.off('conversation_resolved', handleConversationResolved);
             socket.off('new_message', handleNewMessage);
             socket.off('typing');
             socket.off('message_status_update');
@@ -948,7 +1018,17 @@ export const DirectChatConversation: React.FC = () => {
         clearTimeout(typingTimeoutRef.current);
       }
     };
-  }, [conversationId, user?.id, otherUserId, conversationData?.type, conversationData?.is_group, conversationData?.isTaskGroup, conversationData?.is_task_group]);
+  }, [
+    conversationId,
+    resolvedConversationId,
+    activeConversationId,
+    user?.id,
+    otherUserId,
+    conversationData?.type,
+    conversationData?.is_group,
+    conversationData?.isTaskGroup,
+    conversationData?.is_task_group,
+  ]);
 
   // Mark messages as read when conversation is opened
   useEffect(() => {
@@ -974,12 +1054,12 @@ export const DirectChatConversation: React.FC = () => {
         console.log('📖 Found unread messages while chat is open, marking as read:', unreadMessages.length);
         try {
           // Mark messages as read via API
-          await messageService.markMessagesAsReadByConversationId(conversationId);
-          
-          // Also emit socket event to ensure backend processes it and emits status updates
+          const readConvId = resolvedConversationId || conversationId;
+          await messageService.markMessagesAsReadByConversationId(readConvId);
+
           const socket = await waitForSocketConnection();
           socket.emit('message_read', {
-            conversationId,
+            conversationId: readConvId,
           });
           
           console.log('✅ Marked messages as read and emitted socket event');
@@ -998,7 +1078,7 @@ export const DirectChatConversation: React.FC = () => {
     return () => {
       clearInterval(interval);
     };
-  }, [conversationId, messages, user?.id]);
+  }, [conversationId, resolvedConversationId, messages, user?.id]);
 
   // Recalculate unread count
   useEffect(() => {
@@ -1076,18 +1156,7 @@ export const DirectChatConversation: React.FC = () => {
     }
   };
 
-  // Helper: get device local timestamp as "YYYY-MM-DD HH:MM:SS"
-  const getDeviceLocalTimestamp = () => {
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const year = now.getFullYear();
-    const month = pad(now.getMonth() + 1);
-    const day = pad(now.getDate());
-    const hours = pad(now.getHours());
-    const minutes = pad(now.getMinutes());
-    const seconds = pad(now.getSeconds());
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-  };
+  const getDeviceTimestamp = () => new Date().toISOString();
 
   // Handle send message
   const handleSend = async () => {
@@ -1103,7 +1172,7 @@ export const DirectChatConversation: React.FC = () => {
           messageType: 'text',
           isEdit: true,
           messageId: editingMessage.id,
-          deviceTimestamp: getDeviceLocalTimestamp(),
+          deviceTimestamp: getDeviceTimestamp(),
         });
         setEditingMessage(null);
         setMessage('');
@@ -1128,7 +1197,7 @@ export const DirectChatConversation: React.FC = () => {
             reply_to: replyingTo ? { id: replyingTo.id, sender_id: replyingTo.sender_id, content: replyingTo.content, message_type: replyingTo.message_type, sender_name: replyingTo.sender_name } : null,
           });
           if (tempMessage) setMessages((prev) => [...prev, tempMessage]);
-          socket.emit('send_message', { conversationId, text: caption, content: caption, messageType: 'text', replyToMessageId: replyingTo?.id || null, deviceTimestamp: getDeviceLocalTimestamp() });
+          socket.emit('send_message', { conversationId, text: caption, content: caption, messageType: 'text', replyToMessageId: replyingTo?.id || null, deviceTimestamp: getDeviceTimestamp() });
           lastPendingTempIdRef.current = null;
           setMessage('');
           setReplyingTo(null);
@@ -1164,7 +1233,7 @@ export const DirectChatConversation: React.FC = () => {
               fileSize: item.size,
               mimeType: item.file.type,
               replyToMessageId: replyingTo?.id || null,
-              deviceTimestamp: getDeviceLocalTimestamp(),
+              deviceTimestamp: getDeviceTimestamp(),
             });
           } catch (err) {
             console.error('Upload error:', err);
@@ -1198,7 +1267,7 @@ export const DirectChatConversation: React.FC = () => {
           setTimeout(() => scrollToBottom(), 100);
         }
         const socket = await waitForSocketConnection();
-        socket.emit('send_message', { conversationId, text: message.trim(), content: message.trim(), messageType: 'text', replyToMessageId: replyingTo?.id || null, deviceTimestamp: getDeviceLocalTimestamp() });
+        socket.emit('send_message', { conversationId, text: message.trim(), content: message.trim(), messageType: 'text', replyToMessageId: replyingTo?.id || null, deviceTimestamp: getDeviceTimestamp() });
         lastPendingTempIdRef.current = null;
       }
 
@@ -1538,7 +1607,7 @@ export const DirectChatConversation: React.FC = () => {
     try {
       const offset = messages.length;
       const response = await messageService.getMessagesByConversationId(conversationId, 50, offset);
-      const rawMessages = response.messages || response.data || [];
+      const rawMessages = response.messages || [];
       const newMessages = rawMessages.map((msg: any) => normalizeMessage(msg)).filter((msg: any) => msg !== null);
       
       if (newMessages.length > 0) {
