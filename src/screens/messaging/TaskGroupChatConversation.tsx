@@ -99,6 +99,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showUserActionsMenu, setShowUserActionsMenu] = useState(false);
   // Message visibility: 'shared_to_group' (default) or 'org_only' for task groups ONLY
   // For personal chats, visibility is always 'private' (handled by backend)
   const [visibilityMode, setVisibilityMode] = useState<'shared_to_group' | 'org_only'>('shared_to_group');
@@ -1194,8 +1195,8 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
   // Fetch all users for inline Add Members (same flow as Task Details page)
   const { data: allUsers = [], isLoading: isLoadingUsersForAdd } = useQuery(
-    ['all-users'],
-    () => conversationService.getAllUsers(),
+    ['org-contacts', 'task-group-add-members'],
+    () => conversationService.getOrgContacts(),
     { enabled: showAddMembersInline }
   );
 
@@ -1207,26 +1208,15 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     );
   }, [allUsers, groupMembers]);
 
-  // By default show same-organisation members (company employees); on search show all matching users including outsiders
-  const currentOrgId = user?.organizationId || (user as any)?.organization_id;
   const filteredUsersForAdd = useMemo(() => {
-    const hasSearch = (addMembersSearchQuery || '').trim().length > 0;
-    const q = addMembersSearchQuery.trim().toLowerCase();
-    if (hasSearch) {
-      return availableUsersForAdd.filter(
-        (u: any) =>
-          (u.name || '').toLowerCase().includes(q) ||
-          (u.mobile || u.phone || '').toString().toLowerCase().includes(q)
-      );
-    }
-    if (currentOrgId) {
-      const sameOrg = availableUsersForAdd.filter(
-        (u: any) => (u.organization_id || u.organizationId) === currentOrgId
-      );
-      return sameOrg.length > 0 ? sameOrg : availableUsersForAdd;
-    }
-    return availableUsersForAdd;
-  }, [availableUsersForAdd, addMembersSearchQuery, currentOrgId]);
+    const q = (addMembersSearchQuery || '').trim().toLowerCase();
+    if (!q) return availableUsersForAdd;
+    return availableUsersForAdd.filter(
+      (u: any) =>
+        (u.name || '').toLowerCase().includes(q) ||
+        (u.mobile || u.phone || '').toString().toLowerCase().includes(q)
+    );
+  }, [availableUsersForAdd, addMembersSearchQuery]);
 
   // Add members mutation (adds to conversation_members + task_assignees so new members see task in Task Management)
   const addMembersInlineMutation = useMutation(
@@ -2492,7 +2482,136 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             )}
           </div>
         </button>
-        <div className="flex items-center gap-4 text-gray-400" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-3 text-gray-400" onClick={(e) => e.stopPropagation()}>
+          {showTaskParticipantActionBar && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMoreMenu(false);
+                  setShowUserActionsMenu((prev) => !prev);
+                }}
+                className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white/80 px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-100 dark:border-gray-600 dark:bg-slate-800/80 dark:text-gray-200 dark:hover:bg-gray-800"
+                title="User actions"
+                aria-expanded={showUserActionsMenu}
+                aria-haspopup="menu"
+              >
+                <span className="material-symbols-outlined text-base">touch_app</span>
+                <span className="hidden sm:inline">User actions</span>
+                <span className="material-icons-outlined text-sm">
+                  {showUserActionsMenu ? 'expand_less' : 'expand_more'}
+                </span>
+              </button>
+              {showUserActionsMenu && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowUserActionsMenu(false)}
+                    aria-hidden="true"
+                  />
+                  <div
+                    role="menu"
+                    className="absolute right-0 top-full z-20 mt-1 w-52 rounded-lg border border-border-light bg-white py-1 shadow-lg dark:border-border-dark dark:bg-surface-dark"
+                  >
+                    {canMarkInProgressAction && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={markInProgressMutation.isLoading}
+                        onClick={() => {
+                          setShowUserActionsMenu(false);
+                          if (!taskId || markInProgressMutation.isLoading) return;
+                          markInProgressMutation.mutate();
+                        }}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                      >
+                        <span className="material-symbols-outlined text-lg text-primary">play_arrow</span>
+                        {markInProgressMutation.isLoading ? 'Moving…' : 'In Progress'}
+                      </button>
+                    )}
+                    {canOwnerForceCompleteChat && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={isCompleting}
+                        onClick={() => {
+                          setShowUserActionsMenu(false);
+                          handleOwnerCompleteTask();
+                        }}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                      >
+                        <span className="material-symbols-outlined text-lg text-emerald-600">check_circle</span>
+                        {isCompleting ? 'Completing…' : 'Complete'}
+                      </button>
+                    )}
+                    {canMarkAssigneeCompleteChat && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={isCompleting}
+                        onClick={() => {
+                          setShowUserActionsMenu(false);
+                          handleMarkComplete();
+                        }}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                      >
+                        <span className="material-symbols-outlined text-lg text-emerald-600">check_circle</span>
+                        {isCompleting ? 'Saving…' : 'My complete'}
+                      </button>
+                    )}
+                    {canRequestTaskDeleteAction && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={requestTaskDeleteMutation.isLoading}
+                        onClick={() => {
+                          setShowUserActionsMenu(false);
+                          setRequestDeleteReason('');
+                          setShowRequestDeleteModal(true);
+                        }}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                      >
+                        <span className="material-symbols-outlined text-lg text-amber-600">outgoing_mail</span>
+                        Request delete
+                      </button>
+                    )}
+                    {canExitWithCommentsAction && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={createExitRequestMutation.isLoading}
+                        onClick={() => {
+                          setShowUserActionsMenu(false);
+                          setExitRequestComment('');
+                          setShowExitRequestModal(true);
+                        }}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                      >
+                        <span className="material-symbols-outlined text-lg text-indigo-600">logout</span>
+                        Exit with comments
+                      </button>
+                    )}
+                    {canDeleteTaskDirectly && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={deleteTaskMutation.isLoading}
+                        onClick={() => {
+                          setShowUserActionsMenu(false);
+                          handleDeleteTaskFromChat();
+                        }}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-rose-300 dark:hover:bg-rose-950/30"
+                      >
+                        <span className="material-symbols-outlined text-lg">delete_outline</span>
+                        {deleteTaskMutation.isLoading ? 'Deleting…' : 'Delete task'}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           <button 
             onClick={(e) => {
               e.stopPropagation();
@@ -2517,6 +2636,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             <button 
               onClick={(e) => {
                 e.stopPropagation();
+                setShowUserActionsMenu(false);
                 setShowMoreMenu((prev) => !prev);
               }}
               className="hover:text-primary transition"
@@ -2639,135 +2759,6 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         </div>
       )}
 
-      {/* Task participant actions (aligned with Task Details: in progress, complete, request delete, exit) */}
-      {showTaskParticipantActionBar && (
-        <div className="border-b border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 px-3 py-2">
-          <div className="mx-auto flex w-full max-w-4xl items-center gap-2">
-            <span className="hidden shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 sm:inline">
-              Actions
-            </span>
-            <div className="flex min-w-0 flex-1 flex-nowrap items-stretch gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch]">
-          {canMarkInProgressAction && (
-            <button
-              type="button"
-              disabled={markInProgressMutation.isLoading}
-              onClick={() => {
-                if (!taskId || markInProgressMutation.isLoading) return;
-                markInProgressMutation.mutate();
-              }}
-              title="Mark as In Progress"
-              className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-primary px-2.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2 sm:px-3 sm:text-sm"
-            >
-              {markInProgressMutation.isLoading ? (
-                <>
-                  <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  <span className="hidden sm:inline">Moving…</span>
-                </>
-              ) : (
-                <>
-                  <span className="material-symbols-outlined shrink-0 text-[18px] sm:text-[20px]">play_arrow</span>
-                  <span>In Progress</span>
-                </>
-              )}
-            </button>
-          )}
-          {canOwnerForceCompleteChat && (
-            <button
-              type="button"
-              onClick={handleOwnerCompleteTask}
-              disabled={isCompleting}
-              title="Complete task"
-              className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-2.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2 sm:px-3 sm:text-sm"
-            >
-              {isCompleting ? (
-                <>
-                  <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  <span className="hidden sm:inline">Completing…</span>
-                </>
-              ) : (
-                <>
-                  <span className="material-symbols-outlined shrink-0 text-[18px] sm:text-[20px]">check_circle</span>
-                  <span>Complete</span>
-                </>
-              )}
-            </button>
-          )}
-          {canMarkAssigneeCompleteChat && (
-            <button
-              type="button"
-              onClick={handleMarkComplete}
-              disabled={isCompleting}
-              title="Mark My Task Complete"
-              className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-2.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2 sm:px-3 sm:text-sm"
-            >
-              {isCompleting ? (
-                <>
-                  <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  <span className="hidden sm:inline">Saving…</span>
-                </>
-              ) : (
-                <>
-                  <span className="material-symbols-outlined shrink-0 text-[18px] sm:text-[20px]">check_circle</span>
-                  <span>My complete</span>
-                </>
-              )}
-            </button>
-          )}
-          {canRequestTaskDeleteAction && (
-            <button
-              type="button"
-              onClick={() => {
-                setRequestDeleteReason('');
-                setShowRequestDeleteModal(true);
-              }}
-              disabled={requestTaskDeleteMutation.isLoading}
-              title="Request Delete"
-              className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-amber-300 bg-white px-2.5 py-2 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-50 disabled:opacity-50 dark:border-amber-700 dark:bg-slate-800/80 dark:text-amber-200 dark:hover:bg-amber-950/30 sm:gap-2 sm:px-3 sm:text-sm"
-            >
-              <span className="material-symbols-outlined shrink-0 text-[18px] sm:text-[20px]">outgoing_mail</span>
-              <span>Req. delete</span>
-            </button>
-          )}
-          {canExitWithCommentsAction && (
-            <button
-              type="button"
-              onClick={() => {
-                setExitRequestComment('');
-                setShowExitRequestModal(true);
-              }}
-              disabled={createExitRequestMutation.isLoading}
-              title="Exit with Comments"
-              className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-indigo-300 bg-white px-2.5 py-2 text-xs font-semibold text-indigo-800 transition-colors hover:bg-indigo-50 disabled:opacity-50 dark:border-indigo-700 dark:bg-slate-800/80 dark:text-indigo-200 dark:hover:bg-indigo-950/30 sm:gap-2 sm:px-3 sm:text-sm"
-            >
-              <span className="material-symbols-outlined shrink-0 text-[18px] sm:text-[20px]">logout</span>
-              <span>Exit</span>
-            </button>
-          )}
-          {canDeleteTaskDirectly && (
-            <button
-              type="button"
-              onClick={handleDeleteTaskFromChat}
-              disabled={deleteTaskMutation.isLoading}
-              title="Delete task"
-              className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-rose-300 bg-white px-2.5 py-2 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-50 disabled:opacity-50 dark:border-rose-800 dark:bg-slate-800/80 dark:text-rose-300 dark:hover:bg-rose-950/30 sm:gap-2 sm:px-3 sm:text-sm"
-            >
-              {deleteTaskMutation.isLoading ? (
-                <>
-                  <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-rose-600 border-t-transparent" />
-                  <span className="hidden sm:inline">Deleting…</span>
-                </>
-              ) : (
-                <>
-                  <span className="material-symbols-outlined shrink-0 text-[18px] sm:text-[20px]">delete_outline</span>
-                  <span>Delete</span>
-                </>
-              )}
-            </button>
-          )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Pending Verifications Section - EXACT mobile logic */}
       {pendingVerifications.length > 0 && (

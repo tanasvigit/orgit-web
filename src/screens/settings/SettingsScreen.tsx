@@ -93,7 +93,9 @@ export const SettingsScreen: React.FC = () => {
     setIsDownloadingTemplate(true);
     try {
       await entityMasterBulkService.getTemplate();
-      toast.success('OrgIt Settings template downloaded. Contains: Entity Master, Entity List, Service List, Employees, Cost Centres, Branches. Fill and upload to bulk update.');
+      toast.success(
+        'OrgIt Settings template downloaded. Sheets: Entity Master, Organisation Structure, Entity List, Service List, Tasks, Employees, Structure Reference. Fill in order and upload.'
+      );
     } catch (error: any) {
       toast.error(error.response?.data?.error || error.message || 'Failed to download template');
     } finally {

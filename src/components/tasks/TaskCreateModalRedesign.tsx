@@ -262,9 +262,11 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     }
   );
 
-  const { data: usersData } = useQuery('task-create-users-redesign', () => conversationService.getAllUsers(), {
-    enabled: visible,
-  });
+  const { data: usersData } = useQuery(
+    'task-create-org-contacts',
+    () => conversationService.getOrgContacts(),
+    { enabled: visible }
+  );
   const { data: serviceData } = useQuery(
     'task-create-org-services',
     async () => {
@@ -299,12 +301,10 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     { enabled: visible }
   );
 
-  const currentOrgId = String((user as any)?.organizationId || (user as any)?.organization_id || '');
-  const users = useMemo(() => {
-    const normalized = (usersData || []).map(normalizeUser).filter((u) => !!u.id);
-    if (!currentOrgId) return normalized;
-    return normalized.filter((u: any) => String(u?.organization_id || u?.organizationId || '') === currentOrgId);
-  }, [usersData, currentOrgId]);
+  const users = useMemo(
+    () => (usersData || []).map(normalizeUser).filter((u) => !!u.id),
+    [usersData]
+  );
   const services = useMemo(() => (Array.isArray(serviceData) ? serviceData : []), [serviceData]);
   const clients = useMemo(() => (Array.isArray(clientMatrixData) ? clientMatrixData : []), [clientMatrixData]);
   const taskUnitSections = useMemo<TaskUnitSection[]>(() => {

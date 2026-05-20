@@ -92,7 +92,7 @@ export const TaskCreationScreen: React.FC = () => {
   // Fetch users for assignee selection
   const { data: usersData } = useQuery(
     'allUsers',
-    () => conversationService.getAllUsers()
+    () => conversationService.getOrgContacts()
   );
 
   const { data: tcUserConfig, isFetched } = useQuery(

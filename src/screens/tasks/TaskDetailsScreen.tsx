@@ -692,8 +692,8 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
 
   // Fetch all users for adding members
   const { data: allUsers = [], isLoading: isLoadingUsers } = useQuery(
-    ['all-users'],
-    () => conversationService.getAllUsers(),
+    ['org-contacts', 'task-details-add-members'],
+    () => conversationService.getOrgContacts(),
     { enabled: showAddMembers }
   );
 
@@ -704,26 +704,15 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
     return allUsers.filter((u: any) => !assigneeIds.includes(u.id));
   }, [allUsers, assignees]);
 
-  // By default show same-organisation members (company employees); on search show all matching users including outsiders
-  const currentOrgId = user?.organizationId || (user as any)?.organization_id;
   const filteredUsers = React.useMemo(() => {
-    const hasSearch = (searchQuery || '').trim().length > 0;
-    const q = searchQuery.trim().toLowerCase();
-    if (hasSearch) {
-      return availableUsers.filter(
-        (u: any) =>
-          (u.name || '').toLowerCase().includes(q) ||
-          (u.mobile || u.phone || '').toString().toLowerCase().includes(q)
-      );
-    }
-    if (currentOrgId) {
-      const sameOrg = availableUsers.filter(
-        (u: any) => (u.organization_id || u.organizationId) === currentOrgId
-      );
-      return sameOrg.length > 0 ? sameOrg : availableUsers;
-    }
-    return availableUsers;
-  }, [availableUsers, searchQuery, currentOrgId]);
+    const q = (searchQuery || '').trim().toLowerCase();
+    if (!q) return availableUsers;
+    return availableUsers.filter(
+      (u: any) =>
+        (u.name || '').toLowerCase().includes(q) ||
+        (u.mobile || u.phone || '').toString().toLowerCase().includes(q)
+    );
+  }, [availableUsers, searchQuery]);
 
   const toggleUserSelection = (userId: string) => {
     setSelectedUserIds(prev => 

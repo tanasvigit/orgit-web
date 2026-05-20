@@ -158,7 +158,6 @@ type OrgChartNodeCardProps = {
   onSelect: () => void;
   onAddSibling: () => void;
   onAddChild: () => void;
-  onArchive: () => void;
   onOpenView: () => void;
   onOpenEdit: () => void;
   disableSibling: boolean;
@@ -176,7 +175,6 @@ function OrgChartNodeCard({
   onSelect,
   onAddSibling,
   onAddChild,
-  onArchive,
   onOpenView,
   onOpenEdit,
   disableSibling,
@@ -248,18 +246,6 @@ function OrgChartNodeCard({
             >
               <span className="material-symbols-outlined text-[15px]">edit</span>
             </button>
-            <button
-              type="button"
-              title="Archive"
-              disabled={node.levelNumber === 1}
-              onClick={(e) => {
-                e.stopPropagation();
-                onArchive();
-              }}
-              className="rounded p-0.5 text-amber-600 hover:bg-white/60 disabled:opacity-30 dark:hover:bg-slate-900/40"
-            >
-              <span className="material-symbols-outlined text-[15px]">archive</span>
-            </button>
           </div>
         </div>
       </div>
@@ -327,7 +313,6 @@ export type OrganizationStructureHorizontalChartProps = {
   getNodeFieldValues: (node?: OrganizationStructureNode | null) => Record<string, unknown>;
   getNodeEntityType: (node?: OrganizationStructureNode | null) => string;
   openInlineDraft: (relation: 'root' | 'child' | 'sibling', referenceNode?: OrganizationStructureNode) => void;
-  onArchiveNode: (node: OrganizationStructureNode) => void;
   onOpenNodeView: (node: OrganizationStructureNode) => void;
   onOpenNodeEdit: (node: OrganizationStructureNode) => void;
   /** When set, chart positions the draft card near the reference node. */
@@ -351,7 +336,6 @@ export function OrganizationStructureHorizontalChart({
   getNodeFieldValues,
   getNodeEntityType,
   openInlineDraft,
-  onArchiveNode,
   onOpenNodeView,
   onOpenNodeEdit,
   inlineDraft,
@@ -608,7 +592,6 @@ export function OrganizationStructureHorizontalChart({
                   onSelect={() => onSelectNode(node)}
                   onAddSibling={() => openInlineDraft('sibling', node)}
                   onAddChild={() => openInlineDraft('child', node)}
-                  onArchive={() => onArchiveNode(node)}
                   onOpenView={() => onOpenNodeView(node)}
                   onOpenEdit={() => onOpenNodeEdit(node)}
                   disableSibling={node.levelNumber === 1}

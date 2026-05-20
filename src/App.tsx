@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'r
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
+import { NotificationSocketBridge } from './components/NotificationSocketBridge';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ChangePasswordPopup } from './components/auth/ChangePasswordPopup';
 import './App.css';
@@ -165,6 +166,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ToastProvider>
+          <NotificationSocketBridge />
         <Router>
           <ChangePasswordPopup />
           <Routes>

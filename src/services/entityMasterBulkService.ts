@@ -3,6 +3,7 @@ import api from './api';
 export interface EntityMasterUploadResult {
   updated: {
     organizations: number;
+    organization_structure_nodes?: number;
     task_services: number;
     client_entities: number;
     client_entity_services: number;
@@ -25,6 +26,7 @@ export interface EntityMasterBulkStatusResponse {
   completedAt: string | null;
   summary?: {
     organizations?: number;
+    organization_structure_nodes?: number;
     task_services?: number;
     client_entities?: number;
     client_entity_services?: number;
@@ -38,9 +40,11 @@ export interface EntityMasterBulkStatusResponse {
 export const entityMasterBulkService = {
   /**
    * Download Excel template (GET blob, trigger save).
-   * @param only - 'organisation' | 'employees' | 'service-list' | 'entity-list' | undefined (full template).
+   * @param only - 'organisation' | 'organisation-structure' | 'employees' | 'service-list' | 'entity-list' | undefined (full template).
    */
-  getTemplate: async (only?: 'organisation' | 'employees' | 'service-list' | 'entity-list'): Promise<void> => {
+  getTemplate: async (
+    only?: 'organisation' | 'organisation-structure' | 'employees' | 'service-list' | 'entity-list'
+  ): Promise<void> => {
     const params = only ? { only } : undefined;
     console.log('[EntityMaster] getTemplate', { only, params });
     const response = await api.get('/admin/entity-master/template', {
@@ -51,13 +55,15 @@ export const entityMasterBulkService = {
     const filename =
       only === 'organisation'
         ? 'Entity_Master_template.xlsx'
-        : only === 'employees'
-          ? 'Employee_template.xlsx'
-          : only === 'service-list'
-            ? 'Service_List_template.xlsx'
-            : only === 'entity-list'
-              ? 'Entity_List_template.xlsx'
-              : 'OrgIt_Settings_template.xlsx';
+        : only === 'organisation-structure'
+          ? 'Org_Structure_template.xlsx'
+          : only === 'employees'
+            ? 'Employee_template.xlsx'
+            : only === 'service-list'
+              ? 'Service_List_template.xlsx'
+              : only === 'entity-list'
+                ? 'Entity_List_template.xlsx'
+                : 'OrgIt_Settings_template.xlsx';
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

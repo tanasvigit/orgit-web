@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import { AdminLayout } from '../../../components/admin/AdminLayout';
 import { useToast } from '../../../context/ToastContext';
+import { entityMasterBulkService } from '../../../services/entityMasterBulkService';
 import {
-  archiveOrganizationStructureNode,
   createOrganizationStructureNode,
   OrganizationStructureFieldSchemaField,
   getOrganizationStructureTree,
@@ -364,16 +364,6 @@ export const OrganisationDefinitionScreen: React.FC = () => {
     }
   );
 
-  const archiveNodeMutation = useMutation((id: string) => archiveOrganizationStructureNode(id), {
-    onSuccess: () => {
-      queryClient.invalidateQueries('organization-structure-tree');
-      toast.success('Hierarchy node archived successfully');
-    },
-    onError: (error: any) => {
-      toast.error(error?.response?.data?.error || error?.message || 'Failed to archive hierarchy node');
-    },
-  });
-
   const openNodeModal = (node: OrganizationStructureNode, panelMode: NodeModalPanelMode) => {
     setNodeModalState({ node, panelMode });
   };
@@ -516,12 +506,6 @@ export const OrganisationDefinitionScreen: React.FC = () => {
     });
   };
 
-  const handleArchiveNode = (node: OrganizationStructureNode) => {
-    if (window.confirm(`Archive "${node.name}"? Archived nodes stay visible to admins but are hidden from operations.`)) {
-      archiveNodeMutation.mutate(node.id);
-    }
-  };
-
   function renderInlineDraftForm(indentPx: number): React.ReactNode {
     if (!inlineDraft) return null;
 
@@ -636,7 +620,6 @@ export const OrganisationDefinitionScreen: React.FC = () => {
                   getNodeFieldValues={getNodeFieldValues}
                   getNodeEntityType={getNodeEntityType}
                   openInlineDraft={openInlineDraft}
-                  onArchiveNode={handleArchiveNode}
                   onOpenNodeView={(node) => openNodeModal(node, 'view')}
                   onOpenNodeEdit={(node) => openNodeModal(node, 'edit')}
                   inlineDraft={inlineDraft}
@@ -673,6 +656,11 @@ export const OrganisationDefinitionScreen: React.FC = () => {
 
 export const OrganisationStructureScreen: React.FC = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const bulkFileInputRef = useRef<HTMLInputElement>(null);
+  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
+  const [isBulkUploading, setIsBulkUploading] = useState(false);
+
   const treeQuery = useQuery(
     ['organization-structure-tree-overview'],
     () =>
@@ -687,6 +675,63 @@ export const OrganisationStructureScreen: React.FC = () => {
 
   const rootDefined = Boolean(treeQuery.data?.rootNode);
   const summary = treeQuery.data?.summary;
+
+  const handleDownloadStructureTemplate = async () => {
+    setIsDownloadingTemplate(true);
+    try {
+      await entityMasterBulkService.getTemplate('organisation-structure');
+      toast.success('Organisation Structure template downloaded. Fill LEVEL, PARENT_NAME, NAME, CODE and upload.');
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to download template');
+    } finally {
+      setIsDownloadingTemplate(false);
+    }
+  };
+
+  const bulkUploadMutation = useMutation((file: File) => entityMasterBulkService.uploadFile(file), {
+    onSuccess: async (res) => {
+      const data = res.data?.data;
+      if (!data?.uploadId) {
+        if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
+        return;
+      }
+      try {
+        const status = await entityMasterBulkService.pollUntilDone(data.uploadId);
+        if (status.status === 'completed') {
+          toast.success('Organisation Structure bulk upload completed.');
+        } else {
+          toast.warning('Bulk upload finished with errors.');
+        }
+        if (status.errors?.length) {
+          status.errors.slice(0, 5).forEach((e) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
+          if (status.errors.length > 5) toast.error(`… and ${status.errors.length - 5} more errors`);
+        }
+      } catch (err: any) {
+        toast.error(err?.message || 'Failed to get upload status');
+      }
+      treeQuery.refetch();
+      if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.error || err.message || 'Upload failed');
+    },
+    onSettled: () => {
+      setIsBulkUploading(false);
+    },
+  });
+
+  const handleBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const name = (file.name || '').toLowerCase();
+    if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
+      toast.error('Please select an Excel file (.xlsx or .xls)');
+      e.target.value = '';
+      return;
+    }
+    setIsBulkUploading(true);
+    bulkUploadMutation.mutate(file);
+  };
 
   const cards = [
     {
@@ -746,6 +791,39 @@ export const OrganisationStructureScreen: React.FC = () => {
           <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
             <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Archived</p>
             <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{summary?.archivedNodes || 0}</p>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Bulk update from Excel</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+            Download the current template to create or update hierarchy nodes (LEVEL, PARENT_NAME, NAME, CODE). Use the
+            Structure Reference sheet for node IDs when assigning clients or employees.
+          </p>
+          <div className="flex flex-wrap gap-3 items-center">
+            <button
+              type="button"
+              onClick={handleDownloadStructureTemplate}
+              disabled={isDownloadingTemplate}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 disabled:opacity-50"
+            >
+              {isDownloadingTemplate ? 'Downloading…' : 'Download Organisation Structure template'}
+            </button>
+            <input
+              ref={bulkFileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={handleBulkFileChange}
+            />
+            <button
+              type="button"
+              onClick={() => bulkFileInputRef.current?.click()}
+              disabled={isBulkUploading}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white disabled:opacity-50"
+            >
+              {isBulkUploading ? 'Uploading…' : 'Upload Excel file'}
+            </button>
           </div>
         </div>
 

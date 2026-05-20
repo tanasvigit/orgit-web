@@ -263,6 +263,20 @@ export const conversationService = {
     }));
   },
 
+  /** Same-organization directory for new chat and assign-people pickers. */
+  getOrgContacts: async (): Promise<User[]> => {
+    const response = await api.get<UsersListResponse>('/conversations/users/org');
+    const raw = response.data.users || [];
+    return raw.map((u: any) => ({
+      ...u,
+      mobile: u.mobile ?? u.phone,
+      phone: u.phone ?? u.mobile,
+      organization_id: u.organization_id ?? u.organizationId,
+      organizationId: u.organizationId ?? u.organization_id,
+      profilePhotoUrl: u.profilePhotoUrl ?? u.profile_photo_url ?? u.profile_photo,
+    }));
+  },
+
   /**
    * Pin or unpin a conversation
    */

@@ -27,6 +27,17 @@ const navItems: NavItem[] = [
   { path: '/admin/documents', icon: 'document', label: 'Document Management' },
 ];
 
+const subNavLinkBase =
+  'flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-lg px-2 py-2 transition-colors min-h-[40px] max-[1366px]:min-h-[36px]';
+
+function subNavLinkClass(active: boolean) {
+  return `${subNavLinkBase} ${
+    active
+      ? 'bg-primary/10 font-semibold text-primary'
+      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+  }`;
+}
+
 const ADMIN_STORAGE_KEY = 'admin-sidebar-minimized-by-messages';
 const ADMIN_STORAGE_KEY_MANUAL = 'admin-sidebar-manually-expanded';
 
@@ -278,7 +289,11 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
           </p>
         )}
       </div>
-      <nav className={`flex-1 overflow-y-auto overflow-x-visible pb-2 flex flex-col gap-1 max-[1366px]:gap-0 ${isCollapsed ? 'px-3 max-[1366px]:px-1.5' : 'px-3 md:px-6 max-[1366px]:px-3'}`}>
+      <nav
+        className={`flex min-h-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto pb-2 max-[1366px]:gap-0 ${
+          isCollapsed ? 'px-3 max-[1366px]:px-1.5' : 'px-3 md:px-4 max-[1366px]:px-3'
+        }`}
+      >
         {navItems.map((item) => {
           // Special handling for Dashboard - only active when exactly /admin or /admin/
           let isActive: boolean;
@@ -296,7 +311,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                   setIsMobileOpen(false);
                 }
               }}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
+              className={`flex min-w-0 w-full items-center gap-2 overflow-hidden rounded-lg px-2 py-2.5 transition-colors group min-h-[44px] max-[1366px]:min-h-[34px] max-[1366px]:py-1.5 ${
                 isCollapsed ? 'justify-center flex-col gap-0.5 py-2' : ''
               } ${
                 isActive
@@ -315,16 +330,16 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                   {collapsedLabelMap[item.label] || item.label}
                 </span>
               ) : (
-                <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0 max-[1366px]:text-xs">{item.label}</span>
+                <span className="min-w-0 flex-1 truncate font-medium text-sm max-[1366px]:text-xs">{item.label}</span>
               )}
             </Link>
           );
         })}
         
         {/* Settings: icon + label navigate; chevron toggles dropdown */}
-        <div className="relative">
+        <div className="relative min-w-0 w-full">
           <div
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group min-w-0 min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
+            className={`flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2.5 transition-colors group min-h-[44px] max-[1366px]:min-h-[34px] max-[1366px]:py-1.5 ${
               isCollapsed ? 'justify-center flex-col gap-0.5 py-2' : ''
             } ${
               isSettingsActive
@@ -339,22 +354,22 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                 navigate('/admin/settings');
                 if (window.innerWidth < 768) setIsMobileOpen(false);
               }}
-              className={`flex min-w-0 flex-1 text-left ${
-                isCollapsed ? 'flex-col items-center justify-center gap-0.5' : 'items-center gap-3'
+              className={`flex min-w-0 flex-1 overflow-hidden text-left ${
+                isCollapsed ? 'flex-col items-center justify-center gap-0.5' : 'items-center gap-2'
               }`}
               title={isCollapsed ? collapsedLabelMap.Settings : 'Settings'}
             >
               <AppIcon
                 name="settings"
                 variant="nav"
-                className={isSettingsActive ? '' : 'opacity-70 group-hover:opacity-100 transition-opacity'}
+                className={`shrink-0 ${isSettingsActive ? '' : 'opacity-70 group-hover:opacity-100 transition-opacity'}`}
               />
               {isCollapsed ? (
                 <span className="text-[9px] leading-tight text-center whitespace-nowrap max-[1366px]:text-[8px]">
                   {collapsedLabelMap.Settings}
                 </span>
               ) : (
-                <span className="font-medium text-sm whitespace-nowrap overflow-visible flex-shrink-0 flex-1 max-[1366px]:text-xs">Settings</span>
+                <span className="min-w-0 flex-1 truncate font-medium text-sm max-[1366px]:text-xs">Settings</span>
               )}
             </button>
             {!isCollapsed && (
@@ -376,7 +391,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
 
           {/* Dropdown Menu */}
           {!isCollapsed && isSettingsOpen && (
-            <div className="ml-4 mt-1 space-y-1 border-l-2 border-slate-200 pl-4">
+            <div className="ml-1.5 mt-1 min-w-0 space-y-0.5 border-l-2 border-slate-200 pl-2">
               <Link
                 to="/admin/users"
                 onClick={() => {
@@ -384,14 +399,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                     setIsMobileOpen(false);
                   }
                 }}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
+                className={subNavLinkClass(
                   location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users/')
-                    ? 'bg-primary/10 text-primary font-semibold'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
+                )}
+                title="Employees"
               >
-                <span className="material-symbols-outlined text-lg shrink-0">group</span>
-                <span className="font-medium text-sm whitespace-nowrap">Employees</span>
+                <span className="material-symbols-outlined shrink-0 text-[18px]">group</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">Employees</span>
               </Link>
               <Link
                 to="/admin/services"
@@ -400,14 +414,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                     setIsMobileOpen(false);
                   }
                 }}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
+                className={subNavLinkClass(
                   location.pathname === '/admin/services' || location.pathname.startsWith('/admin/services/')
-                    ? 'bg-primary/10 text-primary font-semibold'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
+                )}
+                title="Service List"
               >
-                <span className="material-symbols-outlined text-lg shrink-0">list_alt</span>
-                <span className="font-medium text-sm whitespace-nowrap">Service List</span>
+                <span className="material-symbols-outlined shrink-0 text-[18px]">list_alt</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">Service List</span>
               </Link>
               <Link
                 to="/admin/entity-master"
@@ -416,14 +429,11 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                     setIsMobileOpen(false);
                   }
                 }}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
-                  location.pathname === '/admin/entity-master'
-                    ? 'bg-primary/10 text-primary font-semibold'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
+                className={subNavLinkClass(location.pathname === '/admin/entity-master')}
+                title="Entity Master Data"
               >
-                <span className="material-symbols-outlined text-lg shrink-0">corporate_fare</span>
-                <span className="font-medium text-sm whitespace-nowrap">Entity Master Data</span>
+                <span className="material-symbols-outlined shrink-0 text-[18px]">corporate_fare</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">Entity Master Data</span>
               </Link>
               <Link
                 to="/admin/entities"
@@ -432,14 +442,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                     setIsMobileOpen(false);
                   }
                 }}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
+                className={subNavLinkClass(
                   location.pathname === '/admin/entities' || location.pathname.startsWith('/admin/entities/')
-                    ? 'bg-primary/10 text-primary font-semibold'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
+                )}
+                title="Entity List"
               >
-                <span className="material-symbols-outlined text-lg shrink-0">groups</span>
-                <span className="font-medium text-sm whitespace-nowrap">Entity List</span>
+                <span className="material-symbols-outlined shrink-0 text-[18px]">groups</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">Entity List</span>
               </Link>
               <Link
                 to="/admin/settings/org-definition"
@@ -448,14 +457,11 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                     setIsMobileOpen(false);
                   }
                 }}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
-                  location.pathname === '/admin/settings/org-definition'
-                    ? 'bg-primary/10 text-primary font-semibold'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
+                className={subNavLinkClass(location.pathname === '/admin/settings/org-definition')}
+                title="Org Definition"
               >
-                <span className="material-symbols-outlined text-lg shrink-0">schema</span>
-                <span className="font-medium text-sm whitespace-nowrap">Org Definition</span>
+                <span className="material-symbols-outlined shrink-0 text-[18px]">schema</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">Org Definition</span>
               </Link>
               <Link
                 to="/admin/settings/organisation-structure"
@@ -464,16 +470,15 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                     setIsMobileOpen(false);
                   }
                 }}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
+                className={subNavLinkClass(
                   location.pathname === '/admin/settings/org-definition' ||
-                  location.pathname === '/admin/settings/organisation-structure' ||
-                  location.pathname.startsWith('/admin/settings/reporting-hierarchy')
-                    ? 'bg-primary/10 text-primary font-semibold'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
+                    location.pathname === '/admin/settings/organisation-structure' ||
+                    location.pathname.startsWith('/admin/settings/reporting-hierarchy')
+                )}
+                title="Organisation Structure"
               >
-                <span className="material-symbols-outlined text-lg shrink-0">account_tree</span>
-                <span className="font-medium text-sm whitespace-nowrap">Organisation Structure</span>
+                <span className="material-symbols-outlined shrink-0 text-[18px]">account_tree</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">Organisation Structure</span>
               </Link>
               <Link
                 to="/admin/settings/user-config"
@@ -482,14 +487,11 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                     setIsMobileOpen(false);
                   }
                 }}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group min-w-0 min-h-[40px] ${
-                  location.pathname === '/admin/settings/user-config'
-                    ? 'bg-primary/10 text-primary font-semibold'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
+                className={subNavLinkClass(location.pathname === '/admin/settings/user-config')}
+                title="User configuration"
               >
-                <span className="material-symbols-outlined text-lg shrink-0">tune</span>
-                <span className="font-medium text-sm whitespace-nowrap">User configuration</span>
+                <span className="material-symbols-outlined shrink-0 text-[18px]">tune</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">User configuration</span>
               </Link>
             </div>
           )}
@@ -503,7 +505,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
               setIsMobileOpen(false);
             }
           }}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
+          className={`flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-xl px-2 py-2.5 transition-colors min-h-[44px] max-[1366px]:min-h-[34px] max-[1366px]:py-1.5 ${
             isCollapsed ? 'justify-center' : ''
           } ${
             location.pathname === '/profile'
@@ -513,7 +515,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
           title={isCollapsed ? 'Profile' : ''}
         >
           <span className="material-icons-outlined text-2xl shrink-0 max-[1366px]:text-xl">person</span>
-          {!isCollapsed && <span className="font-medium text-sm max-[1366px]:text-xs">Profile</span>}
+          {!isCollapsed && <span className="min-w-0 flex-1 truncate font-medium text-sm max-[1366px]:text-xs">Profile</span>}
         </button>
         <button
           onClick={() => {
@@ -523,13 +525,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
               },
             });
           }}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
+          className={`flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-xl px-2 py-2.5 transition-colors min-h-[44px] max-[1366px]:min-h-[34px] max-[1366px]:py-1.5 ${
             isCollapsed ? 'justify-center' : ''
           } text-slate-500 hover:text-red-500 hover:bg-red-50`}
           title={isCollapsed ? 'Logout' : ''}
         >
           <span className="material-icons-outlined text-2xl shrink-0 max-[1366px]:text-xl">logout</span>
-          {!isCollapsed && <span className="font-medium text-sm max-[1366px]:text-xs">Logout</span>}
+          {!isCollapsed && <span className="min-w-0 flex-1 truncate font-medium text-sm max-[1366px]:text-xs">Logout</span>}
         </button>
       </div>
     </>
@@ -547,7 +549,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
       
       {/* Desktop Sidebar */}
       <aside
-        className={`hidden md:flex flex-col bg-white border-r border-slate-200 h-full font-body shrink-0 z-20 transition-all duration-300 ${
+        className={`hidden md:flex h-full shrink-0 z-20 flex-col overflow-hidden border-r border-slate-200 bg-white font-body transition-all duration-300 ${
           isCollapsed ? 'w-[70px]' : 'w-[240px]'
         }`}
         onClick={(event) => {
@@ -561,7 +563,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
 
       {/* Mobile Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 md:hidden flex flex-col bg-white border-r border-slate-200 shadow-xl transition-transform duration-300 w-72 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col overflow-hidden border-r border-slate-200 bg-white shadow-xl transition-transform duration-300 md:hidden ${
           isMobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
