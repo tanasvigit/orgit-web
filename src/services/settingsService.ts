@@ -133,13 +133,27 @@ export interface OrganizationStructureNodePathItem {
   status: 'active' | 'inactive' | 'archived';
 }
 
+export interface OrganizationStructureStage {
+  id: string;
+  organizationId: string;
+  stageOrder: number;
+  stageLabel: string;
+  isActive: boolean;
+  levelIds: string[];
+  levels: OrganizationStructureLevel[];
+}
+
 export interface OrganizationStructureNode {
   id: string;
   organizationId: string;
+  stageId?: string | null;
+  stageOrder?: number | null;
+  stageLabel?: string | null;
   levelId: string;
   levelNumber: number;
   levelKey: string;
   levelLabel: string;
+  entityField?: string | null;
   parentNodeId?: string | null;
   parentName?: string | null;
   name: string;
@@ -159,15 +173,19 @@ export interface OrganizationStructureNode {
 }
 
 export interface OrganizationStructureTree {
+  stages?: OrganizationStructureStage[];
   levels: OrganizationStructureLevel[];
   nodes: OrganizationStructureNode[];
   rootNode: OrganizationStructureNode | null;
   summary: {
+    totalStages?: number;
     totalLevels: number;
     totalNodes: number;
     activeNodes: number;
     archivedNodes: number;
-    hasRootGroup: boolean;
+    hasRootNode: boolean;
+    /** @deprecated use hasRootNode */
+    hasRootGroup?: boolean;
   };
 }
 
@@ -239,8 +257,12 @@ export const getOrganizationStructureOperationalOptions = async () => {
 export const createOrganizationStructureNode = async (data: {
   relation: 'root' | 'child' | 'sibling';
   referenceNodeId?: string;
+  parentNodeId?: string;
+  targetLevelId?: string;
+  stageId?: string;
   targetLevelNumber?: number;
   targetSectionLabel?: string;
+  entityField?: string;
   name?: string;
   code?: string | null;
   description?: string;

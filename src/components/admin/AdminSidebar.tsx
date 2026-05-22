@@ -451,19 +451,6 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">Entity List</span>
               </Link>
               <Link
-                to="/admin/settings/org-definition"
-                onClick={() => {
-                  if (window.innerWidth < 768) {
-                    setIsMobileOpen(false);
-                  }
-                }}
-                className={subNavLinkClass(location.pathname === '/admin/settings/org-definition')}
-                title="Org Definition"
-              >
-                <span className="material-symbols-outlined shrink-0 text-[18px]">schema</span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">Org Definition</span>
-              </Link>
-              <Link
                 to="/admin/settings/organisation-structure"
                 onClick={() => {
                   if (window.innerWidth < 768) {

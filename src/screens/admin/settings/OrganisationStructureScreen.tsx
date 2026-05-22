@@ -6,10 +6,12 @@ import { useToast } from '../../../context/ToastContext';
 import { entityMasterBulkService } from '../../../services/entityMasterBulkService';
 import {
   createOrganizationStructureNode,
+  deleteOrganizationStructureNode,
   OrganizationStructureFieldSchemaField,
   getOrganizationStructureTree,
   OrganizationStructureLevel,
   OrganizationStructureNode,
+  OrganizationStructureStage,
   updateOrganizationStructureNode,
 } from '../../../services/settingsService';
 import {
@@ -20,10 +22,10 @@ import {
   OrganizationStructureHorizontalChart,
 } from './OrganizationStructureHorizontalChart';
 import {
-  getEntityTypeOptionsForSection,
-  getOrgLevelChoicesForChild,
-  getOrgLevelDefinitionByHeader,
+  computeDraftStageOrder,
+  NEW_LEVEL_SELECT_VALUE,
   normalizeEntityTypeSelection,
+  stageColumnLabel,
 } from './organizationStructureEntityTypes';
 import {
   CREATE_NODE_FIELD_SCHEMA,
@@ -101,28 +103,6 @@ const getDraftFieldLabel = (draft: Pick<InlineDraftState, 'selectedEntityType' |
     return draft.customEntityType.trim();
   }
   return selected;
-};
-
-const getDraftHeaderCategory = (
-  draft: Pick<InlineDraftState, 'selectedSection'>,
-  existingLevel?: OrganizationStructureLevel
-) => {
-  if (existingLevel?.levelLabel?.trim()) {
-    return existingLevel.levelLabel.trim();
-  }
-  return draft.selectedSection.trim();
-};
-
-const getDraftSummaryLabel = (
-  draft: Pick<InlineDraftState, 'selectedSection' | 'selectedEntityType' | 'customEntityType'>,
-  existingLevel?: OrganizationStructureLevel
-) => {
-  const header = getDraftHeaderCategory(draft, existingLevel);
-  const field = getDraftFieldLabel(draft);
-  if (header && field) {
-    return `${header} · ${field}`;
-  }
-  return header || field;
 };
 
 const slugifyFieldKey = (value: string) =>
@@ -220,6 +200,91 @@ function sortStructureNodes(list: OrganizationStructureNode[]): OrganizationStru
   });
 }
 
+function computeDraftStageOrderForChart(
+  draft: InlineDraftState,
+  nodes: OrganizationStructureNode[],
+  rootNode: OrganizationStructureNode | null
+): number {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const autoParentId = resolveAutoParentNodeId(draft.relation, draft.referenceNode, rootNode);
+  const resolveParent = autoParentId ? nodeById.get(autoParentId) : null;
+  return computeDraftStageOrder({
+    relation: draft.relation,
+    referenceNode: draft.referenceNode,
+    resolveParentNode: resolveParent,
+  });
+}
+
+function resolveAutoParentNodeId(
+  relation: InlineDraftState['relation'],
+  referenceNode: OrganizationStructureNode | undefined,
+  rootNode: OrganizationStructureNode | null
+): string | null {
+  if (relation === 'child') {
+    return referenceNode?.id ?? rootNode?.id ?? null;
+  }
+  if (relation === 'sibling') {
+    return referenceNode?.parentNodeId ?? null;
+  }
+  return null;
+}
+
+/** Chart columns: only stages that have nodes, plus the column used by an open create draft. */
+function getChartVisibleStages(
+  stages: OrganizationStructureStage[],
+  nodes: OrganizationStructureNode[],
+  inlineDraft: InlineDraftState | null,
+  rootNode: OrganizationStructureNode | null
+): OrganizationStructureStage[] {
+  const stageOrdersToShow = new Set<number>();
+
+  if (nodes.some((node) => !node.parentNodeId) || inlineDraft?.relation === 'root') {
+    stageOrdersToShow.add(1);
+  }
+
+  for (const node of nodes) {
+    stageOrdersToShow.add(node.stageOrder ?? 1);
+  }
+
+  if (inlineDraft && inlineDraft.relation !== 'root') {
+    const draftOrder = computeDraftStageOrderForChart(inlineDraft, nodes, rootNode);
+    stageOrdersToShow.add(draftOrder);
+  }
+
+  const visible = stages
+    .filter((stage) => stageOrdersToShow.has(stage.stageOrder))
+    .sort((a, b) => a.stageOrder - b.stageOrder);
+
+  const coveredOrders = new Set(visible.map((stage) => stage.stageOrder));
+  for (const order of stageOrdersToShow) {
+    if (!coveredOrders.has(order)) {
+      visible.push({
+        id: `pending-stage-${order}`,
+        organizationId: stages[0]?.organizationId || '',
+        stageOrder: order,
+        stageLabel: stageColumnLabel(order),
+        isActive: true,
+        levelIds: [],
+        levels: [],
+      });
+      coveredOrders.add(order);
+    }
+  }
+
+  return visible.sort((a, b) => a.stageOrder - b.stageOrder);
+}
+
+function countDescendantNodes(
+  nodeId: string,
+  childrenByParentId: Map<string, OrganizationStructureNode[]>
+): number {
+  const children = childrenByParentId.get(nodeId) || [];
+  return children.reduce(
+    (sum, child) => sum + 1 + countDescendantNodes(child.id, childrenByParentId),
+    0
+  );
+}
+
 const buildSelectedPathState = (node?: OrganizationStructureNode | null): Record<number, string> => {
   if (!node) {
     return {};
@@ -242,7 +307,12 @@ const isSameSelectedPath = (left: Record<number, string>, right: Record<number, 
   return leftKeys.every((key) => left[Number(key)] === right[Number(key)]);
 };
 
-export const OrganisationDefinitionScreen: React.FC = () => {
+const invalidateStructureTreeQueries = (queryClient: ReturnType<typeof useQueryClient>) => {
+  queryClient.invalidateQueries('organization-structure-tree');
+  queryClient.invalidateQueries('organization-structure-tree-overview');
+};
+
+export const OrganizationStructureBuilderPanel: React.FC = () => {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selectedPathByLevel, setSelectedPathByLevel] = useState<Record<number, string>>({});
@@ -261,15 +331,21 @@ export const OrganisationDefinitionScreen: React.FC = () => {
     }
   );
 
+  const stages: OrganizationStructureStage[] = treeQuery.data?.stages || [];
   const levels: OrganizationStructureLevel[] = treeQuery.data?.levels || [];
   const nodes: OrganizationStructureNode[] = treeQuery.data?.nodes || [];
   const rootNode: OrganizationStructureNode | null = treeQuery.data?.rootNode || null;
+  const orderedStages = useMemo(
+    () => [...stages].sort((a, b) => a.stageOrder - b.stageOrder),
+    [stages]
+  );
+
+  const chartVisibleStages = useMemo(
+    () => getChartVisibleStages(orderedStages, nodes, inlineDraft, rootNode),
+    [orderedStages, nodes, inlineDraft, rootNode]
+  );
 
   const levelByNumber = useMemo(() => new Map(levels.map((level) => [level.levelNumber, level])), [levels]);
-  const levelByLabel = useMemo(
-    () => new Map(levels.map((level) => [level.levelLabel.trim().toLowerCase(), level])),
-    [levels]
-  );
   const orderedLevels = useMemo(
     () => [...levels].sort((a, b) => a.levelNumber - b.levelNumber),
     [levels]
@@ -328,19 +404,14 @@ export const OrganisationDefinitionScreen: React.FC = () => {
     return sortStructureNodes(nodes.filter((n) => n.levelNumber === 1));
   }, [childrenByParentId, rootNode, nodes]);
 
-  const chartColumnCount = useMemo(() => {
-    const draftSection =
-      inlineDraft?.relation === 'child' && inlineDraft.selectedSection
-        ? inlineDraft.selectedSection.trim().toLowerCase()
-        : '';
-    const draftAddsColumn =
-      draftSection && !levelByLabel.has(draftSection) && inlineDraft?.relation === 'child';
-    return Math.max(1, orderedLevels.length + (draftAddsColumn ? 1 : 0));
-  }, [inlineDraft, levelByLabel, orderedLevels.length]);
+  const chartColumnCount = useMemo(
+    () => Math.max(1, chartVisibleStages.length),
+    [chartVisibleStages.length]
+  );
 
   const createNodeMutation = useMutation(createOrganizationStructureNode, {
     onSuccess: () => {
-      queryClient.invalidateQueries('organization-structure-tree');
+      invalidateStructureTreeQueries(queryClient);
       setNodeModalState(null);
       toast.success('Hierarchy node saved successfully');
     },
@@ -354,7 +425,7 @@ export const OrganisationDefinitionScreen: React.FC = () => {
       updateOrganizationStructureNode(id, data),
     {
       onSuccess: () => {
-        queryClient.invalidateQueries('organization-structure-tree');
+        invalidateStructureTreeQueries(queryClient);
         setNodeModalState(null);
         toast.success('Hierarchy node updated successfully');
       },
@@ -363,6 +434,24 @@ export const OrganisationDefinitionScreen: React.FC = () => {
       },
     }
   );
+
+  const deleteNodeMutation = useMutation(deleteOrganizationStructureNode, {
+    onSuccess: (response: { message?: string; deletedCount?: number }) => {
+      invalidateStructureTreeQueries(queryClient);
+      setNodeModalState(null);
+      setInlineDraft(null);
+      setSelectedPathByLevel({});
+      toast.success(
+        response?.message ||
+          (response?.deletedCount && response.deletedCount > 1
+            ? `Deleted ${response.deletedCount} hierarchy nodes`
+            : 'Hierarchy node deleted successfully')
+      );
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.error || error?.message || 'Failed to delete hierarchy node');
+    },
+  });
 
   const openNodeModal = (node: OrganizationStructureNode, panelMode: NodeModalPanelMode) => {
     setNodeModalState({ node, panelMode });
@@ -373,25 +462,19 @@ export const OrganisationDefinitionScreen: React.FC = () => {
   };
 
   const openInlineDraft = (relation: 'root' | 'child' | 'sibling', referenceNode?: OrganizationStructureNode) => {
-    const selectedSection =
-      relation === 'root'
-        ? 'Group'
-        : relation === 'child'
-          ? getOrgLevelChoicesForChild()[0]?.headerCategory || 'Entity'
-          : referenceNode?.levelLabel || '';
-    const existingLevel = levelByLabel.get(selectedSection.trim().toLowerCase());
-    const headerCategory = getDraftHeaderCategory({ selectedSection }, existingLevel);
+    const suggestLevelId =
+      relation !== 'root' && referenceNode?.levelId ? referenceNode.levelId : '';
+    const suggestedEntity = referenceNode ? normalizeEntityTypeSelection(getNodeEntityType(referenceNode)) : null;
 
     setInlineDraft({
       relation,
       referenceNode,
-      selectedSection,
-      selectedEntityType: '',
-      customEntityType: '',
-      definitionSource: existingLevel?.definitionSource || (headerCategory ? 'preset' : 'custom'),
-      presetKey:
-        existingLevel?.presetKey ||
-        (headerCategory ? slugifyFieldKey(headerCategory) : null),
+      selectedLevelId: relation === 'root' ? '' : suggestLevelId,
+      newSectionTemplate: '',
+      selectedEntityType: suggestedEntity?.selectedEntityType || '',
+      customEntityType: suggestedEntity?.customEntityType || '',
+      definitionSource: 'preset',
+      presetKey: referenceNode?.levelKey || null,
       fieldValues: createEmptyFieldValues(CREATE_NODE_FIELD_SCHEMA),
       description: '',
       status: 'active',
@@ -432,18 +515,25 @@ export const OrganisationDefinitionScreen: React.FC = () => {
       return;
     }
 
-    const sectionLabel = inlineDraft.selectedSection.trim();
-    if (!sectionLabel) {
-      toast.error('Select a section');
+    const isNewLevel = inlineDraft.selectedLevelId === NEW_LEVEL_SELECT_VALUE;
+    const selectedLevel =
+      !isNewLevel && inlineDraft.selectedLevelId
+        ? levels.find((level) => level.id === inlineDraft.selectedLevelId)
+        : undefined;
+    const newSectionLabel = inlineDraft.newSectionTemplate.trim();
+
+    if (!selectedLevel && !isNewLevel) {
+      toast.error('Select a level (section) for this node');
+      return;
+    }
+    if (isNewLevel && !newSectionLabel) {
+      toast.error('Select a template for the new section');
       return;
     }
 
-    const existingLevel = levelByLabel.get(sectionLabel.toLowerCase());
-    const headerCategory = getDraftHeaderCategory(inlineDraft, existingLevel);
-
     const createLevelFieldSchema = CREATE_NODE_FIELD_SCHEMA.map((field) => ({ ...field }));
     const fieldSchemaError = validateFieldSchemaDraft(createLevelFieldSchema);
-    if (!existingLevel && fieldSchemaError) {
+    if (isNewLevel && !selectedLevel && fieldSchemaError) {
       toast.error(fieldSchemaError);
       return;
     }
@@ -453,15 +543,17 @@ export const OrganisationDefinitionScreen: React.FC = () => {
     await createNodeMutation.mutateAsync({
       relation: inlineDraft.relation,
       referenceNodeId: inlineDraft.referenceNode?.id,
-      targetSectionLabel: inlineDraft.relation === 'child' ? sectionLabel : undefined,
+      targetLevelId: selectedLevel?.id,
+      targetSectionLabel: isNewLevel ? newSectionLabel : undefined,
+      entityField: fieldLabel,
+      createLevelLabel: isNewLevel ? newSectionLabel : undefined,
+      createLevelDefinitionSource: isNewLevel ? inlineDraft.definitionSource : undefined,
+      createLevelPresetKey: isNewLevel ? inlineDraft.presetKey : undefined,
+      createLevelFieldSchema: isNewLevel && !selectedLevel ? createLevelFieldSchema : undefined,
       name: typeof fieldValues.name === 'string' ? String(fieldValues.name) : undefined,
       code: typeof fieldValues.code === 'string' ? String(fieldValues.code).toUpperCase() : undefined,
       description: inlineDraft.description.trim() || undefined,
       status: inlineDraft.status,
-      createLevelLabel: existingLevel ? undefined : headerCategory,
-      createLevelDefinitionSource: existingLevel ? undefined : inlineDraft.definitionSource,
-      createLevelPresetKey: existingLevel ? undefined : inlineDraft.presetKey,
-      createLevelFieldSchema: existingLevel ? undefined : createLevelFieldSchema,
       metaJson: { entityType: fieldLabel },
       fieldValues,
     });
@@ -471,6 +563,23 @@ export const OrganisationDefinitionScreen: React.FC = () => {
 
   const schemaFieldsFromExtended = (fields: ExtendedFieldDef[]): OrganizationStructureFieldSchemaField[] =>
     fields.map(({ category: _category, readOnly: _readOnly, ...field }) => field);
+
+  const handleDeleteNode = async (node: OrganizationStructureNode) => {
+    const descendantCount = countDescendantNodes(node.id, childrenByParentId);
+    const nodeLabel = node.name?.trim() || node.levelLabel || 'this node';
+    const cascadeNote =
+      descendantCount > 0
+        ? ` This will also delete ${descendantCount} descendant node${descendantCount === 1 ? '' : 's'}.`
+        : '';
+    const confirmed = window.confirm(
+      `Delete "${nodeLabel}" from the organization structure?${cascadeNote} This cannot be undone.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    await deleteNodeMutation.mutateAsync(node.id);
+  };
 
   const handleEditNodeSubmit = async (form: NodeEditFormState) => {
     if (!nodeModalState) {
@@ -506,49 +615,49 @@ export const OrganisationDefinitionScreen: React.FC = () => {
     });
   };
 
-  function renderInlineDraftForm(indentPx: number): React.ReactNode {
-    if (!inlineDraft) return null;
-
-    const sectionLabel = inlineDraft.selectedSection.trim();
-    const existingLevel = levelByLabel.get(sectionLabel.toLowerCase());
-    const levelDefinition = getOrgLevelDefinitionByHeader(sectionLabel);
-    const levelPickerOptions =
-      inlineDraft.relation === 'child' ? getOrgLevelChoicesForChild() : [];
-    const showLevelPicker = inlineDraft.relation === 'child';
-
-    return (
-      <OrganizationStructureInlineDraftForm
-        indentPx={indentPx}
-        inlineDraft={inlineDraft}
-        draftLevelNumber={existingLevel?.levelNumber || 0}
-        existingLevel={existingLevel}
-        levelDefinition={levelDefinition}
-        levelPickerOptions={levelPickerOptions}
-        showLevelPicker={showLevelPicker}
-        draftSummaryLabel={getDraftSummaryLabel(inlineDraft, existingLevel)}
-        fieldOptions={getEntityTypeOptionsForSection(sectionLabel)}
-        slugifyFieldKey={slugifyFieldKey}
-        onClose={closeInlineDraft}
-        onSubmit={handleInlineDraftSubmit}
-        setInlineDraft={setInlineDraft}
-        updateInlineDraftFieldValue={updateInlineDraftFieldValue}
-      />
+  const draftStageMeta = useMemo(() => {
+    if (!inlineDraft) {
+      return { order: 1, hint: '' };
+    }
+    const autoParentId = resolveAutoParentNodeId(
+      inlineDraft.relation,
+      inlineDraft.referenceNode,
+      rootNode
     );
-  }
+    const parent = autoParentId ? nodeById.get(autoParentId) : null;
+    const order = computeDraftStageOrder({
+      relation: inlineDraft.relation,
+      referenceNode: inlineDraft.referenceNode,
+      resolveParentNode: parent,
+    });
+    let hint = '';
+    if (inlineDraft.relation === 'child') {
+      hint = parent
+        ? `Child of ${parent.name || parent.levelLabel || 'parent'} → ${stageColumnLabel(order)}`
+        : 'Child link';
+    } else if (inlineDraft.relation === 'sibling') {
+      const ref = inlineDraft.referenceNode;
+      hint = ref
+        ? `Sibling of ${ref.name || ref.levelLabel} (same parent) → ${stageColumnLabel(order)}`
+        : 'Sibling link';
+    }
+    return { order, hint };
+  }, [inlineDraft, nodeById, rootNode]);
+
 
   return (
-    <AdminLayout>
+    <>
       <div className="mx-auto w-full max-w-none px-2 py-3 pb-6 sm:px-3 md:px-4 md:py-4">
+        <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+          Stages are ordered columns (Root, Stage 2, …). Use green + for child, blue + for sibling on each card.
+          Pick section, entity field, and name per node — multiple sections can share the same stage.
+        </p>
         {treeQuery.isLoading ? (
           <div className="rounded-lg border border-dashed border-slate-300 py-8 text-center text-sm text-slate-500 dark:border-slate-600 dark:text-slate-400">
-            Loading hierarchyâ€¦
+            Loading hierarchy…
           </div>
         ) : (
           <>
-            {inlineDraft && !rootNode && inlineDraft.relation === 'root' ? (
-              <div className="mb-3 max-w-lg">{renderInlineDraftForm(0)}</div>
-            ) : null}
-
             {!rootNode && !inlineDraft ? (
               <div className="rounded-lg border border-dashed border-slate-300 py-8 text-center dark:border-slate-600">
                 <p className="text-sm text-slate-600 dark:text-slate-400">No organization structure yet.</p>
@@ -557,7 +666,7 @@ export const OrganisationDefinitionScreen: React.FC = () => {
                   onClick={() => openInlineDraft('root')}
                   className="mt-3 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark"
                 >
-                  Create Group
+                  Create root
                 </button>
               </div>
             ) : null}
@@ -567,9 +676,9 @@ export const OrganisationDefinitionScreen: React.FC = () => {
                 <div className="mb-2 flex flex-wrap justify-end gap-1.5">
                   <button
                     type="button"
-                    title="Add sibling (same level)"
+                    title="Add sibling (same parent)"
                     onClick={() => selectedNode && openInlineDraft('sibling', selectedNode)}
-                    disabled={!selectedNode || selectedNode.levelNumber === 1}
+                    disabled={!selectedNode || !selectedNode.parentNodeId}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200"
                   >
                     <span className="material-symbols-outlined text-[22px]">add_circle</span>
@@ -601,6 +710,15 @@ export const OrganisationDefinitionScreen: React.FC = () => {
                   >
                     <span className="material-symbols-outlined text-[22px]">edit</span>
                   </button>
+                  <button
+                    type="button"
+                    title="Delete selected node (and descendants)"
+                    onClick={() => selectedNode && handleDeleteNode(selectedNode)}
+                    disabled={!selectedNode || deleteNodeMutation.isLoading}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"
+                  >
+                    <span className="material-symbols-outlined text-[22px]">delete</span>
+                  </button>
                 </div>
                 {rootTreeNodes.length === 0 && !inlineDraft ? (
                   <div className="mb-2 rounded-lg border border-dashed border-amber-200 bg-amber-50/80 p-2 text-center text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
@@ -610,6 +728,7 @@ export const OrganisationDefinitionScreen: React.FC = () => {
                 <OrganizationStructureHorizontalChart
                   title=""
                   showChartIntro={false}
+                  stages={chartVisibleStages}
                   levels={levels}
                   nodes={nodes}
                   rootTreeNodes={rootTreeNodes}
@@ -622,8 +741,8 @@ export const OrganisationDefinitionScreen: React.FC = () => {
                   openInlineDraft={openInlineDraft}
                   onOpenNodeView={(node) => openNodeModal(node, 'view')}
                   onOpenNodeEdit={(node) => openNodeModal(node, 'edit')}
-                  inlineDraft={inlineDraft}
-                  chartInlineDraft={(_box) => renderInlineDraftForm(0)}
+                  inlineDraft={null}
+                  chartInlineDraft={() => null}
                   orderedLevels={orderedLevels}
                   columnCount={chartColumnCount}
                 />
@@ -632,6 +751,21 @@ export const OrganisationDefinitionScreen: React.FC = () => {
           </>
         )}
       </div>
+
+      {inlineDraft ? (
+        <OrganizationStructureInlineDraftForm
+          asModal
+          inlineDraft={inlineDraft}
+          computedStageOrder={draftStageMeta.order}
+          computedStageHint={draftStageMeta.hint}
+          allLevels={levels}
+          slugifyFieldKey={slugifyFieldKey}
+          onClose={closeInlineDraft}
+          onSubmit={handleInlineDraftSubmit}
+          setInlineDraft={setInlineDraft}
+          updateInlineDraftFieldValue={updateInlineDraftFieldValue}
+        />
+      ) : null}
 
       {nodeModalState ? (
         <OrganizationStructureNodeEditModal
@@ -643,15 +777,28 @@ export const OrganisationDefinitionScreen: React.FC = () => {
               ? nodeById.get(nodeModalState.node.parentNodeId)?.name || null
               : null
           }
+          descendantCount={countDescendantNodes(nodeModalState.node.id, childrenByParentId)}
           getNodeEntityType={getNodeEntityType}
           getNodeFieldValues={getNodeFieldValues}
           onClose={closeNodeModal}
           onSubmit={handleEditNodeSubmit}
+          onDelete={() => handleDeleteNode(nodeModalState.node)}
           isSaving={updateNodeMutation.isLoading}
+          isDeleting={deleteNodeMutation.isLoading}
         />
       ) : null}
-    </AdminLayout>
+    </>
   );
+};
+
+export const OrganisationDefinitionScreen: React.FC = () => {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    navigate('/admin/settings/organisation-structure#org-builder', { replace: true });
+  }, [navigate]);
+
+  return null;
 };
 
 export const OrganisationStructureScreen: React.FC = () => {
@@ -673,14 +820,16 @@ export const OrganisationStructureScreen: React.FC = () => {
     }
   );
 
-  const rootDefined = Boolean(treeQuery.data?.rootNode);
+  const rootDefined = Boolean(
+    treeQuery.data?.rootNode || treeQuery.data?.summary?.hasRootNode || treeQuery.data?.summary?.hasRootGroup
+  );
   const summary = treeQuery.data?.summary;
 
   const handleDownloadStructureTemplate = async () => {
     setIsDownloadingTemplate(true);
     try {
       await entityMasterBulkService.getTemplate('organisation-structure');
-      toast.success('Organisation Structure template downloaded. Fill LEVEL, PARENT_NAME, NAME, CODE and upload.');
+      toast.success('Template downloaded. Fill SECTION, ENTITY_TYPE, Name, PARENT_NAME — then upload (or use Excel VBA helper).');
     } catch (err: any) {
       toast.error(err.response?.data?.error || err.message || 'Failed to download template');
     } finally {
@@ -733,17 +882,17 @@ export const OrganisationStructureScreen: React.FC = () => {
     bulkUploadMutation.mutate(file);
   };
 
+  const scrollToBuilder = () => {
+    document.getElementById('org-builder')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  useEffect(() => {
+    if (window.location.hash === '#org-builder') {
+      scrollToBuilder();
+    }
+  }, [treeQuery.isLoading]);
+
   const cards = [
-    {
-      icon: 'schema',
-      title: 'Org Definition',
-      subtitle: rootDefined
-        ? 'Manage the web-only hierarchy definition, levels, and node lifecycle.'
-        : 'Create the Group root and define the hierarchy on web before applying it elsewhere.',
-      actionLabel: rootDefined ? 'Open Org Definition' : 'Start Org Definition',
-      screen: '/admin/settings/org-definition',
-      tone: 'primary',
-    },
     {
       icon: 'groups',
       title: 'Entity List',
@@ -768,14 +917,14 @@ export const OrganisationStructureScreen: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Organisation Structure</h1>
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            Define the organization hierarchy first on web. After that, downstream settings like entity master data,
-            employees, tasks, and reporting use that definition across web and mobile.
+            Define every hierarchy level (Group, Entity, Region, Plant, Department, and more) in one screen below.
+            Entity master data, employees, tasks, and reporting then use that structure across web and mobile.
           </p>
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-            <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Org Definition</p>
+            <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Hierarchy</p>
             <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">
               {rootDefined ? 'Defined' : 'Pending'}
             </p>
@@ -797,8 +946,9 @@ export const OrganisationStructureScreen: React.FC = () => {
         <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
           <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Bulk update from Excel</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
-            Download the current template to create or update hierarchy nodes (LEVEL, PARENT_NAME, NAME, CODE). Use the
-            Structure Reference sheet for node IDs when assigning clients or employees.
+            Same flow as the web form: SECTION → entity field (ENTITY_TYPE) → Name / Code, plus PARENT_NAME for placement.
+            Stage is set automatically from the parent. Optional: import the VBA module from{' '}
+            <code className="text-[11px]">orgit-tools/org-structure-bulk-vba</code> for guided Excel entry.
           </p>
           <div className="flex flex-wrap gap-3 items-center">
             <button
@@ -832,27 +982,31 @@ export const OrganisationStructureScreen: React.FC = () => {
             <span className="material-symbols-outlined text-primary">info</span>
             <div className="space-y-1 text-sm text-text-main">
               <p className="font-semibold text-gray-900 dark:text-white">Recommended workflow</p>
-              <p>1. Open `Org Definition` on web and create the Group root plus hierarchy levels.</p>
+              <p>1. Use the hierarchy builder below to create the Group root and add each level in the chart.</p>
               <p>2. Apply that structure to entity master data, employees, task units, and reporting.</p>
-              <p>3. Mobile uses the defined structure operationally, but hierarchy authoring stays on web.</p>
+              <p>3. Mobile uses the defined structure operationally; hierarchy authoring stays on this web screen.</p>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={scrollToBuilder}
+            className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-dark"
+          >
+            {rootDefined ? 'Edit hierarchy' : 'Create hierarchy'}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {cards.map((card) => (
             <div
               key={card.title}
               className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800"
             >
               <div className="flex items-start gap-4">
-                <div
-                  className={`flex h-12 w-12 items-center justify-center rounded-xl ${
-                    card.tone === 'primary'
-                      ? 'bg-primary/10 text-primary'
-                      : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200'
-                  }`}
-                >
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200">
                   <span className="material-symbols-outlined">{card.icon}</span>
                 </div>
                 <div className="min-w-0 flex-1">
@@ -863,17 +1017,26 @@ export const OrganisationStructureScreen: React.FC = () => {
               <button
                 type="button"
                 onClick={() => navigate(card.screen)}
-                className={`mt-5 rounded-lg px-4 py-2.5 text-sm font-semibold ${
-                  card.tone === 'primary'
-                    ? 'bg-primary text-white hover:bg-primary-dark'
-                    : 'border border-slate-300 text-text-main hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700'
-                }`}
+                className="mt-5 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-text-main hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
               >
                 {card.actionLabel}
               </button>
             </div>
           ))}
         </div>
+
+        <section
+          id="org-builder"
+          className="scroll-mt-6 rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-800"
+        >
+          <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Hierarchy builder</h2>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Stages are chart columns only. Each node uses its own level, entity field, and name — fully dynamic.
+            </p>
+          </div>
+          <OrganizationStructureBuilderPanel />
+        </section>
       </div>
     </AdminLayout>
   );

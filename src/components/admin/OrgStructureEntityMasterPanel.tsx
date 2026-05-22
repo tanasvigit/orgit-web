@@ -135,7 +135,7 @@ export function OrgStructureEntityMasterPanel({
   );
   const schema = getLevelSchema(levels, selectedLevelNumber);
 
-  if (!tree?.summary?.hasRootGroup) {
+  if (!(tree?.summary?.hasRootNode || tree?.summary?.hasRootGroup)) {
     return (
       <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900">
         Complete <strong>Org Definition</strong> first (level 1 group). Entity master sections mirror that hierarchy.

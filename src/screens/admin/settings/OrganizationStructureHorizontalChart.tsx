@@ -2,8 +2,22 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   OrganizationStructureLevel,
   OrganizationStructureNode,
+  OrganizationStructureStage,
 } from '../../../services/settingsService';
+import { NEW_LEVEL_SELECT_VALUE, stageColumnLabel } from './organizationStructureEntityTypes';
 import type { InlineDraftState } from './OrganizationStructureInlineDraftForm';
+
+function getDraftSectionLabel(
+  inlineDraft: InlineDraftState | null,
+  levels: OrganizationStructureLevel[]
+): string {
+  if (!inlineDraft) return '';
+  if (inlineDraft.selectedLevelId === NEW_LEVEL_SELECT_VALUE) {
+    return inlineDraft.newSectionTemplate.trim();
+  }
+  const level = levels.find((item) => item.id === inlineDraft.selectedLevelId);
+  return level?.levelLabel?.trim() || '';
+}
 
 /** Horizontal org-chart layout — compact so ~5 levels fit typical content width (~1000px). */
 export const CHART = {
@@ -118,16 +132,17 @@ function buildPositions(
 function buildFallbackPositions(
   nodes: OrganizationStructureNode[],
   slotH: number,
-  levelNumberToColumn: Map<number, number>
+  stageOrderToColumn: Map<number, number>
 ): Map<string, ChartPosition> {
-  const byLevel = new Map<number, OrganizationStructureNode[]>();
+  const byStage = new Map<number, OrganizationStructureNode[]>();
   for (const node of nodes) {
-    if (!byLevel.has(node.levelNumber)) byLevel.set(node.levelNumber, []);
-    byLevel.get(node.levelNumber)!.push(node);
+    const stageOrder = node.stageOrder ?? node.levelNumber;
+    if (!byStage.has(stageOrder)) byStage.set(stageOrder, []);
+    byStage.get(stageOrder)!.push(node);
   }
   const fallback = new Map<string, ChartPosition>();
-  for (const [levelNum, list] of byLevel.entries()) {
-    const col = levelNumberToColumn.get(levelNum) ?? 0;
+  for (const [stageOrder, list] of byStage.entries()) {
+    const col = stageOrderToColumn.get(stageOrder) ?? 0;
     const sorted = [...list].sort((a, b) => a.displayOrder - b.displayOrder || (a.name || '').localeCompare(b.name || ''));
     sorted.forEach((node, index) => {
       const cardTop = CHART.PAD_TOP + index * (slotH + CHART.GAP_Y);
@@ -303,6 +318,7 @@ function OrgChartNodeCard({
 
 export type OrganizationStructureHorizontalChartProps = {
   title: string;
+  stages?: OrganizationStructureStage[];
   levels: OrganizationStructureLevel[];
   nodes: OrganizationStructureNode[];
   rootTreeNodes: OrganizationStructureNode[];
@@ -326,6 +342,7 @@ export type OrganizationStructureHorizontalChartProps = {
 
 export function OrganizationStructureHorizontalChart({
   title,
+  stages = [],
   levels: _levels,
   nodes,
   rootTreeNodes,
@@ -369,35 +386,53 @@ export function OrganizationStructureHorizontalChart({
     [layoutRootNodes, childrenByParentId, cardSlotH]
   );
 
-  const levelNumberToColumn = useMemo(() => {
+  const orderedStages = useMemo(
+    () => [...stages].sort((a, b) => a.stageOrder - b.stageOrder),
+    [stages]
+  );
+
+  const stageOrderToColumn = useMemo(() => {
     const map = new Map<number, number>();
+    if (orderedStages.length > 0) {
+      orderedStages.forEach((stage, index) => {
+        map.set(stage.stageOrder, index);
+      });
+      return map;
+    }
     orderedLevels.forEach((level, index) => {
       map.set(level.levelNumber, index);
     });
     return map;
-  }, [orderedLevels]);
+  }, [orderedStages, orderedLevels]);
 
   const sectionColumnIndex = useCallback(
-    (sectionLabel?: string, levelNumber?: number) => {
-      if (levelNumber !== undefined && levelNumberToColumn.has(levelNumber)) {
-        return levelNumberToColumn.get(levelNumber)!;
+    (sectionLabel?: string, stageOrder?: number, levelNumber?: number) => {
+      const orderKey = stageOrder ?? levelNumber;
+      if (orderKey !== undefined && stageOrderToColumn.has(orderKey)) {
+        return stageOrderToColumn.get(orderKey)!;
       }
       const normalized = String(sectionLabel || '').trim().toLowerCase();
       if (!normalized) {
         return 0;
       }
+      const stageMatch = orderedStages.find(
+        (stage) => stage.stageLabel.trim().toLowerCase() === normalized
+      );
+      if (stageMatch) {
+        return stageOrderToColumn.get(stageMatch.stageOrder) ?? 0;
+      }
       const existing = orderedLevels.find((level) => level.levelLabel.trim().toLowerCase() === normalized);
       if (existing) {
-        return levelNumberToColumn.get(existing.levelNumber) ?? 0;
+        return stageOrderToColumn.get(existing.levelNumber) ?? 0;
       }
-      return orderedLevels.length;
+      return orderedStages.length || orderedLevels.length;
     },
-    [levelNumberToColumn, orderedLevels]
+    [stageOrderToColumn, orderedStages, orderedLevels]
   );
 
   const fallbackPositions = useMemo(
-    () => buildFallbackPositions(nodes, cardSlotH, levelNumberToColumn),
-    [nodes, cardSlotH, levelNumberToColumn]
+    () => buildFallbackPositions(nodes, cardSlotH, stageOrderToColumn),
+    [nodes, cardSlotH, stageOrderToColumn]
   );
 
   const positions = useMemo(() => {
@@ -440,16 +475,16 @@ export function OrganizationStructureHorizontalChart({
     }
     const ref = inlineDraft.referenceNode;
     if (!ref) {
-      const col = sectionColumnIndex(inlineDraft.selectedSection);
+      const col = sectionColumnIndex(getDraftSectionLabel(inlineDraft, _levels), undefined, undefined);
       return { top: CHART.PAD_TOP, left: colLeft(col) };
     }
     const refPos = positions.get(ref.id);
     if (inlineDraft.relation === 'sibling') {
-      const c = sectionColumnIndex(ref.levelLabel, ref.levelNumber);
+      const c = sectionColumnIndex(ref.stageLabel || ref.levelLabel, ref.stageOrder ?? undefined, ref.levelNumber);
       const top = (refPos?.cardTop ?? CHART.PAD_TOP) + cardSlotH + CHART.GAP_Y;
       return { top, left: colLeft(c) };
     }
-    const childCol = sectionColumnIndex(inlineDraft.selectedSection);
+    const childCol = sectionColumnIndex(getDraftSectionLabel(inlineDraft, _levels), undefined, undefined);
     const top = (refPos?.cardTop ?? CHART.PAD_TOP) + cardSlotH + CHART.GAP_Y;
     const colStart = childCol * CHART.COL_W;
     const centeredLeft = colStart + Math.max(0, (CHART.COL_W - CHART.DRAFT_W) / 2);
@@ -489,7 +524,7 @@ export function OrganizationStructureHorizontalChart({
           <div className="min-w-0">
             <h2 className="truncate text-base font-bold text-slate-900 dark:text-white">{title}</h2>
             <p className="mt-0.5 text-[10px] leading-snug text-slate-500 dark:text-slate-400">
-              Five levels fit across a typical screen; scroll horizontally if you have more.
+              Columns = stages. Nodes can use any section in a stage and attach under any parent.
             </p>
           </div>
           <div className="flex shrink-0 flex-col gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[9px] leading-tight text-slate-600 dark:border-slate-600 dark:bg-slate-900/50 dark:text-slate-300">
@@ -526,13 +561,15 @@ export function OrganizationStructureHorizontalChart({
           <div className="relative z-[3] flex border-b border-slate-200 bg-white/90 dark:border-slate-700 dark:bg-slate-900/90">
             {Array.from({ length: resolvedColumnCount }, (_, i) => {
               const theme = levelThemePalette[i % levelThemePalette.length];
+              const stage = orderedStages[i];
               const level = orderedLevels[i];
               const draftSection =
-                inlineDraft?.relation === 'child' ? inlineDraft.selectedSection.trim() : '';
-              const columnLabel =
-                level?.levelLabel ||
-                (i === orderedLevels.length && draftSection ? draftSection : '') ||
-                'Section';
+                inlineDraft?.relation === 'child' ? getDraftSectionLabel(inlineDraft, _levels) : '';
+              const columnLabel = stage
+                ? stageColumnLabel(stage.stageOrder)
+                : level?.levelLabel ||
+                  (i === (orderedStages.length || orderedLevels.length) && draftSection ? draftSection : '') ||
+                  `Stage ${i + 1}`;
               return (
                 <div
                   key={`hdr-${i}`}
@@ -574,7 +611,7 @@ export function OrganizationStructureHorizontalChart({
             {nodes.map((node) => {
               const pos = positions.get(node.id);
               if (!pos) return null;
-              const col = levelNumberToColumn.get(node.levelNumber) ?? 0;
+              const col = stageOrderToColumn.get(node.stageOrder ?? node.levelNumber) ?? 0;
               const left = col * CHART.COL_W + (CHART.COL_W - CHART.CARD_W) / 2;
               const top = pos.cardTop;
               const theme = levelThemePalette[col % levelThemePalette.length];
@@ -594,7 +631,7 @@ export function OrganizationStructureHorizontalChart({
                   onAddChild={() => openInlineDraft('child', node)}
                   onOpenView={() => onOpenNodeView(node)}
                   onOpenEdit={() => onOpenNodeEdit(node)}
-                  disableSibling={node.levelNumber === 1}
+                  disableSibling={!node.parentNodeId}
                 />
               );
             })}

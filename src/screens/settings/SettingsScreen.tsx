@@ -43,28 +43,21 @@ export const SettingsScreen: React.FC = () => {
     },
   ];
 
-  // Admin settings flow starts with Org Definition on web, then applies to downstream org settings.
+  // Admin settings: organisation hierarchy and downstream mappings on one web screen.
   const adminSettingsCards = [
-    { 
-      icon: 'schema', 
-      title: 'Org Definition', 
-      subtitle: 'Define the organization hierarchy on web before applying it to other org settings', 
-      screen: '/admin/settings/org-definition',
-      color: 'indigo'
-    },
-    { 
-      icon: 'group', 
-      title: 'Employees', 
-      subtitle: 'Map employees and reporting using the defined organization structure', 
-      screen: '/admin/users',
-      color: 'blue'
-    },
-    { 
-      icon: 'account_tree', 
-      title: 'Organisation Structure', 
-      subtitle: 'Overview of definition progress and downstream rollout status', 
+    {
+      icon: 'account_tree',
+      title: 'Organisation Structure',
+      subtitle: 'Define all hierarchy levels, sections, and nodes in one place on web',
       screen: '/admin/settings/organisation-structure',
-      color: 'indigo'
+      color: 'indigo',
+    },
+    {
+      icon: 'group',
+      title: 'Employees',
+      subtitle: 'Map employees and reporting using the defined organization structure',
+      screen: '/admin/users',
+      color: 'blue',
     },
     { 
       icon: 'list_alt', 
@@ -94,7 +87,7 @@ export const SettingsScreen: React.FC = () => {
     try {
       await entityMasterBulkService.getTemplate();
       toast.success(
-        'OrgIt Settings template downloaded. Sheets: Entity Master, Organisation Structure, Entity List, Service List, Tasks, Employees, Structure Reference. Fill in order and upload.'
+        'OrgIt Settings template downloaded: Instructions, Org Node Lookups, Organisation Structure, Entity List, Service List, Tasks, Employees. Use section dropdowns (same as web). Edit organisation profile in Admin → Entity Master.'
       );
     } catch (error: any) {
       toast.error(error.response?.data?.error || error.message || 'Failed to download template');
@@ -262,7 +255,8 @@ export const SettingsScreen: React.FC = () => {
                 </h1>
               </div>
               <p className="text-sm text-gray-600 dark:text-gray-400 max-w-2xl leading-relaxed">
-                Manage your account settings and preferences. Download <strong className="text-primary">OrgIt Settings</strong> for one workbook with all sheets; individual templates are also available in each module.
+                Manage your account settings and preferences. Download <strong className="text-primary">OrgIt Settings</strong> for a workbook covering organisation structure, clients, services, tasks, and employees — organisation profile (legal/contact) bulk upload is available from{' '}
+                <strong className="text-primary">Admin → Entity Master</strong>.
               </p>
             </div>
             {isAdmin && (
