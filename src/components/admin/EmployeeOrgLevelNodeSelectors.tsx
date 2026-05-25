@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import type { OrganizationStructureTree } from '../../services/settingsService';
 import {
   formatOrgNodeOptionLabel,
-  getActiveLevelsFromL2,
+  getAssignmentSectionsFromTree,
   getNodesForSection,
   getSectionStorageKey,
   normalizeOrgNodeByLevel,
@@ -17,13 +17,17 @@ type Props = {
 };
 
 export function EmployeeOrgLevelNodeSelectors({ tree, value, onChange, disabled = false }: Props) {
-  const levels = useMemo(() => getActiveLevelsFromL2(tree?.levels ?? []), [tree?.levels]);
   const nodes = tree?.nodes ?? [];
   const rootNodeId = tree?.rootNode?.id;
 
   const normalizedValue = useMemo(
     () => normalizeOrgNodeByLevel(value, tree?.levels ?? []),
     [value, tree?.levels]
+  );
+
+  const levels = useMemo(
+    () => getAssignmentSectionsFromTree(tree, normalizedValue),
+    [tree, normalizedValue]
   );
 
   if (!(tree?.summary?.hasRootNode || tree?.summary?.hasRootGroup)) {
@@ -36,8 +40,9 @@ export function EmployeeOrgLevelNodeSelectors({ tree, value, onChange, disabled 
 
   if (levels.length === 0) {
     return (
-      <p className="text-sm text-slate-500">
-        No organisation sections are defined yet. Add sections in Org Definition.
+      <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        No org units below the root yet. In Org Definition, add child nodes (e.g. Location, Project) under your
+        root, then assign employees here.
       </p>
     );
   }
@@ -56,6 +61,9 @@ export function EmployeeOrgLevelNodeSelectors({ tree, value, onChange, disabled 
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         Organisation assignment
       </p>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        Only sections that have nodes on your org chart are listed (matches Org Definition).
+      </p>
       {levels.map((level) => {
         const sectionKey = getSectionStorageKey(level);
         const options = getNodesForSection(nodes, level.levelLabel, rootNodeId);
@@ -65,8 +73,8 @@ export function EmployeeOrgLevelNodeSelectors({ tree, value, onChange, disabled 
           <div key={level.id}>
             <label className="mb-1 block text-sm font-medium text-text-main">{level.levelLabel} *</label>
             <select
-              required
-              disabled={disabled || !rootNodeId}
+              required={options.length > 0}
+              disabled={disabled || !rootNodeId || options.length === 0}
               value={selectedId}
               onChange={(e) => handleSectionChange(level, e.target.value)}
               className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-text-main disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800"

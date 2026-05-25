@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useEmployeePermissions } from '../../hooks/useEmployeePermissions';
 
 interface FloatingActionButtonProps {
   isAdmin?: boolean;
@@ -20,6 +21,16 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const {
+    canAccessModule,
+    canCreateTask,
+    canUploadDocument,
+  } = useEmployeePermissions();
+
+  const showMessageAction = !isAdmin && canAccessModule('Messaging');
+  const showDocumentAction = canUploadDocument() && canAccessModule('Documents');
+  const showTaskAction = canCreateTask() && canAccessModule('Tasks');
+  const hasAnyAction = showMessageAction || showDocumentAction || showTaskAction;
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -77,12 +88,17 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
   //   setIsOpen(false);
   // };
 
+  if (!hasAnyAction && !isAdmin) {
+    return null;
+  }
+
   return (
     <div className="fixed bottom-6 right-6 z-50" ref={menuRef}>
       {/* Menu Items */}
       {isOpen && (
         <div className="absolute bottom-20 right-0 mb-2 flex flex-col gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
           {/* New Message */}
+          {showMessageAction && (
           <button
             onClick={handleNewMessage}
             className="flex items-center gap-3 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-4 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 border border-gray-200 dark:border-gray-700 min-w-[200px] group"
@@ -97,6 +113,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
               <div className="text-xs text-gray-500 dark:text-gray-400">Start a new chat</div>
             </div>
           </button>
+          )}
 
           {/* Create Compliance Task */}
           {/* <button
@@ -117,6 +134,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
           </button> */}
 
           {/* Create Document */}
+          {showDocumentAction && (
           <button
             onClick={handleCreateDocument}
             className="flex items-center gap-3 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-4 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 border border-gray-200 dark:border-gray-700 min-w-[200px] group"
@@ -131,8 +149,10 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
               <div className="text-xs text-gray-500 dark:text-gray-400">New document</div>
             </div>
           </button>
+          )}
 
           {/* Create Task */}
+          {showTaskAction && (
           <button
             onClick={handleCreateTask}
             className="flex items-center gap-3 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-4 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 border border-gray-200 dark:border-gray-700 min-w-[200px] group"
@@ -147,6 +167,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
               <div className="text-xs text-gray-500 dark:text-gray-400">New task</div>
             </div>
           </button>
+          )}
         </div>
       )}
 

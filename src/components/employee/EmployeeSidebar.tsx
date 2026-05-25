@@ -5,11 +5,14 @@ import { useToast } from '../../context/ToastContext';
 import { showLogoutConfirm } from '../../utils/logoutConfirm';
 import { AppIcon } from '../shared/AppIcon';
 import type { AppIconName } from '../../constants/appIcons';
+import { useEmployeePermissions } from '../../hooks/useEmployeePermissions';
+import type { AppModule } from '../../utils/employeePermissionUtils';
 
 interface NavItem {
   path: string;
   icon: AppIconName;
   label: string;
+  module: AppModule;
 }
 
 const collapsedLabelMap: Record<string, string> = {
@@ -21,10 +24,10 @@ const collapsedLabelMap: Record<string, string> = {
 };
 
 const navItems: NavItem[] = [
-  { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-  { path: '/messages', icon: 'chat', label: 'Chats' },
-  { path: '/tasks', icon: 'task', label: 'Task Management' },
-  { path: '/documents', icon: 'document', label: 'Document Management' },
+  { path: '/dashboard', icon: 'dashboard', label: 'Dashboard', module: 'Dashboard' },
+  { path: '/messages', icon: 'chat', label: 'Chats', module: 'Messaging' },
+  { path: '/tasks', icon: 'task', label: 'Task Management', module: 'Tasks' },
+  { path: '/documents', icon: 'document', label: 'Document Management', module: 'Documents' },
 ];
 
 const STORAGE_KEY = 'employee-sidebar-minimized-by-messages';
@@ -39,6 +42,8 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { toast } = useToast();
+  const { canAccessModule } = useEmployeePermissions();
+  const visibleNavItems = navItems.filter((item) => canAccessModule(item.module));
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
@@ -295,7 +300,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-1 max-[1366px]:py-2 max-[1366px]:gap-0">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const active = isActive(item.path);
           return (
             <Link

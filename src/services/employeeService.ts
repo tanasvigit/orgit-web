@@ -13,8 +13,30 @@ export interface Employee {
   id: string;
   mobile: string;
   name: string;
-  role: 'employee';
+  role: 'employee' | 'admin';
   status: string;
+  employeeCode?: string | null;
+  employee_code?: string | null;
+  email?: string | null;
+  dateOfBirth?: string | null;
+  date_of_birth?: string | null;
+  gender?: string | null;
+  address?: string | null;
+  panNumber?: string | null;
+  pan_number?: string | null;
+  dateOfJoining?: string | null;
+  date_of_joining?: string | null;
+  employmentType?: string | null;
+  employment_type?: string | null;
+  designation?: string | null;
+  workLocationNodeId?: string | null;
+  work_location_node_id?: string | null;
+  employeePermissions?: Record<string, unknown>;
+  employee_permissions?: Record<string, unknown>;
+  notificationSettings?: Record<string, unknown>;
+  notification_settings?: Record<string, unknown>;
+  lastLoginTime?: string | null;
+  last_login_time?: string | null;
   profilePhotoUrl?: string;
   profile_photo_url?: string;
   reportingTo?: string;
@@ -39,22 +61,40 @@ export interface Employee {
   created_at?: string;
 }
 
-export interface AddEmployeeRequest {
+export interface EmployeeMasterPayload {
+  employeeCode?: string;
+  email?: string;
+  dateOfBirth?: string;
+  gender?: string;
+  address?: string;
+  panNumber?: string;
+  dateOfJoining?: string;
+  employmentType?: string;
+  designation?: string;
+  workLocationNodeId?: string | null;
+  userRole?: 'admin' | 'employee';
+  employeePermissions?: Record<string, unknown>;
+  notificationSettings?: Record<string, unknown>;
+}
+
+export interface AddEmployeeRequest extends EmployeeMasterPayload {
   mobile: string;
   name: string;
   reportingTo?: string;
   primaryOrgNodeId?: string | null;
   secondaryOrgNodeIds?: string[];
-  orgFieldValues?: Record<string, string>;
+  orgFieldValues?: Record<string, unknown>;
+  status?: string;
+  password?: string;
 }
 
-export interface UpdateEmployeeRequest {
+export interface UpdateEmployeeRequest extends EmployeeMasterPayload {
   name?: string;
   reportingTo?: string;
   primaryOrgNodeId?: string | null;
   secondaryOrgNodeIds?: string[];
   status?: string;
-  orgFieldValues?: Record<string, string>;
+  orgFieldValues?: Record<string, unknown>;
 }
 
 export const employeeService = {

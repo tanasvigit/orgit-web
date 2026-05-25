@@ -4,6 +4,7 @@ import { EmployeeSidebar } from './EmployeeSidebar';
 import { FloatingActionButton } from '../shared/FloatingActionButton';
 import { TaskCreateModal } from '../tasks/TaskCreateModal';
 import { useQueryClient } from 'react-query';
+import { useEmployeePermissions } from '../../hooks/useEmployeePermissions';
 
 interface EmployeeLayoutProps {
   children: React.ReactNode;
@@ -26,6 +27,7 @@ export const EmployeeLayout: React.FC<EmployeeLayoutProps> = (props) => {
   } = props;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { canCreateTask, canUploadDocument, canAccessModule } = useEmployeePermissions();
   const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
   const sidebarToggleRef = useRef<(() => void) | null>(null);
 
@@ -60,12 +62,19 @@ export const EmployeeLayout: React.FC<EmployeeLayoutProps> = (props) => {
       {/* Floating Action Button */}
       <FloatingActionButton 
         isAdmin={false}
-        onOpenTaskModal={() => setShowTaskCreateModal(true)}
-        onOpenDocumentPage={() => navigate('/documents/create')}
+        onOpenTaskModal={
+          canCreateTask() ? () => setShowTaskCreateModal(true) : undefined
+        }
+        onOpenDocumentPage={
+          canUploadDocument() && canAccessModule('Documents')
+            ? () => navigate('/documents/create')
+            : undefined
+        }
         onOpenCompliancePage={() => navigate('/compliance')}
       />
 
       {/* Task Create Modal */}
+      {canCreateTask() && (
       <TaskCreateModal
         visible={showTaskCreateModal}
         onClose={() => setShowTaskCreateModal(false)}
@@ -75,6 +84,7 @@ export const EmployeeLayout: React.FC<EmployeeLayoutProps> = (props) => {
           queryClient.invalidateQueries(['dashboard']);
         }}
       />
+      )}
     </div>
   );
 };

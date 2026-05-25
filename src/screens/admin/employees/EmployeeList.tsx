@@ -17,13 +17,14 @@ import { AdminLayout } from '../../../components/admin/AdminLayout';
 import { employeeService, Employee } from '../../../services/employeeService';
 import { useToast } from '../../../context/ToastContext';
 import { getOrganizationStructureTree } from '../../../services/settingsService';
-import { EmployeeOrgLevelNodeSelectors } from '../../../components/admin/EmployeeOrgLevelNodeSelectors';
+import { EmployeeMasterFormSections } from './EmployeeMasterFormSections';
+import { buildInitialMasterForm, type EmployeeMasterFormState } from './employeeMasterTypes';
 import {
   buildEmployeeOrgFieldValuesPayload,
   deriveOrgNodeByLevelFromPrimary,
   extractOrgNodeByLevel,
   formatOrgNodeByLevelSummary,
-  getActiveLevelsFromL2,
+  getAssignmentSectionsFromTree,
   getDeepestSelectedNodeId,
   lookupOrgNodeId,
   normalizeOrgNodeByLevel,
@@ -481,7 +482,7 @@ export const EmployeeList: React.FC = () => {
         {/* Add/Edit Employee Form Modal */}
         {(showAddForm || editEmployee) && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
               <h3 className="text-lg font-bold text-text-main mb-4">
                 {editEmployee ? 'Edit Employee' : 'Add New Employee'}
               </h3>
@@ -625,14 +626,9 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
   const rawEmployeeFv = ((employee as any)?.org_field_values ||
     (employee as any)?.orgFieldValues) as Record<string, unknown> | undefined;
 
-  const [formData, setFormData] = useState({
-    mobile: employee?.mobile || '',
-    name: employee?.name || '',
-    reportingTo: (employee as any)?.reportingTo || (employee as any)?.reporting_to || '',
-    orgNodeByLevel: extractOrgNodeByLevel(rawEmployeeFv) as OrgNodeByLevel,
-    status: employee?.status || 'active',
-    password: '',
-  });
+  const [masterForm, setMasterForm] = useState<EmployeeMasterFormState>(() =>
+    buildInitialMasterForm(employee as Record<string, unknown> | null)
+  );
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [selectedExistingUser, setSelectedExistingUser] = useState<any | null>(null);
@@ -647,8 +643,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
   });
 
   const levelsFromL2 = React.useMemo(
-    () => getActiveLevelsFromL2(orgStructureTreeData?.levels ?? []),
-    [orgStructureTreeData?.levels]
+    () => getAssignmentSectionsFromTree(orgStructureTreeData, masterForm.orgNodeByLevel),
+    [orgStructureTreeData, masterForm.orgNodeByLevel]
   );
 
   React.useEffect(() => {
@@ -663,13 +659,12 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
     if (orgStructureTreeData?.levels) {
       orgNodeByLevel = normalizeOrgNodeByLevel(orgNodeByLevel, orgStructureTreeData.levels);
     }
-    setFormData({
+    setMasterForm({
+      ...buildInitialMasterForm(employee as Record<string, unknown> | null),
+      orgNodeByLevel,
       mobile: employee?.mobile || '',
       name: employee?.name || '',
       reportingTo: (employee as any)?.reportingTo || (employee as any)?.reporting_to || '',
-      orgNodeByLevel,
-      status: employee?.status || 'active',
-      password: '',
     });
     setSearchResults([]);
     setSelectedExistingUser(null);
@@ -677,7 +672,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
 
   // Search for existing users by mobile number (EXACT mobile logic)
   const handleMobileChange = async (text: string) => {
-    setFormData({ ...formData, mobile: text });
+    setMasterForm((prev) => ({ ...prev, mobile: text }));
     setSelectedExistingUser(null);
     
     // Clear previous timeout
@@ -728,11 +723,11 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
 
   const handleSelectExistingUser = (user: any) => {
     setSelectedExistingUser(user);
-    setFormData({
-      ...formData,
+    setMasterForm((prev) => ({
+      ...prev,
       name: user.name || '',
-      mobile: user.mobile || user.phone || formData.mobile,
-    });
+      mobile: user.mobile || user.phone || prev.mobile,
+    }));
     setSearchResults([]);
   };
 
@@ -740,8 +735,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
     e.preventDefault();
 
     const orgNodeByLevel = orgStructureTreeData?.levels
-      ? normalizeOrgNodeByLevel(formData.orgNodeByLevel, orgStructureTreeData.levels)
-      : formData.orgNodeByLevel;
+      ? normalizeOrgNodeByLevel(masterForm.orgNodeByLevel, orgStructureTreeData.levels)
+      : masterForm.orgNodeByLevel;
 
     if (levelsFromL2.length > 0) {
       for (const level of levelsFromL2) {
@@ -754,13 +749,26 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
 
     const primaryOrgNodeId = getDeepestSelectedNodeId(orgNodeByLevel, levelsFromL2);
     const submitData: any = {
-      mobile: formData.mobile,
-      name: formData.name,
-      reportingTo: formData.reportingTo,
-      status: formData.status,
-      password: formData.password,
+      mobile: masterForm.mobile,
+      name: masterForm.name,
+      reportingTo: masterForm.reportingTo || undefined,
+      status: masterForm.status,
+      password: masterForm.password,
+      employeeCode: masterForm.employeeCode,
+      email: masterForm.email,
+      dateOfBirth: masterForm.dateOfBirth || undefined,
+      gender: masterForm.gender,
+      address: masterForm.address,
+      panNumber: masterForm.panNumber,
+      dateOfJoining: masterForm.dateOfJoining || undefined,
+      employmentType: masterForm.employmentType,
+      designation: masterForm.designation,
+      workLocationNodeId: masterForm.workLocationNodeId || null,
+      userRole: 'employee',
+      employeePermissions: masterForm.permissions,
+      notificationSettings: masterForm.notifications,
       primaryOrgNodeId: primaryOrgNodeId || null,
-      secondaryOrgNodeIds: [],
+      secondaryOrgNodeIds: masterForm.secondaryOrgNodeIds.filter((id) => id !== primaryOrgNodeId),
       orgFieldValues: buildEmployeeOrgFieldValuesPayload(orgNodeByLevel, {}),
     };
 
@@ -798,180 +806,54 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
     <form onSubmit={handleSubmit} className="space-y-4">
       {!employee && (
         <div className="relative">
-          <label className="block text-sm font-medium text-text-main mb-1">Mobile Number *</label>
+          <label className="block text-sm font-medium text-text-main mb-1">Mobile number (search) *</label>
           <input
             type="tel"
             required
             className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
-            placeholder="Enter 10-digit mobile number (e.g., 9876543210)"
-            value={formData.mobile}
-            onChange={(e) => {
-              // Allow only digits, +, and spaces for easier input
-              const value = e.target.value.replace(/[^\d+]/g, '');
-              handleMobileChange(value);
-            }}
+            placeholder="10-digit mobile"
+            value={masterForm.mobile}
+            onChange={(e) => handleMobileChange(e.target.value.replace(/[^\d+]/g, ''))}
             maxLength={15}
           />
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Enter any 10-digit mobile number (will be formatted automatically)
-          </p>
-          
-          {/* Search Results Dropdown - EXACT mobile logic */}
           {searchLoading && (
-            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg p-2">
-              <div className="flex items-center justify-center py-2">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
-                <span className="ml-2 text-sm text-gray-500">Searching...</span>
-              </div>
+            <div className="absolute z-10 w-full mt-1 rounded-lg border bg-white p-2 shadow-lg dark:bg-slate-800">
+              <span className="text-sm text-gray-500">Searching…</span>
             </div>
           )}
-          
           {!searchLoading && searchResults.length > 0 && (
-            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-              {searchResults.map((user: any) => {
-                const isSelected = selectedExistingUser?.id === user.id;
-                return (
-                  <button
-                    key={user.id}
-                    type="button"
-                    onClick={() => handleSelectExistingUser(user)}
-                    className={`w-full flex items-center gap-3 p-3 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors ${
-                      isSelected ? 'bg-primary/10 border-l-4 border-primary' : ''
-                    }`}
-                  >
-                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                      {user.profilePhotoUrl || user.profile_photo_url ? (
-                        <img
-                          src={user.profilePhotoUrl || user.profile_photo_url}
-                          alt={user.name || 'User'}
-                          className="w-full h-full rounded-full object-cover"
-                        />
-                      ) : (
-                        <span className="text-primary text-sm font-semibold">
-                          {(user.name || 'U').charAt(0).toUpperCase()}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex-1 text-left">
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                        {user.name || 'Unknown User'}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {user.mobile || user.phone}
-                      </p>
-                    </div>
-                    {isSelected && (
-                      <span className="material-symbols-outlined text-primary text-lg">check_circle</span>
-                    )}
-                  </button>
-                );
-              })}
+            <div className="absolute z-10 w-full mt-1 max-h-48 overflow-y-auto rounded-lg border bg-white shadow-lg dark:bg-slate-800">
+              {searchResults.map((user: any) => (
+                <button
+                  key={user.id}
+                  type="button"
+                  onClick={() => handleSelectExistingUser(user)}
+                  className="w-full p-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
+                >
+                  {user.name} — {user.mobile || user.phone}
+                </button>
+              ))}
             </div>
           )}
-          
           {selectedExistingUser && (
-            <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg flex items-center justify-between">
-              <p className="text-xs text-green-700 dark:text-green-300">
-                <span className="material-symbols-outlined text-sm align-middle mr-1">check_circle</span>
-                User found: {selectedExistingUser.name} - Password field hidden
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedExistingUser(null);
-                  setFormData({ ...formData, name: '', password: '' });
-                }}
-                className="text-green-700 dark:text-green-300 hover:text-green-900 dark:hover:text-green-100"
-                title="Clear selection"
-              >
-                <span className="material-symbols-outlined text-sm">close</span>
-              </button>
-            </div>
+            <p className="mt-1 text-xs text-green-600">Existing user linked — password not required.</p>
           )}
         </div>
       )}
-      <div>
-        <label className="block text-sm font-medium text-text-main mb-1">
-          Name *
-          {selectedExistingUser && (
-            <span className="ml-2 text-xs text-green-600 dark:text-green-400 font-normal">
-              (Auto-filled from existing user)
-            </span>
-          )}
-        </label>
-        <input
-          type="text"
-          required
-          className={`w-full px-4 py-2 rounded-lg border ${
-            selectedExistingUser
-              ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20'
-              : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
-          } text-text-main`}
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-        />
-        {selectedExistingUser && (
-          <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-            Name auto-filled from existing user. You can edit if needed.
-          </p>
-        )}
-      </div>
-      <EmployeeOrgLevelNodeSelectors
+
+      <EmployeeMasterFormSections
+        form={masterForm}
+        onChange={(patch) => setMasterForm((prev) => ({ ...prev, ...patch }))}
         tree={orgStructureTreeData}
-        value={formData.orgNodeByLevel}
-        onChange={(orgNodeByLevel) => setFormData((prev) => ({ ...prev, orgNodeByLevel }))}
+        employees={employees.filter((e) => !employee || e.id !== employee.id).map((e) => ({
+          id: e.id,
+          name: e.name,
+          mobile: e.mobile,
+        }))}
+        isEdit={Boolean(employee)}
+        showPassword={!employee && !selectedExistingUser}
       />
-      <p className="text-xs text-slate-500 dark:text-slate-400 -mt-2">
-        Choose organisation, company, region, etc. for this employee. Node details are managed in Entity Master Data, not here.
-      </p>
-      <div>
-        <label className="block text-sm font-medium text-text-main mb-1">Reporting To</label>
-        <select
-          className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
-          value={formData.reportingTo}
-          onChange={(e) => setFormData({ ...formData, reportingTo: e.target.value })}
-        >
-          <option value="">Self / None</option>
-          {employees
-            .filter((e) => !employee || e.id !== employee.id)
-            .map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name} ({e.mobile})
-              </option>
-            ))}
-        </select>
-      </div>
-      {employee && (
-        <div>
-          <label className="block text-sm font-medium text-text-main mb-1">Status</label>
-          <select
-            className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
-            value={formData.status}
-            onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-          >
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-            <option value="suspended">Suspended</option>
-          </select>
-        </div>
-      )}
-      {!employee && !selectedExistingUser && (
-        <div>
-          <label className="block text-sm font-medium text-text-main mb-1">Password *</label>
-          <input
-            type="password"
-            required
-            minLength={4}
-            className="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-text-main"
-            placeholder="Minimum 4 characters"
-            value={formData.password}
-            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-          />
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Required for new users. If user exists in OrgIT, password field will disappear automatically.
-          </p>
-        </div>
-      )}
+
       <div className="flex justify-end gap-3 pt-4">
         <button
           type="button"

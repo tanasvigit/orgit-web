@@ -16,12 +16,22 @@ import { masterDataService } from '../../services/masterDataService';
 import { CustomDatePicker } from '../../components/shared/CustomDatePicker';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { useEmployeePermissions } from '../../hooks/useEmployeePermissions';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 
 export const TaskCreationScreen: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { canCreateTask } = useEmployeePermissions();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (!canCreateTask()) {
+      toast.error('You do not have permission to create tasks.');
+      navigate('/tasks', { replace: true });
+    }
+  }, [canCreateTask, navigate, toast]);
   const [taskType, setTaskType] = useState<'one_time' | 'recurring'>('one_time');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -58,7 +68,6 @@ export const TaskCreationScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [reportingMemberId, setReportingMemberId] = useState<string | null>(null);
 
-  const { toast } = useToast();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
 

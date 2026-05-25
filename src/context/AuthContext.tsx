@@ -1,6 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authService } from '../services/authService';
 import { initSocket, disconnectSocket } from '../services/socketService';
+import type {
+  EmployeePermissions,
+  EmployeeNotificationSettings,
+} from '../screens/admin/employees/employeeMasterTypes';
 
 interface User {
   id: string;
@@ -12,6 +16,8 @@ interface User {
   bio?: string;
   organizationId?: string;
   mustChangePassword?: boolean;
+  employeePermissions?: EmployeePermissions;
+  notificationSettings?: EmployeeNotificationSettings;
 }
 
 interface AuthContextType {

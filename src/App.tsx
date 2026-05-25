@@ -6,6 +6,7 @@ import { ToastProvider } from './context/ToastContext';
 import { NotificationSocketBridge } from './components/NotificationSocketBridge';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ChangePasswordPopup } from './components/auth/ChangePasswordPopup';
+import { ModuleAccessRoute } from './components/auth/ModuleAccessRoute';
 import './App.css';
 
 // Lazy-loaded route screens (named-export pattern)
@@ -180,7 +181,9 @@ function App() {
               path="/dashboard"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><EmployeeDashboard /></Suspense>
+                  <ModuleAccessRoute module="Dashboard">
+                    <Suspense fallback={<RouteFallback />}><EmployeeDashboard /></Suspense>
+                  </ModuleAccessRoute>
                 </ProtectedRoute>
               }
             />
@@ -188,7 +191,9 @@ function App() {
               path="/messages"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><MainMessagingScreen /></Suspense>
+                  <ModuleAccessRoute module="Messaging">
+                    <Suspense fallback={<RouteFallback />}><MainMessagingScreen /></Suspense>
+                  </ModuleAccessRoute>
                 </ProtectedRoute>
               }
             />
@@ -196,7 +201,9 @@ function App() {
               path="/messages/new"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><NewChatScreen /></Suspense>
+                  <ModuleAccessRoute module="Messaging">
+                    <Suspense fallback={<RouteFallback />}><NewChatScreen /></Suspense>
+                  </ModuleAccessRoute>
                 </ProtectedRoute>
               }
             />
@@ -204,9 +211,11 @@ function App() {
               path="/messages/:conversationId"
               element={
                 <ProtectedRoute>
-                  <ErrorBoundary>
-                    <Suspense fallback={<RouteFallback />}><DirectChatConversation /></Suspense>
-                  </ErrorBoundary>
+                  <ModuleAccessRoute module="Messaging">
+                    <ErrorBoundary>
+                      <Suspense fallback={<RouteFallback />}><DirectChatConversation /></Suspense>
+                    </ErrorBoundary>
+                  </ModuleAccessRoute>
                 </ProtectedRoute>
               }
             />
@@ -214,7 +223,9 @@ function App() {
               path="/messages/task-group/:conversationId"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><TaskGroupChatConversation /></Suspense>
+                  <ModuleAccessRoute module="Messaging">
+                    <Suspense fallback={<RouteFallback />}><TaskGroupChatConversation /></Suspense>
+                  </ModuleAccessRoute>
                 </ProtectedRoute>
               }
             />
@@ -222,7 +233,9 @@ function App() {
               path="/tasks/task-group/:conversationId"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><TaskDashboardScreen /></Suspense>
+                  <ModuleAccessRoute module="Tasks">
+                    <Suspense fallback={<RouteFallback />}><TaskDashboardScreen /></Suspense>
+                  </ModuleAccessRoute>
                 </ProtectedRoute>
               }
             />
@@ -230,7 +243,9 @@ function App() {
               path="/tasks"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><TaskDashboardScreen /></Suspense>
+                  <ModuleAccessRoute module="Tasks">
+                    <Suspense fallback={<RouteFallback />}><TaskDashboardScreen /></Suspense>
+                  </ModuleAccessRoute>
                 </ProtectedRoute>
               }
             />
@@ -238,7 +253,9 @@ function App() {
               path="/tasks/create"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><TaskCreationScreen /></Suspense>
+                  <ModuleAccessRoute module="Tasks">
+                    <Suspense fallback={<RouteFallback />}><TaskCreationScreen /></Suspense>
+                  </ModuleAccessRoute>
                 </ProtectedRoute>
               }
             />
@@ -246,7 +263,9 @@ function App() {
               path="/tasks/:taskId"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><TaskDetailsScreen /></Suspense>
+                  <ModuleAccessRoute module="Tasks">
+                    <Suspense fallback={<RouteFallback />}><TaskDetailsScreen /></Suspense>
+                  </ModuleAccessRoute>
                 </ProtectedRoute>
               }
             />
@@ -254,7 +273,9 @@ function App() {
               path="/tasks/:taskId/chat"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><TaskChatScreen /></Suspense>
+                  <ModuleAccessRoute module="Tasks">
+                    <Suspense fallback={<RouteFallback />}><TaskChatScreen /></Suspense>
+                  </ModuleAccessRoute>
                 </ProtectedRoute>
               }
             />
@@ -262,7 +283,9 @@ function App() {
               path="/documents"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><DocumentManagementHome /></Suspense>
+                  <ModuleAccessRoute module="Documents">
+                    <Suspense fallback={<RouteFallback />}><DocumentManagementHome /></Suspense>
+                  </ModuleAccessRoute>
                 </ProtectedRoute>
               }
             />
@@ -270,7 +293,9 @@ function App() {
               path="/documents/create"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><CreateDocument /></Suspense>
+                  <ModuleAccessRoute module="Documents">
+                    <Suspense fallback={<RouteFallback />}><CreateDocument /></Suspense>
+                  </ModuleAccessRoute>
                 </ProtectedRoute>
               }
             />
@@ -278,7 +303,9 @@ function App() {
               path="/documents/create/:templateId"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><CreateDocument /></Suspense>
+                  <ModuleAccessRoute module="Documents">
+                    <Suspense fallback={<RouteFallback />}><CreateDocument /></Suspense>
+                  </ModuleAccessRoute>
                 </ProtectedRoute>
               }
             />
@@ -286,7 +313,9 @@ function App() {
               path="/documents/:id"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<RouteFallback />}><DocumentViewer /></Suspense>
+                  <ModuleAccessRoute module="Documents">
+                    <Suspense fallback={<RouteFallback />}><DocumentViewer /></Suspense>
+                  </ModuleAccessRoute>
                 </ProtectedRoute>
               }
             />

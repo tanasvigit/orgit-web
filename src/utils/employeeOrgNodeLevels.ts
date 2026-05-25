@@ -19,6 +19,83 @@ export function getActiveLevelsFromL2(levels: OrganizationStructureLevel[]): Org
     .sort((a, b) => a.levelNumber - b.levelNumber);
 }
 
+/** Active org nodes under the organisation root (excludes the root node itself). */
+export function getActiveNodesUnderRoot(
+  tree: OrganizationStructureTree | null | undefined
+): OrganizationStructureNode[] {
+  const rootNodeId = tree?.rootNode?.id;
+  if (!tree || !rootNodeId) return [];
+  return (tree.nodes ?? []).filter((n) => {
+    if (!n?.id || n.status === 'archived') return false;
+    if (n.id === rootNodeId || !n.parentNodeId) return false;
+    const pathIds = n.pathIds || [];
+    return pathIds.includes(rootNodeId);
+  });
+}
+
+/**
+ * Sections to show on employee assignment — only labels that have at least one node on the org chart.
+ * (Not every section row in the DB catalog.)
+ */
+export function getAssignmentSectionsFromTree(
+  tree: OrganizationStructureTree | null | undefined,
+  currentValue?: OrgNodeByLevel
+): OrganizationStructureLevel[] {
+  const rootNodeId = tree?.rootNode?.id;
+  if (!tree || !rootNodeId) return [];
+
+  const levels = tree.levels ?? [];
+  const levelByLabel = new Map(
+    levels.map((l) => [l.levelLabel.trim().toLowerCase(), l])
+  );
+
+  const sectionByKey = new Map<
+    string,
+    { level: OrganizationStructureLevel; sortKey: number }
+  >();
+
+  const addSection = (node: OrganizationStructureNode) => {
+    const label = (node.levelLabel || '').trim();
+    if (!label) return;
+    const key = label.toLowerCase();
+    const matched = levelByLabel.get(key);
+    const level: OrganizationStructureLevel =
+      matched ||
+      ({
+        id: node.levelId,
+        organizationId: node.organizationId,
+        levelNumber: node.levelNumber,
+        levelKey: node.levelKey,
+        levelLabel: label,
+        definitionSource: 'custom',
+        fieldSchemaJson: [],
+        isSystemRequired: false,
+        isActive: true,
+      } as OrganizationStructureLevel);
+    const sortKey = node.stageOrder ?? node.levelNumber ?? 999;
+    const prev = sectionByKey.get(key);
+    if (!prev || sortKey < prev.sortKey) {
+      sectionByKey.set(key, { level, sortKey });
+    }
+  };
+
+  for (const node of getActiveNodesUnderRoot(tree)) {
+    addSection(node);
+  }
+
+  if (currentValue) {
+    for (const nodeId of Object.values(currentValue)) {
+      if (!nodeId?.trim()) continue;
+      const node = tree.nodes.find((n) => n.id === nodeId);
+      if (node) addSection(node);
+    }
+  }
+
+  return Array.from(sectionByKey.values())
+    .sort((a, b) => a.sortKey - b.sortKey)
+    .map((entry) => entry.level);
+}
+
 /** Convert legacy numeric keys (2, 3, …) to section labels when levels are known. */
 export function normalizeOrgNodeByLevel(
   raw: OrgNodeByLevel,
@@ -145,8 +222,9 @@ export function getEntityTypeFromNode(
 
 export function formatOrgNodeOptionLabel(
   tree: OrganizationStructureTree | null | undefined,
-  node: OrganizationStructureNode
+  node: OrganizationStructureNode | null | undefined
 ): string {
+  if (!node?.id || !node.name) return '';
   const fieldType = getEntityTypeFromNode(tree, node.id);
   const section = (node.levelLabel || '').trim();
   if (fieldType && section && fieldType.toLowerCase() !== section.toLowerCase()) {
@@ -160,7 +238,7 @@ export function formatOrgNodeByLevelSummary(
   orgNodeByLevel: OrgNodeByLevel
 ): string {
   if (!tree) return '';
-  const levels = getActiveLevelsFromL2(tree.levels);
+  const levels = getAssignmentSectionsFromTree(tree, orgNodeByLevel);
   const parts: string[] = [];
   for (const level of levels) {
     const nodeId = lookupOrgNodeId(orgNodeByLevel, level);

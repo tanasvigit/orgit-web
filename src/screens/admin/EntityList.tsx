@@ -12,7 +12,7 @@ import {
   deriveOrgNodeByLevelFromPrimary,
   extractOrgNodeByLevel,
   formatOrgNodeByLevelSummary,
-  getActiveLevelsFromL2,
+  getAssignmentSectionsFromTree,
   getDeepestSelectedNodeId,
   getEntityTypeFromNode,
   lookupOrgNodeId,
@@ -99,11 +99,6 @@ export const EntityList: React.FC = () => {
     status: 'active' as 'active' | 'inactive',
   });
 
-  const levelsFromL2 = React.useMemo(
-    () => getActiveLevelsFromL2(orgStructureTreeData?.levels ?? []),
-    [orgStructureTreeData?.levels]
-  );
-
   const getClientOrgLabel = (client: any): string => {
     const rawFv = (client.org_field_values || {}) as Record<string, unknown>;
     let byLevel = extractOrgNodeByLevel(rawFv);
@@ -153,15 +148,16 @@ export const EntityList: React.FC = () => {
       ? normalizeOrgNodeByLevel(form.orgNodeByLevel, orgStructureTreeData.levels)
       : form.orgNodeByLevel;
 
-    if (levelsFromL2.length > 0) {
-      for (const level of levelsFromL2) {
+    const sectionsOnChart = getAssignmentSectionsFromTree(orgStructureTreeData, orgNodeByLevel);
+    if (sectionsOnChart.length > 0) {
+      for (const level of sectionsOnChart) {
         if (!lookupOrgNodeId(orgNodeByLevel, level)) {
           toast.error(`Please select ${level.levelLabel}`);
           return null;
         }
       }
     }
-    const orgStructureNodeId = getDeepestSelectedNodeId(orgNodeByLevel, levelsFromL2);
+    const orgStructureNodeId = getDeepestSelectedNodeId(orgNodeByLevel, sectionsOnChart);
     return {
       name: form.name,
       entityType: getEntityTypeFromNode(orgStructureTreeData, orgStructureNodeId) || undefined,
