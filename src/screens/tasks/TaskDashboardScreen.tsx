@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useQuery, useQueries, useQueryClient, useMutation } from 'react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { conversationService } from '../../services/conversationService';
@@ -13,15 +13,109 @@ import { AdminLayout } from '../../components/admin/AdminLayout';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { TaskGroupChatConversation } from '../messaging/TaskGroupChatConversation';
 import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
+import { BulkAssignUsersModal } from '../../components/tasks/BulkAssignUsersModal';
 import { taskBulkService } from '../../services/taskBulkService';
 import { isTaskDeleted } from '../../utils/taskUtils';
 import { formatChatListTimestamp, timestampToMs } from '../../utils/chatTime';
 import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
-import { getTaskCreationUserConfig } from '../../services/userTaskCreationConfigService';
+import { parseDueSoonDays } from '../../utils/dueSoonDays';
+import { getLastTasksDueSoonDays } from '../../services/taskService';
+import { resolveTaskTitleWithPeriod } from '../../utils/taskPeriod';
+import { resolveTaskUnitForPreference } from '../../utils/taskUnitDisplay';
+import { getTaskCreationUserConfig, taskCreationUserConfigQueryKey } from '../../services/userTaskCreationConfigService';
+import { useClickOutside } from '../../hooks/useClickOutside';
 import { AppIcon } from '../../components/shared/AppIcon';
+import { FilterChipScrollRow } from '../../components/shared/FilterChipScrollRow';
 import { taskStatusToAppIcon } from '../../constants/appIcons';
+import { useTaskCardDisplayConfig } from '../../hooks/useTaskCardDisplayConfig';
+import type { TaskCardDisplayConfig } from '../../utils/taskCardDisplayConfig';
 
 type TaskDashboardStatus = TaskStatusCategory;
+
+function TaskDashboardCardBody({
+  display,
+  displayTitle,
+  taskStatusCategory,
+  taskTagOrClient,
+  taskDueLabel,
+  taskFrequencyLabel,
+  taskUnitLabel,
+  titleClassName,
+}: {
+  display: TaskCardDisplayConfig;
+  displayTitle: string;
+  taskStatusCategory: TaskDashboardStatus | null;
+  taskTagOrClient: string;
+  taskDueLabel: string;
+  taskFrequencyLabel: string;
+  taskUnitLabel: string | null;
+  titleClassName?: string;
+}) {
+  const showStatusIcon = display.statusIcon && !!taskStatusCategory;
+  const showTag = display.tagOrClient && !!taskTagOrClient;
+  const showDue = display.dueDate && !!taskDueLabel;
+  const showFreq = display.frequency && !!taskFrequencyLabel;
+  const showUnit = display.taskUnit && !!taskUnitLabel;
+  const showHeaderRow = display.title || showStatusIcon;
+  const showSecondRow = showTag || showDue;
+  const showThirdRow = showFreq || showUnit;
+
+  return (
+    <div className="grid w-full grid-cols-[minmax(0,2fr)_auto] gap-x-2 gap-y-1">
+      {showHeaderRow ? (
+        <>
+          {display.title ? (
+            <h4
+              className={
+                titleClassName ||
+                'min-w-0 text-xs font-bold text-gray-900 dark:text-white truncate'
+              }
+            >
+              {displayTitle}
+            </h4>
+          ) : (
+            <div />
+          )}
+          <div className="flex justify-end">
+            {showStatusIcon && taskStatusCategory ? (
+              <TaskStatusIcon category={taskStatusCategory} />
+            ) : null}
+          </div>
+        </>
+      ) : null}
+
+      {showSecondRow ? (
+        <>
+          {showTag ? (
+            <p className="min-w-0 text-[11px] text-gray-700 dark:text-gray-300 truncate">{taskTagOrClient}</p>
+          ) : (
+            <div />
+          )}
+          {showDue ? (
+            <p className="text-[11px] text-right text-gray-500 dark:text-gray-400 truncate">{taskDueLabel}</p>
+          ) : (
+            <div />
+          )}
+        </>
+      ) : null}
+
+      {showThirdRow ? (
+        <>
+          {showFreq ? (
+            <p className="min-w-0 text-[11px] text-gray-500 dark:text-gray-400 truncate">{taskFrequencyLabel}</p>
+          ) : (
+            <div />
+          )}
+          {showUnit ? (
+            <p className="text-[11px] text-right text-gray-500 dark:text-gray-400 truncate">{taskUnitLabel}</p>
+          ) : (
+            <div />
+          )}
+        </>
+      ) : null}
+    </div>
+  );
+}
 
 const STATUS_LABELS: Record<Exclude<StatusFilter, 'all'>, string> = {
   scheduled: 'Scheduled',
@@ -59,7 +153,7 @@ function TaskStatusIcon({ category }: { category: Exclude<StatusFilter, 'all'> }
   }
   return (
     <span
-      className={`material-icons-round text-base ${STATUS_ICON_COLORS[category]}`}
+      className={`material-icons-round text-[22px] ${STATUS_ICON_COLORS[category]}`}
       title={title}
       aria-hidden
     >
@@ -97,22 +191,28 @@ export const TaskDashboardScreen: React.FC = () => {
   const [rejectTaskTitle, setRejectTaskTitle] = useState('');
   const [rejectConvId, setRejectConvId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
   const socketRef = React.useRef<any>(null);
 
   // Track first successful fetch instead of fetch transition (prevents showing stale cache on first paint).
   const [hasConversationsFetchedSinceMount, setHasConversationsFetchedSinceMount] = useState(false);
   const [hasTasksFetchedSinceMount, setHasTasksFetchedSinceMount] = useState(false);
-  const { data: userTaskConfig } = useQuery(['task-creation-user-config-dashboard'], getTaskCreationUserConfig, {
+  const { data: userTaskConfig } = useQuery(taskCreationUserConfigQueryKey, getTaskCreationUserConfig, {
     staleTime: 60_000,
   });
+  const taskCardDisplay = useTaskCardDisplayConfig();
 
   // Scheduled indicator must come from backend lifecycle fields (DB),
   // not from client-side date comparisons.
-  const getTaskStatusForFilter = (task: any): TaskDashboardStatus | null => {
-    if (!task) return null;
-    const currentUserId = user?.id || (user as any)?.userId;
-    return getTaskStatusCategoryFromTask(task, 3, currentUserId);
-  };
+  const { data: dashboardData } = useQuery(
+    ['task-dashboard-data'],
+    () => dashboardService.getDashboard(),
+    {
+      staleTime: 30000,
+    }
+  );
 
   const resolveTaskClientName = (taskLike: any): string => {
     if (!taskLike) return '';
@@ -129,27 +229,7 @@ export const TaskDashboardScreen: React.FC = () => {
       userTaskConfig?.taskUnitPreference === 'org_node' || userTaskConfig?.taskUnitPreference === 'org_unit'
         ? 'org_unit'
         : userTaskConfig?.taskUnitPreference || 'org_unit';
-    const map: Record<string, { label: string; keys: string[] }> = {
-      cost_centre: {
-        label: 'Cost centre',
-        keys: ['cost_centre_name', 'costCentreName', 'cost_center_name', 'costCenterName', 'cost_centre', 'costCentre'],
-      },
-      department: { label: 'Department', keys: ['department_name', 'departmentName', 'department'] },
-      depot: { label: 'Depot', keys: ['depot_name', 'depotName', 'depot'] },
-      branch: { label: 'Branch', keys: ['branch_name', 'branchName', 'branch'] },
-      entity: { label: 'Entity', keys: ['entity_name', 'entityName', 'client_name', 'clientName'] },
-      warehouse: { label: 'Warehouse', keys: ['warehouse_name', 'warehouseName', 'warehouse'] },
-      project: { label: 'Project', keys: ['project_name', 'projectName', 'project'] },
-      factory: { label: 'Factory', keys: ['factory_name', 'factoryName', 'factory'] },
-      org_unit: { label: 'Organization unit', keys: ['org_structure_path', 'orgStructurePath', 'task_unit', 'taskUnit'] },
-    };
-    const prefKey = preference === 'org_node' ? 'org_unit' : preference;
-    const chosen = map[prefKey] || map.org_unit;
-    // Backend stores the user-entered unit value as a single column (`task_unit`,
-    // legacy `task_unit_name`); type-specific keys above are kept for forward-compat.
-    const lookupKeys = [...chosen.keys, 'task_unit', 'taskUnit', 'task_unit_name', 'taskUnitName'];
-    const value = lookupKeys.map((k) => taskLike?.[k]).find((v) => typeof v === 'string' && v.trim());
-    return value ? String(value).trim() : null;
+    return resolveTaskUnitForPreference(taskLike, preference);
   };
 
   const resolveTaskTagOrClient = (taskLike: any): string => {
@@ -316,26 +396,17 @@ export const TaskDashboardScreen: React.FC = () => {
     }
   }, [searchParams]);
 
-  useEffect(() => {
-    const handleOutsideClick = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (teamMemberFilterRef.current && !teamMemberFilterRef.current.contains(target)) {
-        setShowTeamMemberFilter(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  const closeSearchSuggestions = useCallback(() => {
+    setShowSuggestions(false);
+    setHighlightedIndex(-1);
   }, []);
 
-  // Dashboard data for aligning Task Management filters with dashboard metrics
-  const { data: dashboardData } = useQuery(
-    ['task-dashboard-data'],
-    () => dashboardService.getDashboard(3),
-    {
-      staleTime: 30000,
-    }
+  useClickOutside(suggestionsRef, closeSearchSuggestions, showSuggestions);
+  useClickOutside(
+    teamMemberFilterRef,
+    () => setShowTeamMemberFilter(false),
+    showTeamMemberFilter
   );
-
 
   const dashboardTaskIdsForView = useMemo(() => {
     if (!dashboardData?.data) return null;
@@ -387,6 +458,26 @@ export const TaskDashboardScreen: React.FC = () => {
       staleTime: 0,
     }
   );
+
+  const [tasksDueSoonDays, setTasksDueSoonDays] = useState(3);
+  useEffect(() => {
+    if (!isDirectTasksLoading) {
+      setTasksDueSoonDays(getLastTasksDueSoonDays());
+    }
+  }, [isDirectTasksLoading, directTasks]);
+
+  const dueSoonDays = useMemo(() => {
+    if (dashboardData) {
+      return parseDueSoonDays(dashboardData?.data?.dueSoonDays ?? dashboardData?.dueSoonDays);
+    }
+    return tasksDueSoonDays;
+  }, [dashboardData, tasksDueSoonDays]);
+
+  const getTaskStatusForFilter = (task: any): TaskDashboardStatus | null => {
+    if (!task) return null;
+    const currentUserId = user?.id || (user as any)?.userId;
+    return getTaskStatusCategoryFromTask(task, dueSoonDays, currentUserId);
+  };
 
   // Set "fetched since mount" when loading has finished and we have data (so we never render stale cache first).
   useEffect(() => {
@@ -541,22 +632,6 @@ export const TaskDashboardScreen: React.FC = () => {
     if (selectedTeamMemberIds.length === 0) return true;
     const memberIds = new Set(getTaskAssigneeEntries(task).map((a) => a.id));
     return selectedTeamMemberIds.some((id) => memberIds.has(id));
-  };
-
-  const resolveTaskPeriodLabel = (task: any): string => {
-    const sourceDate = task?.start_date || task?.startDate || task?.due_date || task?.dueDate;
-    if (!sourceDate) return '';
-    const date = new Date(sourceDate);
-    if (Number.isNaN(date.getTime())) return '';
-    return date.toLocaleString('en-US', { month: 'short', year: 'numeric' });
-  };
-
-  const resolveTaskTitleWithPeriod = (task: any, fallbackTitle: string): string => {
-    const baseTitle = String(task?.title || fallbackTitle || 'Untitled Task').trim();
-    const period = resolveTaskPeriodLabel(task);
-    if (!period) return baseTitle;
-    if (baseTitle.toLowerCase().includes(period.toLowerCase())) return baseTitle;
-    return `${baseTitle} - ${period}`;
   };
 
   // Get task IDs that already have conversations
@@ -755,6 +830,66 @@ export const TaskDashboardScreen: React.FC = () => {
     selectedTeamMemberIds,
   ]);
 
+  const currentUserId = user?.id || (user as any)?.userId;
+
+  const canBulkSelectTask = useCallback(
+    (task: any): boolean => {
+      if (!task?.id || isTaskDeleted(task)) return false;
+      const creatorId = task.created_by || task.creator_id;
+      if (creatorId != null && String(creatorId) === String(currentUserId)) return true;
+      if (task.current_user_status != null) return true;
+      const assignees = Array.isArray(task.assignees) ? task.assignees : [];
+      return assignees.some((a: any) => {
+        const id = a?.id || a?.user_id || a?.userId;
+        return id != null && String(id) === String(currentUserId);
+      });
+    },
+    [currentUserId]
+  );
+
+  const selectableTaskEntries = useMemo(() => {
+    const entries: { taskId: string; title: string }[] = [];
+    const seen = new Set<string>();
+    filteredTaskGroups.forEach((conv: any) => {
+      const convId = conv.id ?? conv.conversationId;
+      const key = convId != null ? String(convId) : '';
+      const task = key ? taskByConvId[key] : undefined;
+      if (task?.id && canBulkSelectTask(task) && !seen.has(String(task.id))) {
+        seen.add(String(task.id));
+        entries.push({
+          taskId: String(task.id),
+          title: task.title || conv.name || 'Task',
+        });
+      }
+    });
+    tasksWithoutConversations.forEach((task: any) => {
+      if (task?.id && canBulkSelectTask(task) && !seen.has(String(task.id))) {
+        seen.add(String(task.id));
+        entries.push({ taskId: String(task.id), title: task.title || 'Untitled Task' });
+      }
+    });
+    return entries;
+  }, [filteredTaskGroups, tasksWithoutConversations, taskByConvId, canBulkSelectTask]);
+
+  const toggleTaskSelection = (taskId: string) => {
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
+
+  const exitBulkSelectMode = () => {
+    setBulkSelectMode(false);
+    setSelectedTaskIds(new Set());
+    setShowBulkAssignModal(false);
+  };
+
+  const selectAllVisibleTasks = () => {
+    setSelectedTaskIds(new Set(selectableTaskEntries.map((e) => e.taskId)));
+  };
+
   // Update conversation with new message (matching mobile pattern)
   const updateConversationWithNewMessage = (message: any) => {
     if (!message.conversation_id || !message.id) {
@@ -922,6 +1057,7 @@ export const TaskDashboardScreen: React.FC = () => {
         socket.on('message_status_update', handleMessageStatusUpdate);
         socket.on('conversation_messages_read', handleConversationMessagesRead);
         socket.on('task:status_changed', handleTaskStatusChanged);
+        socket.on('task:recurrence_created', handleTaskStatusChanged);
 
         socketRef.current = socket;
 
@@ -930,6 +1066,7 @@ export const TaskDashboardScreen: React.FC = () => {
           socket.off('message_status_update', handleMessageStatusUpdate);
           socket.off('conversation_messages_read', handleConversationMessagesRead);
           socket.off('task:status_changed', handleTaskStatusChanged);
+          socket.off('task:recurrence_created', handleTaskStatusChanged);
         };
       } catch (error) {
         console.error('Socket setup error:', error);
@@ -1037,19 +1174,72 @@ export const TaskDashboardScreen: React.FC = () => {
   const taskGroupListContent = (
     <div className="flex flex-col h-full min-h-0 bg-background-light dark:bg-background-dark">
       {/* Header with Filters */}
-      <div className="p-3 pb-2 border-b border-border-light dark:border-border-dark bg-white dark:bg-surface-dark/50 backdrop-blur-sm sticky top-0 z-10">
+      <div className="shrink-0 p-2.5 pb-2 border-b border-border-light dark:border-border-dark bg-white dark:bg-surface-dark/50 backdrop-blur-sm z-10">
         {/* Header with Title and Create Button */}
-        <div className="flex items-center justify-between mb-2.5">
-          <h1 className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">Tasks</h1>
-          <button
-            onClick={() => setShowTaskCreateModal(true)}
-            className="w-9 h-9 bg-primary hover:bg-primary/90 text-white rounded-lg flex items-center justify-center shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all duration-200 hover:scale-105 active:scale-95"
-            title="Create Task"
-            aria-label="Create Task"
-          >
-            <span className="material-icons-outlined text-xl">add</span>
-          </button>
+        <div className="flex items-center justify-between mb-2">
+          <h1 className="text-base font-bold tracking-tight text-gray-900 dark:text-white">Tasks</h1>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                if (bulkSelectMode) exitBulkSelectMode();
+                else setBulkSelectMode(true);
+              }}
+              className={`h-9 px-2.5 rounded-lg flex items-center gap-1 text-xs font-semibold border transition-colors ${
+                bulkSelectMode
+                  ? 'bg-primary/10 border-primary text-primary'
+                  : 'border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'
+              }`}
+              title={bulkSelectMode ? 'Cancel selection' : 'Select tasks to assign users'}
+            >
+              <span className="material-icons-outlined text-base">
+                {bulkSelectMode ? 'close' : 'checklist'}
+              </span>
+              {bulkSelectMode ? 'Cancel' : 'Select'}
+            </button>
+            <button
+              onClick={() => setShowTaskCreateModal(true)}
+              className="w-9 h-9 bg-primary hover:bg-primary/90 text-white rounded-lg flex items-center justify-center shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all duration-200 hover:scale-105 active:scale-95"
+              title="Create Task"
+              aria-label="Create Task"
+            >
+              <span className="material-icons-outlined text-xl">add</span>
+            </button>
+          </div>
         </div>
+
+        {bulkSelectMode && (
+          <div className="mb-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-2.5">
+            <p className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">
+              {selectedTaskIds.size} of {selectableTaskEntries.length} selected
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={selectAllVisibleTasks}
+                disabled={selectableTaskEntries.length === 0}
+                className="min-h-[32px] px-3 py-1.5 rounded-md text-xs font-semibold bg-white dark:bg-slate-700 border border-gray-200 dark:border-gray-600 text-gray-800 dark:text-gray-100 disabled:opacity-50"
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedTaskIds(new Set())}
+                className="min-h-[32px] px-3 py-1.5 rounded-md text-xs font-semibold bg-white dark:bg-slate-700 border border-gray-200 dark:border-gray-600 text-gray-800 dark:text-gray-100"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                disabled={selectedTaskIds.size === 0}
+                onClick={() => setShowBulkAssignModal(true)}
+                className="min-h-[32px] ml-auto px-4 py-1.5 rounded-md text-xs font-semibold bg-primary text-white disabled:opacity-50"
+              >
+                Add users
+              </button>
+            </div>
+          </div>
+        )}
         
         {/* Google-style Search Box: input + suggestions in one container */}
         <div
@@ -1252,7 +1442,7 @@ export const TaskDashboardScreen: React.FC = () => {
 
         {/* Status Filters - Enhanced Design */}
         <div className="space-y-2">
-          <div className="flex flex-nowrap gap-1 w-full overflow-x-auto pb-1 -mx-3 px-3">
+          <FilterChipScrollRow>
             {([
               { key: 'all', label: 'All' },
               { key: 'self', label: 'Self Tasks' },
@@ -1276,13 +1466,10 @@ export const TaskDashboardScreen: React.FC = () => {
                 </button>
               );
             })}
-          </div>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="material-icons-outlined text-sm text-gray-500 dark:text-gray-400"></span>
-            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide"></span>
-          </div>
-          <div className="flex flex-nowrap gap-1 w-full overflow-x-auto pb-1 -mx-3 px-3">
+          </FilterChipScrollRow>
+          <FilterChipScrollRow>
               {([
+                { key: 'scheduled', label: 'Scheduled', color: 'indigo' },
                 { key: 'todo', label: 'To Do', color: 'blue' },
                 { key: 'inprogress', label: 'In Progress', color: 'purple' },
                 { key: 'duesoon', label: 'Due Soon', color: 'orange' },
@@ -1315,7 +1502,7 @@ export const TaskDashboardScreen: React.FC = () => {
                   </button>
                 );
               })}
-          </div>
+          </FilterChipScrollRow>
         </div>
       </div>
 
@@ -1361,7 +1548,7 @@ export const TaskDashboardScreen: React.FC = () => {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 space-y-3">
+      <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pb-2 space-y-2">
         {/* Loading state to avoid flicker / incorrect default actions */}
         {isTaskGroupsLoading && (
           <div>
@@ -1404,45 +1591,49 @@ export const TaskDashboardScreen: React.FC = () => {
                 const taskFrequencyLabel = resolveTaskFrequencyLabel(task);
                 const taskUnitLabel = resolveTaskUnitDisplay(task);
                 const isSelected = selectedConversationId === convId;
+                const taskIdStr = task?.id ? String(task.id) : '';
+                const bulkEligible = taskIdStr && canBulkSelectTask(task);
+                const taskChecked = bulkSelectMode && taskIdStr && selectedTaskIds.has(taskIdStr);
 
                 return (
                   <div
                     key={convId}
-                    className={`group min-h-[112px] rounded-xl border p-3 transition-all duration-200 cursor-pointer hover:bg-white dark:hover:bg-surface-dark hover:shadow-md hover:scale-[1.01] active:scale-[0.99] ${
-                      isSelected
+                    className={`group h-fit rounded-xl border p-2.5 transition-colors duration-200 cursor-pointer hover:bg-white dark:hover:bg-surface-dark hover:shadow-sm ${
+                      taskChecked
+                        ? 'bg-primary/5 border-primary ring-1 ring-primary/30'
+                        : isSelected
                         ? 'bg-primary/10 dark:bg-primary/20 border-primary shadow-md'
                         : 'border-gray-200 dark:border-gray-700'
                     }`}
                     onClick={() => {
-                      // Open chat inside Task Dashboard (right panel), do not redirect to Messages module
+                      if (bulkSelectMode && bulkEligible && taskIdStr) {
+                        toggleTaskSelection(taskIdStr);
+                        return;
+                      }
                       navigate(isAdmin ? `/admin/tasks/task-group/${convId}` : `/tasks/task-group/${convId}`);
                     }}
                   >
-                    <div className="grid w-full grid-cols-[minmax(0,2fr)_auto] gap-x-3 gap-y-1.5">
-                      <h4 className="min-w-0 text-xs font-bold text-gray-900 dark:text-white truncate group-hover:text-primary dark:group-hover:text-primary/80 transition-colors">
-                        {displayTaskTitle}
-                      </h4>
-                      <div className="flex justify-end">
-                        {taskStatusCategory ? <TaskStatusIcon category={taskStatusCategory} /> : null}
+                    <div className="flex items-start gap-3">
+                      {bulkSelectMode && bulkEligible ? (
+                        <input
+                          type="checkbox"
+                          checked={!!taskChecked}
+                          readOnly
+                          className="mt-4 shrink-0 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary pointer-events-none"
+                        />
+                      ) : null}
+                      <div className="flex-1 min-w-0">
+                        <TaskDashboardCardBody
+                          display={taskCardDisplay}
+                          displayTitle={displayTaskTitle}
+                          taskStatusCategory={taskStatusCategory}
+                          taskTagOrClient={taskTagOrClient}
+                          taskDueLabel={taskDueLabel}
+                          taskFrequencyLabel={taskFrequencyLabel}
+                          taskUnitLabel={taskUnitLabel}
+                          titleClassName="min-w-0 text-xs font-bold text-gray-900 dark:text-white truncate group-hover:text-primary dark:group-hover:text-primary/80 transition-colors"
+                        />
                       </div>
-
-                      {taskTagOrClient ? (
-                        <p className="min-w-0 text-[11px] text-gray-700 dark:text-gray-300 truncate">{taskTagOrClient}</p>
-                      ) : (
-                        <div />
-                      )}
-                      {taskDueLabel ? (
-                        <p className="text-[11px] text-right text-gray-500 dark:text-gray-400 truncate">{taskDueLabel}</p>
-                      ) : (
-                        <div />
-                      )}
-
-                      <p className="min-w-0 text-[11px] text-gray-500 dark:text-gray-400 truncate">{taskFrequencyLabel}</p>
-                      {taskUnitLabel ? (
-                        <p className="text-[11px] text-right text-gray-500 dark:text-gray-400 truncate">{taskUnitLabel}</p>
-                      ) : (
-                        <div />
-                      )}
                     </div>
                   </div>
                 );
@@ -1465,49 +1656,52 @@ export const TaskDashboardScreen: React.FC = () => {
               const taskDueLabel = resolveTaskDueDateLabel(task);
               const taskFrequencyLabel = resolveTaskFrequencyLabel(task);
               const taskUnitLabel = resolveTaskUnitDisplay(task);
+              const bulkEligible = canBulkSelectTask(task);
+              const taskChecked = bulkSelectMode && selectedTaskIds.has(String(taskId));
               return (
                 <div
                   key={taskId}
-                  className="group min-h-[112px] rounded-xl border border-gray-200 p-3 transition-all duration-200 hover:bg-white dark:border-gray-700 dark:hover:bg-surface-dark hover:shadow-md cursor-pointer"
+                  className={`group h-fit rounded-xl border p-2.5 transition-colors duration-200 hover:bg-white dark:hover:bg-surface-dark hover:shadow-sm cursor-pointer ${
+                    taskChecked
+                      ? 'bg-primary/5 border-primary ring-1 ring-primary/30'
+                      : 'border-gray-200 dark:border-gray-700'
+                  }`}
                   onClick={() => {
+                    if (bulkSelectMode && bulkEligible) {
+                      toggleTaskSelection(String(taskId));
+                      return;
+                    }
                     if (taskConversationId) {
-                      // Open chat inside Task Dashboard (right panel)
                       navigate(
                         isAdmin
                           ? `/admin/tasks/task-group/${taskConversationId}`
                           : `/tasks/task-group/${taskConversationId}`
                       );
                     } else {
-                      // No conversation yet: open task details
                       navigate(isAdmin ? `/admin/tasks/${taskId}` : `/tasks/${taskId}`);
                     }
                   }}
                 >
-                  <div className="grid w-full grid-cols-[minmax(0,2fr)_auto] gap-x-3 gap-y-1.5">
-                    <h4 className="min-w-0 text-xs font-bold text-gray-900 dark:text-white truncate">
-                      {taskTitle}
-                    </h4>
-                    <div className="flex justify-end">
-                      {taskStatusCategory ? <TaskStatusIcon category={taskStatusCategory} /> : null}
+                  <div className="flex items-start gap-3">
+                    {bulkSelectMode && bulkEligible ? (
+                      <input
+                        type="checkbox"
+                        checked={!!taskChecked}
+                        readOnly
+                        className="mt-4 shrink-0 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary pointer-events-none"
+                      />
+                    ) : null}
+                    <div className="flex-1 min-w-0">
+                      <TaskDashboardCardBody
+                        display={taskCardDisplay}
+                        displayTitle={taskTitle}
+                        taskStatusCategory={taskStatusCategory}
+                        taskTagOrClient={taskTagOrClient}
+                        taskDueLabel={taskDueLabel}
+                        taskFrequencyLabel={taskFrequencyLabel}
+                        taskUnitLabel={taskUnitLabel}
+                      />
                     </div>
-
-                    {taskTagOrClient ? (
-                      <p className="min-w-0 text-[11px] text-gray-700 dark:text-gray-300 truncate">{taskTagOrClient}</p>
-                    ) : (
-                      <div />
-                    )}
-                    {taskDueLabel ? (
-                      <p className="text-[11px] text-right text-gray-500 dark:text-gray-400 truncate">{taskDueLabel}</p>
-                    ) : (
-                      <div />
-                    )}
-
-                    <p className="min-w-0 text-[11px] text-gray-500 dark:text-gray-400 truncate">{taskFrequencyLabel}</p>
-                    {taskUnitLabel ? (
-                      <p className="text-[11px] text-right text-gray-500 dark:text-gray-400 truncate">{taskUnitLabel}</p>
-                    ) : (
-                      <div />
-                    )}
                   </div>
                 </div>
               );
@@ -1526,18 +1720,9 @@ export const TaskDashboardScreen: React.FC = () => {
               {searchQuery ? 'No tasks found' : 'No tasks yet'}
             </p>
             {!searchQuery && (
-              <>
-                <p className="text-gray-500 dark:text-gray-500 text-sm mb-4 text-center">
-                  Create your first task to get started
-          </p>
-          <button
-                  onClick={() => setShowTaskCreateModal(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg font-semibold text-sm shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 active:scale-95"
-          >
-                  <span className="material-icons-outlined text-lg">add</span>
-                  <span>Create Task</span>
-          </button>
-              </>
+              <p className="text-gray-500 dark:text-gray-500 text-sm text-center">
+                Create your first task using the + button above
+              </p>
             )}
           </div>
         )}
@@ -1585,24 +1770,17 @@ export const TaskDashboardScreen: React.FC = () => {
           <span className="material-icons-outlined text-5xl text-primary dark:text-primary/80">task_alt</span>
         </div>
         <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">No Task Selected</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-sm">
+        <p className="text-sm text-gray-500 dark:text-gray-400 max-w-sm">
           Select a task from the list to view details and manage tasks
         </p>
-            <button
-              onClick={() => setShowTaskCreateModal(true)}
-          className="inline-flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary/90 text-white rounded-xl font-semibold text-sm shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all duration-200 hover:scale-105 active:scale-95"
-            >
-          <span className="material-icons-outlined text-lg">add</span>
-          <span>Create New Task</span>
-            </button>
                 </div>
               </div>
   );
 
   if (isAdmin) {
     return (
-      <AdminLayout hideSearch>
-        <div className="flex h-[100dvh] overflow-hidden">
+      <AdminLayout hideSearch contentFitViewport>
+        <div className="flex h-full min-h-0 overflow-hidden">
           <div className="w-[340px] bg-background-light dark:bg-background-dark flex flex-col min-h-0 border-r border-border-light dark:border-border-dark relative">
             {taskGroupListContent}
               </div>
@@ -1611,23 +1789,27 @@ export const TaskDashboardScreen: React.FC = () => {
                 </div>
               </div>
 
-        {/* Floating Create Button (Mobile/Tablet) */}
-        <button
-          onClick={() => setShowTaskCreateModal(true)}
-          className="fixed bottom-6 right-6 md:hidden w-14 h-14 bg-primary hover:bg-primary/90 text-white rounded-full shadow-xl shadow-primary/40 hover:shadow-2xl hover:shadow-primary/50 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 z-50"
-          title="Create Task"
-          aria-label="Create Task"
-        >
-          <span className="material-icons-outlined text-2xl">add</span>
-        </button>
-
-        {/* Task Create Modal */}
         <TaskCreateModal
           visible={showTaskCreateModal}
           onClose={() => setShowTaskCreateModal(false)}
           onSuccess={() => {
             setShowTaskCreateModal(false);
         queryClient.invalidateQueries(['conversations', 'task']);
+          }}
+        />
+
+        <BulkAssignUsersModal
+          open={showBulkAssignModal}
+          taskCount={selectedTaskIds.size}
+          taskIds={Array.from(selectedTaskIds)}
+          onClose={() => setShowBulkAssignModal(false)}
+          onSuccess={() => {
+            exitBulkSelectMode();
+            queryClient.invalidateQueries(['conversations', 'task']);
+            queryClient.invalidateQueries('tasks');
+            queryClient.invalidateQueries(['task-dashboard-data']);
+            queryClient.invalidateQueries('dashboard');
+            queryClient.invalidateQueries(['admin-dashboard']);
           }}
         />
 
@@ -1691,8 +1873,8 @@ export const TaskDashboardScreen: React.FC = () => {
   }
 
   return (
-    <EmployeeLayout hideSearch>
-      <div className="flex h-[100dvh] overflow-hidden">
+    <EmployeeLayout hideSearch contentFitViewport>
+      <div className="flex h-full min-h-0 overflow-hidden">
         <div className="w-[340px] bg-background-light dark:bg-background-dark flex flex-col min-h-0 border-r border-border-light dark:border-border-dark relative">
           {taskGroupListContent}
               </div>
@@ -1701,23 +1883,26 @@ export const TaskDashboardScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Floating Create Button (Mobile/Tablet) */}
-      <button
-        onClick={() => setShowTaskCreateModal(true)}
-        className="fixed bottom-6 right-6 md:hidden w-14 h-14 bg-primary hover:bg-primary/90 text-white rounded-full shadow-xl shadow-primary/40 hover:shadow-2xl hover:shadow-primary/50 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 z-50"
-        title="Create Task"
-        aria-label="Create Task"
-      >
-        <span className="material-icons-outlined text-2xl">add</span>
-      </button>
-
-      {/* Task Create Modal */}
       <TaskCreateModal
         visible={showTaskCreateModal}
         onClose={() => setShowTaskCreateModal(false)}
         onSuccess={() => {
           setShowTaskCreateModal(false);
           queryClient.invalidateQueries(['conversations', 'task']);
+        }}
+      />
+
+      <BulkAssignUsersModal
+        open={showBulkAssignModal}
+        taskCount={selectedTaskIds.size}
+        taskIds={Array.from(selectedTaskIds)}
+        onClose={() => setShowBulkAssignModal(false)}
+        onSuccess={() => {
+          exitBulkSelectMode();
+          queryClient.invalidateQueries(['conversations', 'task']);
+          queryClient.invalidateQueries('tasks');
+          queryClient.invalidateQueries(['task-dashboard-data']);
+          queryClient.invalidateQueries('dashboard');
         }}
       />
 

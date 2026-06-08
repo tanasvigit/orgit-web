@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useClickOutside } from '../../hooks/useClickOutside';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useEmployeePermissions } from '../../hooks/useEmployeePermissions';
@@ -27,27 +28,15 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
     canUploadDocument,
   } = useEmployeePermissions();
 
-  const showMessageAction = !isAdmin && canAccessModule('Messaging');
+  const isOnTasksModule = /^\/(?:admin\/)?tasks(\/|$)/.test(location.pathname);
+
+  const showMessageAction = canAccessModule('Messaging');
   const showDocumentAction = canUploadDocument() && canAccessModule('Documents');
   const showTaskAction = canCreateTask() && canAccessModule('Tasks');
   const hasAnyAction = showMessageAction || showDocumentAction || showTaskAction;
 
-  // Close menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isOpen]);
+  const closeMenu = useCallback(() => setIsOpen(false), []);
+  useClickOutside(menuRef, closeMenu, isOpen);
 
   // Close menu when route changes
   useEffect(() => {
@@ -88,7 +77,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
   //   setIsOpen(false);
   // };
 
-  if (!hasAnyAction && !isAdmin) {
+  if (isOnTasksModule || (!hasAnyAction && !isAdmin)) {
     return null;
   }
 

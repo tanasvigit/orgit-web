@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { useClickOutside } from '../../hooks/useClickOutside';
 import { useQuery, useQueryClient } from 'react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { TaskCard } from '../../components/shared';
@@ -10,14 +11,22 @@ import { showLogoutConfirm } from '../../utils/logoutConfirm';
 import { taskService } from '../../services/taskService';
 import { conversationService } from '../../services/conversationService';
 import { mergeTaskWithFinancial } from '../../utils/taskFinancialStorage';
+import { formatTaskPeriodFromTask } from '../../utils/taskPeriod';
+import { resolveTaskUnitCardFields } from '../../utils/taskUnitDisplay';
 import { isTaskDeleted } from '../../utils/taskUtils';
 import { useTaskTransitionAnimation } from '../../hooks/useTaskTransitionAnimation';
 import { TaskTransitionAnimation } from '../../components/dashboard/TaskTransitionAnimation';
 import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
+import { parseDueSoonDays } from '../../utils/dueSoonDays';
 import { waitForSocketConnection } from '../../services/socketService';
-import { getTaskCreationUserConfig } from '../../services/userTaskCreationConfigService';
-import { AppIcon } from '../../components/shared/AppIcon';
+import { getTaskCreationUserConfig, taskCreationUserConfigQueryKey } from '../../services/userTaskCreationConfigService';
+import { useTaskCardDisplayConfig } from '../../hooks/useTaskCardDisplayConfig';
 import { DashboardCalendarDayBadge } from '../../components/dashboard/DashboardCalendarDayBadge';
+import { FinancialInsightsReport } from '../../components/dashboard/FinancialInsightsReport';
+import {
+  getTaskStatusCardCircleClass,
+  TaskStatusCardIcon,
+} from '../../components/dashboard/TaskStatusCardIcon';
 
 type CalendarDaySnapshot = {
   date: string;
@@ -40,7 +49,6 @@ export const AdminDashboard: React.FC = () => {
   const [showAssignedMemberFilter, setShowAssignedMemberFilter] = useState(false);
   const [assignedMemberSearch, setAssignedMemberSearch] = useState('');
   const [selectedAssignedMemberIds, setSelectedAssignedMemberIds] = useState<string[]>([]);
-  const [financialPeriodFilter, setFinancialPeriodFilter] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('weekly');
   const assignedMemberFilterRef = useRef<HTMLDivElement>(null);
   const [selfCalendarMonth, setSelfCalendarMonth] = useState(() => new Date());
   const [assignedCalendarMonth, setAssignedCalendarMonth] = useState(() => new Date());
@@ -56,7 +64,7 @@ export const AdminDashboard: React.FC = () => {
 
   const { data: dashboardData, isLoading, refetch: refetchDashboard } = useQuery(
     ['admin-dashboard'],
-    () => dashboardService.getDashboard(3),
+    () => dashboardService.getDashboard(),
     { 
       staleTime: 0, // Match mobile: always refetch on focus so counts stay in sync
       refetchInterval: 30000,
@@ -72,6 +80,10 @@ export const AdminDashboard: React.FC = () => {
 
   const selfTasks = dashboardData?.data?.selfTasks;
   const assignedTasks = dashboardData?.data?.assignedTasks;
+  const dueSoonDays = useMemo(
+    () => parseDueSoonDays(dashboardData?.data?.dueSoonDays ?? dashboardData?.dueSoonDays),
+    [dashboardData]
+  );
   const { data: selfCalendarData, isLoading: isSelfCalendarLoading } = useQuery(
     ['admin-dashboard-calendar', 'self', selfCalendarMonth.getFullYear(), selfCalendarMonth.getMonth() + 1],
     () => dashboardService.getMonthlyCalendar('self', selfCalendarMonth.getFullYear(), selfCalendarMonth.getMonth() + 1),
@@ -104,6 +116,9 @@ export const AdminDashboard: React.FC = () => {
   const [eventDateTime, setEventDateTime] = useState('');
   const [selectedEventUsers, setSelectedEventUsers] = useState<string[]>([]);
   const [showEventParticipantsPicker, setShowEventParticipantsPicker] = useState(false);
+  const eventParticipantsPickerRef = useRef<HTMLDivElement>(null);
+  const closeEventParticipantsPicker = useCallback(() => setShowEventParticipantsPicker(false), []);
+  useClickOutside(eventParticipantsPickerRef, closeEventParticipantsPicker, showEventParticipantsPicker);
   const currentOrgId = (user as any)?.organizationId || (user as any)?.organization_id;
   const orgUsers = useMemo(
     () =>
@@ -134,7 +149,8 @@ export const AdminDashboard: React.FC = () => {
       setSavingEvent(false);
     }
   };
-  const { data: userTaskConfig } = useQuery(['task-creation-user-config-dashboard'], getTaskCreationUserConfig, {
+  const taskCardDisplay = useTaskCardDisplayConfig();
+  const { data: userTaskConfig } = useQuery(taskCreationUserConfigQueryKey, getTaskCreationUserConfig, {
     staleTime: 60_000,
   });
 
@@ -271,27 +287,12 @@ export const AdminDashboard: React.FC = () => {
     }
   }, [location.pathname, refetchAdminDashboard]);
 
-  useEffect(() => {
-    const onOutsideClick = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (profileMenuRef.current && !profileMenuRef.current.contains(target)) {
-        setShowProfileMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', onOutsideClick);
-    return () => document.removeEventListener('mousedown', onOutsideClick);
-  }, []);
-
-  useEffect(() => {
-    const onOutsideClick = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (assignedMemberFilterRef.current && !assignedMemberFilterRef.current.contains(target)) {
-        setShowAssignedMemberFilter(false);
-      }
-    };
-    document.addEventListener('mousedown', onOutsideClick);
-    return () => document.removeEventListener('mousedown', onOutsideClick);
-  }, []);
+  useClickOutside(profileMenuRef, () => setShowProfileMenu(false), showProfileMenu);
+  useClickOutside(
+    assignedMemberFilterRef,
+    () => setShowAssignedMemberFilter(false),
+    showAssignedMemberFilter
+  );
 
   useEffect(() => {
     const onFocus = () => {
@@ -462,7 +463,7 @@ export const AdminDashboard: React.FC = () => {
       flattenedSelfTasksForUser.forEach((task: any) => {
         const full = taskDetails[task.id];
         const merged = full ? { ...task, ...full } : task;
-        const bucket = (getTaskStatusCategoryFromTask(merged, 3, currentUserId) || 'todo') as TaskStatusCategory;
+        const bucket = (getTaskStatusCategoryFromTask(merged, dueSoonDays, currentUserId) || 'todo') as TaskStatusCategory;
         counts[bucket] = (counts[bucket] ?? 0) + 1;
       });
 
@@ -486,7 +487,7 @@ export const AdminDashboard: React.FC = () => {
       const full = taskDetails[task.id];
       const merged = full ? { ...task, ...full } : task;
       if (!matchesAssignedMemberFilter(merged)) return;
-      const bucket = (getTaskStatusCategoryFromTask(merged, 3, currentUserId) || 'todo') as TaskStatusCategory;
+      const bucket = (getTaskStatusCategoryFromTask(merged, dueSoonDays, currentUserId) || 'todo') as TaskStatusCategory;
       counts[bucket] = (counts[bucket] ?? 0) + 1;
     });
     return counts;
@@ -605,7 +606,7 @@ export const AdminDashboard: React.FC = () => {
         {tasks.map((task) => {
           const full = taskDetails[task.id];
           const merged = mergeTaskWithFinancial(full ? { ...task, ...full, id: task.id || full.id } : task);
-          const derived = (getTaskStatusCategoryFromTask(merged, 3, currentUserId) || 'todo') as TaskStatusCategory;
+          const derived = (getTaskStatusCategoryFromTask(merged, dueSoonDays, currentUserId) || 'todo') as TaskStatusCategory;
           const assignees = Array.isArray(merged?.assignees) ? merged.assignees : [];
           const totalMembers = assignees.length;
           const verifiedCompleted = assignees.filter((a: any) => !!a?.verified_at).length;
@@ -621,34 +622,11 @@ export const AdminDashboard: React.FC = () => {
           const isCreator = (merged.created_by || merged.creator_id) === currentUserId;
           const convId = String(merged.conversation_id || merged.conversationId || '').trim();
 
-          const resolveTaskUnitDisplay = (taskLike: any, preference: string) => {
-            const map: Record<string, { label: string; keys: string[] }> = {
-              cost_centre: {
-                label: 'Cost centre',
-                keys: ['cost_centre_name', 'costCentreName', 'cost_center_name', 'costCenterName', 'cost_centre', 'costCentre'],
-              },
-              department: { label: 'Department', keys: ['department_name', 'departmentName', 'department'] },
-              depot: { label: 'Depot', keys: ['depot_name', 'depotName', 'depot'] },
-              branch: { label: 'Branch', keys: ['branch_name', 'branchName', 'branch'] },
-              entity: { label: 'Entity', keys: ['entity_name', 'entityName', 'client_name', 'clientName'] },
-              warehouse: { label: 'Warehouse', keys: ['warehouse_name', 'warehouseName', 'warehouse'] },
-              project: { label: 'Project', keys: ['project_name', 'projectName', 'project'] },
-              factory: { label: 'Factory', keys: ['factory_name', 'factoryName', 'factory'] },
-              org_unit: { label: 'Organization unit', keys: ['org_structure_path', 'orgStructurePath', 'task_unit', 'taskUnit'] },
-            };
-            const prefKey = preference === 'org_node' ? 'org_unit' : preference;
-            const chosen = map[prefKey] || map.org_unit;
-            // Backend stores the user-entered unit value as a single column (`task_unit`,
-            // legacy `task_unit_name`); type-specific keys above are kept for forward-compat.
-            const lookupKeys = [...chosen.keys, 'task_unit', 'taskUnit', 'task_unit_name', 'taskUnitName'];
-            const value = lookupKeys.map((k) => taskLike?.[k]).find((v) => typeof v === 'string' && v.trim()) || '-';
-            return { unitType: chosen.label, unitName: String(value) };
-          };
           const unitPref =
             userTaskConfig?.taskUnitPreference === 'org_node' || userTaskConfig?.taskUnitPreference === 'org_unit'
               ? 'org_unit'
               : userTaskConfig?.taskUnitPreference || 'org_unit';
-          const chosenUnit = resolveTaskUnitDisplay(merged, unitPref);
+          const chosenUnit = resolveTaskUnitCardFields(merged, unitPref);
           return (
             <TaskCard
               key={task.id}
@@ -666,16 +644,11 @@ export const AdminDashboard: React.FC = () => {
               unreadCount={convId ? unreadCountByConversationId[convId] ?? 0 : 0}
               hideUserStatus={!!merged.hide_user_status}
               rawTaskStatus={merged.status}
-              taskPeriod={(() => {
-                const start = merged.start_date || merged.startDate || merged.due_date || merged.dueDate;
-                if (!start) return '';
-                const d = new Date(start);
-                if (Number.isNaN(d.getTime())) return '';
-                return d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
-              })()}
+              taskPeriod={formatTaskPeriodFromTask(merged)}
               frequency={String(merged.recurrence_type || merged.frequency || merged.task_frequency || ((merged.task_type === 'recurring' || merged.taskType === 'recurring' || merged.task_type === 'recurring_instance' || merged.taskType === 'recurring_instance') ? 'Recurring' : 'One-Time'))}
               taskUnitType={chosenUnit.unitType}
               taskUnitName={chosenUnit.unitName}
+              taskCardDisplay={taskCardDisplay}
               onClick={() => navigate(`/admin/tasks/${task.id}`)}
             />
           );
@@ -693,13 +666,13 @@ export const AdminDashboard: React.FC = () => {
     completedIconRef?: React.RefObject<HTMLDivElement>
   ) => {
     return (
-      <div className="space-y-4 max-[1366px]:space-y-3">
-        <div className="mb-4 flex items-center gap-3 max-[1366px]:mb-2.5">
-          <div className="w-1 h-8 bg-primary rounded-full"></div>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white md:text-2xl max-[1366px]:text-lg">{title}</h2>
-          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
-          {viewType === 'assigned' && (
-            <div className="relative min-w-[230px]" ref={assignedMemberFilterRef}>
+      <div className="flex h-full min-h-0 w-full min-w-0 flex-col space-y-4 max-[1366px]:space-y-3">
+        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2 max-[1366px]:mb-1.5">
+          <div className="h-8 w-1 shrink-0 rounded-full bg-primary"></div>
+          <h2 className="shrink-0 text-lg font-semibold text-gray-900 dark:text-white md:text-xl max-[1366px]:text-base">{title}</h2>
+          <div className="h-px min-w-[2rem] flex-1 bg-gray-200 dark:bg-gray-700"></div>
+          {viewType === 'assigned' ? (
+            <div className="relative w-full min-w-0 shrink-0 sm:w-[230px]" ref={assignedMemberFilterRef}>
               <button
                 type="button"
                 onClick={() => setShowAssignedMemberFilter((prev) => !prev)}
@@ -767,19 +740,22 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               )}
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Statistics Cards for this section */}
-        <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5 max-[1366px]:gap-2.5 max-[1366px]:mb-4">
+        <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5 max-[1366px]:gap-2 max-[1366px]:mb-2">
           {/* To-Do Card (Today’s recurring, not completed) */}
           <button
             type="button"
             onClick={() => navigate(`/admin/tasks?view=${viewType}&status=todo`)}
-            className="relative mx-auto flex w-full max-w-[220px] flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-blue-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:max-w-[200px] max-[1366px]:p-2.5"
+            className="relative flex h-fit w-full min-w-0 flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-blue-500 bg-white p-2.5 text-center shadow-sm transition-colors duration-200 hover:shadow-md dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:p-2"
           >
-            <div ref={toDoIconRef} className="mb-2 flex size-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 max-[1366px]:size-8">
-              <AppIcon name="todo" variant="card" />
+            <div
+              ref={toDoIconRef}
+              className={`mb-2 flex size-9 items-center justify-center rounded-full max-[1366px]:size-8 ${getTaskStatusCardCircleClass('todo')}`}
+            >
+              <TaskStatusCardIcon status="todo" />
             </div>
             <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
               {getStatusCount('todo', viewType)}
@@ -793,10 +769,13 @@ export const AdminDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate(`/admin/tasks?view=${viewType}&status=inprogress`)}
-            className="relative mx-auto flex w-full max-w-[220px] flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-purple-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:max-w-[200px] max-[1366px]:p-2.5"
+            className="relative flex h-fit w-full min-w-0 flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-purple-500 bg-white p-2.5 text-center shadow-sm transition-colors duration-200 hover:shadow-md dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:p-2"
           >
-            <div ref={inProgressIconRef} className="mb-2 flex size-9 items-center justify-center rounded-lg bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400 max-[1366px]:size-8">
-              <AppIcon name="inprogress" variant="card" />
+            <div
+              ref={inProgressIconRef}
+              className={`mb-2 flex size-9 items-center justify-center rounded-full max-[1366px]:size-8 ${getTaskStatusCardCircleClass('inprogress')}`}
+            >
+              <TaskStatusCardIcon status="inprogress" />
             </div>
             <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
               {getStatusCount('inprogress', viewType)}
@@ -810,10 +789,12 @@ export const AdminDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate(`/admin/tasks?view=${viewType}&status=duesoon`)}
-            className="relative mx-auto flex w-full max-w-[220px] flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-amber-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:max-w-[200px] max-[1366px]:p-2.5"
+            className="relative flex h-fit w-full min-w-0 flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-amber-500 bg-white p-2.5 text-center shadow-sm transition-colors duration-200 hover:shadow-md dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:p-2"
           >
-            <div className="mb-2 flex size-9 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400 max-[1366px]:size-8">
-              <AppIcon name="duesoon" variant="card" />
+            <div
+              className={`mb-2 flex size-9 items-center justify-center rounded-full max-[1366px]:size-8 ${getTaskStatusCardCircleClass('duesoon')}`}
+            >
+              <TaskStatusCardIcon status="duesoon" />
             </div>
             <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
               {getStatusCount('duesoon', viewType)}
@@ -827,10 +808,12 @@ export const AdminDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate(`/admin/tasks?view=${viewType}&status=overdue`)}
-            className="relative mx-auto flex w-full max-w-[220px] flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-red-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:max-w-[200px] max-[1366px]:p-2.5"
+            className="relative flex h-fit w-full min-w-0 flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-red-500 bg-white p-2.5 text-center shadow-sm transition-colors duration-200 hover:shadow-md dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:p-2"
           >
-            <div className="mb-2 flex size-9 items-center justify-center rounded-lg bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 max-[1366px]:size-8">
-              <AppIcon name="overdue" variant="card" />
+            <div
+              className={`mb-2 flex size-9 items-center justify-center rounded-full max-[1366px]:size-8 ${getTaskStatusCardCircleClass('overdue')}`}
+            >
+              <TaskStatusCardIcon status="overdue" />
             </div>
             <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
               {getStatusCount('overdue', viewType)}
@@ -844,10 +827,13 @@ export const AdminDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate(`/admin/tasks?view=${viewType}&status=completed`)}
-            className="relative mx-auto flex w-full max-w-[220px] flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-emerald-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:max-w-[200px] max-[1366px]:p-2.5"
+            className="relative flex h-fit w-full min-w-0 flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-emerald-500 bg-white p-2.5 text-center shadow-sm transition-colors duration-200 hover:shadow-md dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:p-2"
           >
-            <div ref={completedIconRef} className="mb-2 flex size-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400 max-[1366px]:size-8">
-              <AppIcon name="completed" variant="card" />
+            <div
+              ref={completedIconRef}
+              className={`mb-2 flex size-9 items-center justify-center rounded-full max-[1366px]:size-8 ${getTaskStatusCardCircleClass('completed')}`}
+            >
+              <TaskStatusCardIcon status="completed" />
             </div>
             <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
               {getStatusCount('completed', viewType)}
@@ -897,7 +883,7 @@ export const AdminDashboard: React.FC = () => {
     );
 
     return (
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800/95 p-3">
+      <div className="flex h-full min-h-0 flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800/95 p-3">
         <div className="flex items-center justify-between mb-2">
           <div>
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
@@ -916,16 +902,18 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
         {loading ? (
-          <div className="text-xs text-gray-500 dark:text-gray-400 py-4">Loading calendar...</div>
+          <div className="flex flex-1 items-center justify-center py-4 text-xs text-gray-500 dark:text-gray-400">
+            Loading calendar...
+          </div>
         ) : (
-          <div className="grid grid-cols-7 gap-1">
+          <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-7 gap-1 overflow-y-auto">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((w) => (
               <div key={w} className="text-[10px] text-center font-semibold text-gray-500 dark:text-gray-400">{w}</div>
             ))}
             {cells.map((day: any, idx) => (
               <div
                 key={`${day?.date || 'blank'}-${idx}`}
-                className={`min-h-[72px] rounded border p-1 ${day ? 'border-gray-200 dark:border-gray-700' : 'border-transparent'}`}
+                className={`min-h-[3.25rem] rounded border p-1 sm:min-h-[3.75rem] lg:min-h-0 ${day ? 'border-gray-200 dark:border-gray-700' : 'border-transparent'}`}
               >
                 {day ? (
                   <>
@@ -942,10 +930,10 @@ export const AdminDashboard: React.FC = () => {
   };
 
   return (
-    <AdminLayout>
-      <div className="min-h-screen w-full max-w-7xl flex-1 space-y-6 bg-gray-50 px-4 py-6 dark:bg-gray-900 sm:px-5 md:px-6 md:py-7 max-[1366px]:space-y-4 max-[1366px]:px-2.5 max-[1366px]:py-4">
+    <AdminLayout contentFitViewport>
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-[1600px] flex-col overflow-y-auto overflow-x-hidden bg-gray-50 px-4 py-2 dark:bg-gray-900 sm:px-5 md:px-6 md:py-3 max-[1366px]:px-2.5 max-[1366px]:py-2">
         {/* Welcome Header */}
-        <div className="mb-4 max-[1366px]:mb-3">
+        <div className="mb-2 shrink-0 max-[1366px]:mb-1.5">
           <div className="mb-2 flex items-center justify-between max-[1366px]:mb-1.5">
             <div className="relative" ref={profileMenuRef}>
               <button
@@ -965,7 +953,7 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 )}
                 <div>
-                  <h1 className="text-2xl md:text-3xl font-semibold text-gray-900 dark:text-white">
+                  <h1 className="text-xl md:text-2xl font-semibold text-gray-900 dark:text-white">
                     Hello {user?.name || 'Admin'}
                   </h1>
                   <p className="mt-1 text-xs text-gray-600 dark:text-gray-400 md:text-sm max-[1366px]:mt-0.5 max-[1366px]:text-[11px]">
@@ -1002,14 +990,14 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Tasks + calendar: left 50% self/assigned, right 50% due-date calendar */}
-        <div className="space-y-6 md:space-y-8 max-[1366px]:space-y-4">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-6 max-[1366px]:gap-4">
-            <div className="w-full min-w-0 space-y-6 md:space-y-8 lg:w-1/2 max-[1366px]:space-y-4">
+        {/* Tasks + calendar keep full height; financial/events scroll below */}
+        <div className="flex shrink-0 min-h-[calc(100svh-12.5rem)] flex-col gap-3 max-[1366px]:min-h-[calc(100svh-11rem)] lg:min-h-[calc(100svh-10.5rem)]">
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 md:gap-5 lg:grid-cols-2 lg:items-stretch">
+            <div className="flex min-h-0 min-w-0 flex-col gap-6 overflow-y-auto overflow-x-hidden md:gap-8 max-[1366px]:gap-4">
               {renderTaskRow(selfTasks, 'self', 'Self Tasks', selfTasksToDoIconRef, selfTasksInProgressIconRef, selfTasksCompletedIconRef)}
               {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks', assignedTasksToDoIconRef, assignedTasksInProgressIconRef, assignedTasksCompletedIconRef)}
             </div>
-            <div className="w-full min-w-0 lg:w-1/2">
+            <section className="flex min-h-0 min-w-0 flex-col overflow-y-auto overflow-x-hidden">
               {renderCalendarSection(
                 'Tasks (by due date)',
                 selfCalendarMonth,
@@ -1021,12 +1009,21 @@ export const AdminDashboard: React.FC = () => {
                 assignedCalendarData?.days,
                 isSelfCalendarLoading || isAssignedCalendarLoading
               )}
-            </div>
+            </section>
           </div>
+        </div>
 
-          <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800/95 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-900 dark:text-white">Events & Meetings</h3>
+        <div className="mt-4 shrink-0 w-full overflow-x-auto">
+          <FinancialInsightsReport
+            tasks={getCurrentTasks}
+            creatorUserId={user?.id || (user as any)?.userId}
+          />
+        </div>
+
+        <div className="mt-4 shrink-0 space-y-6 md:space-y-8 max-[1366px]:mt-3 max-[1366px]:space-y-4">
+          <div className="h-fit rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800/95 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Events & Meetings</h3>
               <button
                 type="button"
                 onClick={() => setShowEventForm((v) => !v)}
@@ -1079,29 +1076,30 @@ export const AdminDashboard: React.FC = () => {
                         </button>
                       ))}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowEventParticipantsPicker((v) => !v)}
-                      className="mt-3 w-full rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5 text-left text-sm text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-primary/40"
-                    >
-                      Participants: {selectedEventUsers.length > 0 ? `${selectedEventUsers.length} selected` : 'Select users'}
-                    </button>
-                    {selectedEventUsers.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {orgUsers
-                          .filter((u: any) => selectedEventUsers.includes(String(u.id)))
-                          .map((u: any) => (
-                            <span
-                              key={u.id}
-                              className="inline-flex items-center gap-1 rounded-full border border-[#DDD6FE] bg-[#F3E8FF] px-2.5 py-1 text-xs font-semibold text-primary"
-                            >
-                              {u.name || u.mobile}
-                            </span>
-                          ))}
-                      </div>
-                    )}
-                    {showEventParticipantsPicker && (
-                      <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-[#E5E7EB] bg-white">
+                    <div ref={eventParticipantsPickerRef}>
+                      <button
+                        type="button"
+                        onClick={() => setShowEventParticipantsPicker((v) => !v)}
+                        className="mt-3 w-full rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5 text-left text-sm text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      >
+                        Participants: {selectedEventUsers.length > 0 ? `${selectedEventUsers.length} selected` : 'Select users'}
+                      </button>
+                      {selectedEventUsers.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {orgUsers
+                            .filter((u: any) => selectedEventUsers.includes(String(u.id)))
+                            .map((u: any) => (
+                              <span
+                                key={u.id}
+                                className="inline-flex items-center gap-1 rounded-full border border-[#DDD6FE] bg-[#F3E8FF] px-2.5 py-1 text-xs font-semibold text-primary"
+                              >
+                                {u.name || u.mobile}
+                              </span>
+                            ))}
+                        </div>
+                      )}
+                      {showEventParticipantsPicker && (
+                        <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-[#E5E7EB] bg-white">
                         {orgUsers.map((u: any) => {
                           const uid = String(u.id);
                           const checked = selectedEventUsers.includes(uid);
@@ -1124,8 +1122,9 @@ export const AdminDashboard: React.FC = () => {
                             </label>
                           );
                         })}
-                      </div>
-                    )}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <button
@@ -1168,7 +1167,7 @@ export const AdminDashboard: React.FC = () => {
             <div>
               <button
                 onClick={() => setExpandedDM(!expandedDM)}
-                className="w-full flex items-center justify-between p-5 bg-white dark:bg-slate-800/95 rounded-xl group transition-all duration-200 ease-out border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-primary shadow-sm hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99]"
+                className="w-full flex h-fit items-center justify-between p-3 bg-white dark:bg-slate-800/95 rounded-xl group transition-colors duration-200 border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-primary shadow-sm hover:shadow-md"
               >
                 <div className="flex items-center gap-4">
                   <div className="p-3 rounded-lg bg-primary/10 dark:bg-primary/20 text-primary">
@@ -1223,121 +1222,6 @@ export const AdminDashboard: React.FC = () => {
             </div>
           )}
 
-          {/* Financial Report  - from getCurrentTasks (self+assigned), merged finance from API/localStorage */}
-          {(() => {
-            const uid = user?.id || (user as any)?.userId;
-            const financialTasks = getCurrentTasks.filter((t: any) => {
-              const createdBy = t.created_by || t.creator_id;
-              const hasFinance = t.financial_value != null || !!t.finance_type;
-              return createdBy === uid && hasFinance;
-            });
-
-            if (!financialTasks.length) return null;
-            const now = new Date();
-            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const endOfToday = new Date(startOfToday);
-            endOfToday.setDate(endOfToday.getDate() + 1);
-            const startOfWeek = new Date(startOfToday);
-            startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
-            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-            const startOfYear = new Date(now.getFullYear(), 0, 1);
-
-            const rows = financialTasks
-              .map((task: any) => {
-                const rawAmount = Number(task.financial_value || 0);
-                if (!Number.isFinite(rawAmount) || rawAmount === 0) return null;
-                const signedAmount =
-                  (task.finance_type || '').toLowerCase() === 'expense'
-                    ? -Math.abs(rawAmount)
-                    : Math.abs(rawAmount);
-                const baseDate = new Date(task.due_date || task.dueDate || task.created_at || task.createdAt || Date.now());
-                if (Number.isNaN(baseDate.getTime())) return null;
-                return {
-                  id: task.id,
-                  title: task.title || 'Untitled task',
-                  values: {
-                    daily: baseDate >= startOfToday && baseDate < endOfToday ? signedAmount : 0,
-                    weekly: baseDate >= startOfWeek ? signedAmount : 0,
-                    monthly: baseDate >= startOfMonth ? signedAmount : 0,
-                    yearly: baseDate >= startOfYear ? signedAmount : 0,
-                  },
-                  total: signedAmount,
-                };
-              })
-              .filter(Boolean) as Array<{
-                id: string;
-                title: string;
-                values: Record<'daily' | 'weekly' | 'monthly' | 'yearly', number>;
-                total: number;
-              }>;
-
-            const filteredRows = rows.map((row) => ({ ...row, periodAmount: row.values[financialPeriodFilter] || 0 }));
-            const periodTotal = filteredRows.reduce((sum, row) => sum + row.periodAmount, 0);
-            const overallTotal = filteredRows.reduce((sum, row) => sum + row.total, 0);
-
-            const formatAmount = (value: number) => {
-              const sign = value < 0 ? '-' : '';
-              return `${sign}${Math.abs(value).toFixed(2)}`;
-            };
-
-            return (
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-1 h-8 bg-emerald-500 rounded-full"></div>
-                  <h2 className="text-xl md:text-2xl font-semibold text-gray-900 dark:text-white">
-                    Income and Expenses overview for Week, Month, Quarter, Year
-                  </h2>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {(['daily', 'weekly', 'monthly', 'yearly'] as const).map((period) => (
-                    <button
-                      key={period}
-                      type="button"
-                      onClick={() => setFinancialPeriodFilter(period)}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                        financialPeriodFilter === period
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-300'
-                      }`}
-                    >
-                      {period.charAt(0).toUpperCase() + period.slice(1)}
-                    </button>
-                  ))}
-                </div>
-                <div className="bg-white dark:bg-slate-800/95 rounded-xl border border-gray-200 dark:border-gray-700 border-l-[4px] border-l-emerald-500 shadow-sm overflow-x-auto">
-                  <table className="min-w-[640px] w-full text-sm">
-                    <thead className="bg-gray-50 dark:bg-slate-900/50">
-                      <tr>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-300">Task</th>
-                        <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">
-                          {financialPeriodFilter.charAt(0).toUpperCase() + financialPeriodFilter.slice(1)}
-                        </th>
-                        <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                      {filteredRows.map((row) => (
-                        <tr key={row.id}>
-                          <td className="px-4 py-3 text-gray-900 dark:text-white">{row.title}</td>
-                          <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-200">{formatAmount(row.periodAmount)}</td>
-                          <td className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">{formatAmount(row.total)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-gray-50 dark:bg-slate-900/50">
-                      <tr>
-                        <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">Total</td>
-                        <td className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">{formatAmount(periodTotal)}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">{formatAmount(overallTotal)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Compliance Management Section - Combined for both self and assigned */}
           {/* {isLoading ? null : (
             <div>
               <button

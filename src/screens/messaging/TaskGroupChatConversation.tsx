@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useClickOutside } from '../../hooks/useClickOutside';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { parseTimestamp, formatChatTime, formatChatDate } from '../../utils/chatTime';
@@ -34,6 +35,8 @@ import { isTaskDeleted } from '../../utils/taskUtils';
 import { getTaskStatusCategoryFromTask } from '../../utils/taskStatus';
 import { Avatar } from '../../components/shared';
 import { getTaskCreationUserConfig } from '../../services/userTaskCreationConfigService';
+import { formatTaskPeriodFromTask } from '../../utils/taskPeriod';
+import { resolveTaskUnitCardFields } from '../../utils/taskUnitDisplay';
 
 interface TaskGroupChatConversationProps {
   conversationId?: string; // Optional prop to override useParams
@@ -76,6 +79,21 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const [typing, setTyping] = useState(false);
   const [conversationSearchQuery, setConversationSearchQuery] = useState('');
   const [showMessageSearch, setShowMessageSearch] = useState(false);
+  const messageSearchTriggerRef = useRef<HTMLButtonElement>(null);
+  const messageSearchPanelRef = useRef<HTMLDivElement>(null);
+  const userActionsMenuRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+  const composerPopoverRef = useRef<HTMLDivElement>(null);
+  const closeMessageSearch = useCallback(() => {
+    setShowMessageSearch(false);
+    setSearchQuery('');
+    setSearchResults([]);
+  }, []);
+  useClickOutside(
+    [messageSearchTriggerRef, messageSearchPanelRef],
+    closeMessageSearch,
+    showMessageSearch
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showTaskGroupDetails, setShowTaskGroupDetails] = useState(false);
@@ -1263,6 +1281,17 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     setSelectedUserIdsForAdd([]);
   };
 
+  useClickOutside(userActionsMenuRef, () => setShowUserActionsMenu(false), showUserActionsMenu);
+  useClickOutside(moreMenuRef, () => setShowMoreMenu(false), showMoreMenu);
+  useClickOutside(
+    composerPopoverRef,
+    () => {
+      setShowAttachmentMenu(false);
+      closeAddMembersPopover();
+    },
+    showAttachmentMenu || showAddMembersInline
+  );
+
   // Fetch task data for verification logic. Do not retry 404 (deleted task).
   const { data: taskData, isError: taskFetchError } = useQuery(
     ['task', taskId],
@@ -1283,42 +1312,13 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   });
 
   const taskHeaderMeta = useMemo(() => {
-    const startSource =
-      (task as any)?.start_date ||
-      (task as any)?.startDate ||
-      (task as any)?.due_date ||
-      (task as any)?.dueDate ||
-      null;
-    let taskPeriod = '';
-    if (startSource) {
-      const d = new Date(startSource as string);
-      if (!Number.isNaN(d.getTime())) {
-        taskPeriod = d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
-      }
-    }
+    const taskPeriod = formatTaskPeriodFromTask(task as any);
 
-    const unitMap: Record<string, { label: string; keys: string[] }> = {
-      cost_centre: {
-        label: 'Cost centre',
-        keys: ['cost_centre_name', 'costCentreName', 'cost_center_name', 'costCenterName', 'cost_centre', 'costCentre'],
-      },
-      department: { label: 'Department', keys: ['department_name', 'departmentName', 'department'] },
-      depot: { label: 'Depot', keys: ['depot_name', 'depotName', 'depot'] },
-      branch: { label: 'Branch', keys: ['branch_name', 'branchName', 'branch'] },
-      entity: { label: 'Entity', keys: ['entity_name', 'entityName', 'client_name', 'clientName'] },
-      warehouse: { label: 'Warehouse', keys: ['warehouse_name', 'warehouseName', 'warehouse'] },
-      project: { label: 'Project', keys: ['project_name', 'projectName', 'project'] },
-      factory: { label: 'Factory', keys: ['factory_name', 'factoryName', 'factory'] },
-      org_unit: { label: 'Organization unit', keys: ['org_structure_path', 'orgStructurePath', 'task_unit', 'taskUnit'] },
-    };
     const rawPref = (userTaskConfig as any)?.taskUnitPreference;
     const pref = rawPref === 'org_node' || rawPref === 'org_unit' ? 'org_unit' : rawPref || 'org_unit';
-    const chosen = unitMap[pref] || unitMap.org_unit;
-    const lookupKeys = [...chosen.keys, 'task_unit', 'taskUnit', 'task_unit_name', 'taskUnitName'];
-    const unitName =
-      lookupKeys.map((k) => (task as any)?.[k]).find((v) => typeof v === 'string' && v.trim()) || '';
+    const { unitType, unitName } = resolveTaskUnitCardFields(task as Record<string, unknown>, pref);
 
-    return { taskPeriod, unitType: chosen.label, unitName: String(unitName) };
+    return { taskPeriod, unitType, unitName };
   }, [task, userTaskConfig]);
   const currentUserId = user?.id || (user as any)?.userId;
   const taskDeleted = isTaskDeleted(task);
@@ -2415,10 +2415,12 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   };
 
   const mainContent = (
-    <div className="flex-1 flex flex-col bg-[#F9FAFB] dark:bg-surface-dark relative overflow-hidden h-full">
+    <div className="flex-1 flex flex-col min-h-0 bg-[#F9FAFB] dark:bg-surface-dark relative overflow-hidden h-full">
       {/* Header */}
       <header 
-        className="h-20 border-b border-border-light dark:border-border-dark flex items-center justify-between px-6 bg-white/50 dark:bg-surface-dark/50 backdrop-blur-sm z-10"
+        className={`shrink-0 border-b border-border-light dark:border-border-dark flex items-center justify-between bg-white/50 dark:bg-surface-dark/50 backdrop-blur-sm z-10 ${
+          embedInTaskDashboard ? 'px-4 py-2.5' : 'h-20 px-6'
+        }`}
       >
         <button
           onClick={() => {
@@ -2440,7 +2442,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+              <h2 className={`font-bold text-gray-900 dark:text-white ${embedInTaskDashboard ? 'text-sm' : 'text-lg'}`}>
                 {conversationName}
               </h2>
               {(taskDeleted || taskNotFound) && (
@@ -2484,7 +2486,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         </button>
         <div className="flex items-center gap-3 text-gray-400" onClick={(e) => e.stopPropagation()}>
           {showTaskParticipantActionBar && (
-            <div className="relative">
+            <div className="relative" ref={userActionsMenuRef}>
               <button
                 type="button"
                 onClick={(e) => {
@@ -2504,12 +2506,6 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                 </span>
               </button>
               {showUserActionsMenu && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setShowUserActionsMenu(false)}
-                    aria-hidden="true"
-                  />
                   <div
                     role="menu"
                     className="absolute right-0 top-full z-20 mt-1 w-52 rounded-lg border border-border-light bg-white py-1 shadow-lg dark:border-border-dark dark:bg-surface-dark"
@@ -2608,11 +2604,11 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                       </button>
                     )}
                   </div>
-                </>
               )}
             </div>
           )}
           <button 
+            ref={messageSearchTriggerRef}
             onClick={(e) => {
               e.stopPropagation();
               setShowMessageSearch(!showMessageSearch);
@@ -2632,7 +2628,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           >
             <span className="material-icons-outlined">{isPinned ? 'push_pin' : 'push_pin'}</span>
           </button>
-          <div className="relative">
+          <div className="relative" ref={moreMenuRef}>
             <button 
               onClick={(e) => {
                 e.stopPropagation();
@@ -2645,8 +2641,6 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
               <span className="material-icons-outlined">more_vert</span>
             </button>
             {showMoreMenu && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowMoreMenu(false)} aria-hidden="true" />
                 <div className="absolute right-0 top-full mt-1 py-1 w-48 bg-white dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-lg shadow-lg z-20">
                   <button
                     type="button"
@@ -2684,7 +2678,6 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                     </button>
                   )}
                 </div>
-              </>
             )}
           </div>
         </div>
@@ -2860,7 +2853,10 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
       {/* Message Search */}
       {showMessageSearch && (
-        <div className="px-4 py-2 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+        <div
+          ref={messageSearchPanelRef}
+          className="px-4 py-2 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700"
+        >
           <div className="flex items-center gap-2">
             <input
               type="text"
@@ -2900,7 +2896,9 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       )}
 
       {/* Messages */}
-      <main className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#F9FAFB] dark:bg-[#18181b]">
+      <main className={`flex-1 min-h-0 overflow-y-auto bg-[#F9FAFB] dark:bg-[#18181b] ${
+        embedInTaskDashboard ? 'p-3 space-y-3' : 'p-6 space-y-6'
+      }`}>
         {hasMoreMessages && (
           <div className="flex justify-center py-2">
             <button
@@ -2964,7 +2962,12 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       )}
 
       {/* Footer */}
-      <div className="p-3 sm:p-4 bg-surface-light dark:bg-surface-dark border-t border-border-light dark:border-border-dark relative shrink-0">
+      <div
+        ref={composerPopoverRef}
+        className={`bg-surface-light dark:bg-surface-dark border-t border-border-light dark:border-border-dark relative shrink-0 ${
+        embedInTaskDashboard ? 'p-2' : 'p-3 sm:p-4'
+      }`}
+      >
         {/* File upload preview strip */}
         {pendingAttachments.length > 0 && (
           <div className="flex gap-3 overflow-x-auto pb-4 mb-2 -mx-2 px-2 scroll-smooth max-w-5xl mx-auto" style={{ scrollbarWidth: 'thin' }}>
@@ -3015,7 +3018,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
         {/* Plus menu (attachments): Upload File, Upload Image, Upload Video, Add Member (Task Group) */}
         {showAttachmentMenu && (
-          <div className="absolute bottom-[calc(100%+12px)] left-6 w-56 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl shadow-2xl overflow-hidden py-2 z-20">
+            <div className="absolute bottom-[calc(100%+12px)] left-6 w-56 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl shadow-2xl overflow-hidden py-2 z-20">
             <button
               type="button"
               onClick={() => openAttachmentPicker('*/*')}
@@ -3064,8 +3067,6 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
 
         {/* Add Members popover – same style as + menu / More options */}
         {showAddMembersInline && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={closeAddMembersPopover} aria-hidden="true" />
             <div className="absolute bottom-[calc(100%+12px)] left-6 w-72 max-h-[min(70vh,420px)] flex flex-col bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark rounded-xl shadow-2xl overflow-hidden z-20">
               <div className="shrink-0 px-3 py-2.5 border-b border-border-light dark:border-border-dark flex items-center gap-2">
                 <span className="material-icons-outlined text-primary text-lg">person_add</span>
@@ -3147,7 +3148,6 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                 </button>
               </div>
             </div>
-          </>
         )}
 
         <input
@@ -3354,8 +3354,15 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           role="dialog"
           aria-modal="true"
           aria-labelledby="task-chat-request-delete-title"
+          onClick={() => {
+            setShowRequestDeleteModal(false);
+            setRequestDeleteReason('');
+          }}
         >
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700">
+          <div
+            className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2 id="task-chat-request-delete-title" className="text-lg font-bold text-slate-900 dark:text-white mb-2">
               Request task deletion
             </h2>
@@ -3399,8 +3406,15 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           role="dialog"
           aria-modal="true"
           aria-labelledby="task-chat-exit-request-title"
+          onClick={() => {
+            setShowExitRequestModal(false);
+            setExitRequestComment('');
+          }}
         >
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700">
+          <div
+            className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2 id="task-chat-exit-request-title" className="text-lg font-bold text-slate-900 dark:text-white mb-2">
               Exit with comments
             </h2>
@@ -3488,7 +3502,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   if (embedInTaskDashboard) {
     return (
       <>
-        <div className="flex-1 flex flex-col bg-surface-light dark:bg-surface-dark relative overflow-hidden h-full">
+        <div className="flex-1 flex flex-col min-h-0 bg-surface-light dark:bg-surface-dark relative overflow-hidden h-full">
           {mainPanelContent}
         </div>
         <TaskDetailsModal

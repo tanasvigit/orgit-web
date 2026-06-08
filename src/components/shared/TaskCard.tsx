@@ -2,6 +2,9 @@ import React from 'react';
 import type { TaskStatusCategory } from '../../utils/taskStatus';
 import { taskStatusToAppIcon } from '../../constants/appIcons';
 import { AppIcon } from './AppIcon';
+import { extractBaseTaskTitle } from '../../utils/taskPeriod';
+import { useTaskCardDisplayConfig } from '../../hooks/useTaskCardDisplayConfig';
+import type { TaskCardDisplayConfig } from '../../utils/taskCardDisplayConfig';
 
 interface TaskCardProps {
   id: string;
@@ -26,14 +29,9 @@ interface TaskCardProps {
   hideUserStatus?: boolean;
   /** Raw task row status (e.g. completed) for overdue pill edge cases. */
   rawTaskStatus?: string | null;
+  /** Override user display preferences (optional). */
+  taskCardDisplay?: TaskCardDisplayConfig;
   onClick?: () => void;
-}
-
-function formatTaskPeriod(dateString: string | undefined | null): string {
-  if (!dateString) return '';
-  const date = new Date(dateString);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleString('en-US', { month: 'short', year: 'numeric' });
 }
 
 function formatTaskDueDate(dateString: string | undefined | null): string {
@@ -102,14 +100,18 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   taskUnitName,
   hideUserStatus,
   rawTaskStatus,
+  taskCardDisplay: taskCardDisplayProp,
   onClick,
 }) => {
+  const displayFromUser = useTaskCardDisplayConfig();
+  const display = taskCardDisplayProp ?? displayFromUser;
+
   const tagOrClient = (() => {
     const tagText = Array.isArray(tags) ? tags.filter(Boolean).join(', ') : typeof tags === 'string' ? tags : '';
     return (tagText || clientName || '').trim();
   })();
 
-  const baseTitle = String(title || '').trim();
+  const baseTitle = extractBaseTaskTitle(String(title || '').trim());
   const displayPeriod = (taskPeriod || '').trim();
   const displayTitle = displayPeriod ? `${baseTitle} - ${displayPeriod}` : baseTitle;
   const dueText = formatTaskDueDate(dueDate || null);
@@ -118,14 +120,23 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
   const statusAppIcon = taskStatusToAppIcon(status);
   const iconColor = lifecycleIconColor(status);
-  const overduePill = showOverduePill(status, hideUserStatus, rawTaskStatus, dueDate || null);
+  const overduePill =
+    display.overdueBadge && showOverduePill(status, hideUserStatus, rawTaskStatus, dueDate || null);
+
+  const showStatusIcon = display.statusIcon && !hideUserStatus;
+  const showTagRow = display.tagOrClient && !!tagOrClient;
+  const showDue = display.dueDate && !!dueText;
+  const showFrequency = display.frequency;
+  const showUnit = display.taskUnit && !!unitText;
+  const showSecondRow = showTagRow || showDue;
+  const showThirdRow = showFrequency || showUnit;
 
   return (
     <div
       className={`group relative cursor-pointer rounded-2xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-slate-800/90 ${
         status === 'completed' ? 'opacity-90' : ''
       }`}
-      style={{ minHeight: 126, paddingLeft: 16, paddingRight: 12, paddingTop: 14, paddingBottom: 14 }}
+      style={{ minHeight: showThirdRow || showSecondRow ? 126 : 72, paddingLeft: 16, paddingRight: 12, paddingTop: 14, paddingBottom: 14 }}
       onClick={onClick}
       role="button"
       tabIndex={0}
@@ -136,7 +147,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         }
       }}
     >
-      {unreadCount > 0 ? (
+      {display.unreadBadge && unreadCount > 0 ? (
         <span
           className="absolute right-3 top-2.5 z-[4] flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-bold text-white"
           aria-label={`${unreadCount} unread messages in task chat`}
@@ -146,53 +157,69 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       ) : null}
 
       <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
-        <div className="col-span-2 min-w-0">
-          <h4
-            className={`text-[19px] font-bold leading-6 text-gray-900 dark:text-white ${
-              status === 'completed' ? 'text-gray-500 dark:text-gray-400' : ''
-            }`}
-          >
-            <span className="line-clamp-1">{displayTitle}</span>
-          </h4>
-        </div>
+        {display.title ? (
+          <div className="col-span-2 min-w-0">
+            <h4
+              className={`text-[19px] font-bold leading-6 text-gray-900 dark:text-white ${
+                status === 'completed' ? 'text-gray-500 dark:text-gray-400' : ''
+              }`}
+            >
+              <span className="line-clamp-1">{displayTitle}</span>
+            </h4>
+          </div>
+        ) : (
+          <div className="col-span-2" />
+        )}
 
         <div className="flex items-start justify-end">
-          {hideUserStatus ? null : statusAppIcon ? (
-            <AppIcon name={statusAppIcon} variant="inline" />
-          ) : status === 'scheduled' ? (
-            <span className="material-icons-round text-[20px]" style={{ color: iconColor }} aria-hidden>
-              event_note
-            </span>
+          {showStatusIcon ? (
+            statusAppIcon ? (
+              <AppIcon name={statusAppIcon} variant="inline" />
+            ) : status === 'scheduled' ? (
+              <span className="material-icons-round text-[22px]" style={{ color: iconColor }} aria-hidden>
+                event_note
+              </span>
+            ) : null
           ) : null}
         </div>
 
-        {tagOrClient ? (
-          <p className="col-span-2 min-w-0 text-sm leading-[21px] text-gray-500 dark:text-gray-400">
-            <span className="line-clamp-1">{tagOrClient}</span>
-          </p>
-        ) : (
-          <div className="col-span-2" />
-        )}
+        {showSecondRow ? (
+          <>
+            {showTagRow ? (
+              <p className="col-span-2 min-w-0 text-sm leading-[21px] text-gray-500 dark:text-gray-400">
+                <span className="line-clamp-1">{tagOrClient}</span>
+              </p>
+            ) : (
+              <div className="col-span-2" />
+            )}
+            {showDue ? (
+              <p className="text-right text-sm leading-[21px] text-gray-500 dark:text-gray-400">
+                <span className="line-clamp-1">{dueText}</span>
+              </p>
+            ) : (
+              <div />
+            )}
+          </>
+        ) : null}
 
-        {dueText ? (
-          <p className="text-right text-sm leading-[21px] text-gray-500 dark:text-gray-400">
-            <span className="line-clamp-1">{dueText}</span>
-          </p>
-        ) : (
-          <div />
-        )}
-
-        <p className="min-w-0 text-sm leading-[21px] text-gray-500 dark:text-gray-400">
-          <span className="line-clamp-1">{frequencyText}</span>
-        </p>
-
-        {unitText ? (
-          <p className="col-span-2 min-w-0 text-right text-sm leading-[21px] text-gray-500 dark:text-gray-400">
-            <span className="line-clamp-1">{unitText}</span>
-          </p>
-        ) : (
-          <div className="col-span-2" />
-        )}
+        {showThirdRow ? (
+          <>
+            {showFrequency ? (
+              <p className="min-w-0 text-sm leading-[21px] text-gray-500 dark:text-gray-400">
+                <span className="line-clamp-1">{frequencyText}</span>
+              </p>
+            ) : (
+              <div />
+            )}
+            {showUnit ? (
+              <p className="col-span-2 min-w-0 text-right text-sm leading-[21px] text-gray-500 dark:text-gray-400">
+                <span className="line-clamp-1">{unitText}</span>
+              </p>
+            ) : (
+              <div className="col-span-2" />
+            )}
+          </>
+        ) : null}
       </div>
       {overduePill ? (
         <div
@@ -206,4 +233,4 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   );
 };
 
-export { formatTaskPeriod };
+export { formatTaskPeriodFromTask as formatTaskPeriod } from '../../utils/taskPeriod';
