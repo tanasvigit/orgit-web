@@ -15,6 +15,8 @@ interface EmployeeLayoutProps {
   headerActions?: React.ReactNode;
   hideHeader?: boolean;
   hideSearch?: boolean;
+  /** When true, page content fills the viewport; child panels manage their own scroll. */
+  contentFitViewport?: boolean;
 }
 
 export const EmployeeLayout: React.FC<EmployeeLayoutProps> = (props) => {
@@ -24,6 +26,7 @@ export const EmployeeLayout: React.FC<EmployeeLayoutProps> = (props) => {
     conversationListContent,
     showRightSidebar = false,
     rightSidebarContent,
+    contentFitViewport = false,
   } = props;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -48,7 +51,13 @@ export const EmployeeLayout: React.FC<EmployeeLayoutProps> = (props) => {
           )}
 
           {/* Main Content */}
-          <main className="flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
+          <main
+            className={`flex-1 min-h-0 overflow-x-hidden ${
+              contentFitViewport ? 'overflow-hidden' : 'overflow-y-auto'
+            }`}
+          >
+            {children}
+          </main>
         </div>
       </div>
 

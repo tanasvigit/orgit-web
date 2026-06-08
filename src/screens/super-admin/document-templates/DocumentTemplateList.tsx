@@ -36,6 +36,24 @@ export const DocumentTemplateList: React.FC = () => {
 
       let created = 0;
       let updated = 0;
+      let deactivated = 0;
+      const activeKeys = new Set(SYSTEM_TEMPLATES.map((d) => d.systemTemplateKey));
+
+      for (const t of existing) {
+        let schema = t?.templateSchema;
+        if (typeof schema === 'string') {
+          try {
+            schema = JSON.parse(schema);
+          } catch {
+            schema = null;
+          }
+        }
+        const key = schema?.systemTemplateKey;
+        if (typeof key === 'string' && key.startsWith('system.') && !activeKeys.has(key)) {
+          await documentTemplateService.update(t.id, { status: 'inactive' });
+          deactivated += 1;
+        }
+      }
 
       for (const def of SYSTEM_TEMPLATES) {
         const found = byKey.get(def.systemTemplateKey);
@@ -68,7 +86,7 @@ export const DocumentTemplateList: React.FC = () => {
         updated += 1;
       }
 
-      return { created, updated };
+      return { created, updated, deactivated };
     },
     {
       onSuccess: (res: any) => {
@@ -76,7 +94,8 @@ export const DocumentTemplateList: React.FC = () => {
         queryClient.invalidateQueries('activeTemplates');
         const created = res?.created ?? 0;
         const updated = res?.updated ?? 0;
-        toast.success(`System templates synced. Created: ${created}, Updated: ${updated}.`);
+        const deactivated = res?.deactivated ?? 0;
+        toast.success(`System templates synced. Created: ${created}, Updated: ${updated}, Deactivated: ${deactivated}.`);
       },
       onError: (err: any) => {
         toast.error('Failed to install system templates: ' + (err.response?.data?.error || err.message));

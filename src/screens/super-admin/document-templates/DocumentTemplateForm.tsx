@@ -8,6 +8,11 @@ import { DocumentBuilderProvider, useDocumentBuilder } from '../../../components
 import { serializeDocumentState } from '../../../components/document-builder/serializer';
 import { useToast } from '../../../context/ToastContext';
 import { Button } from '../../../components/shared';
+import {
+  SystemTemplateDesignPreview,
+  isSystemInlineTemplate,
+  resolveSystemTemplateKey,
+} from '../../../components/document-templates/SystemTemplateDesignPreview';
 
 // Wrapper to bridge the Router/Service with the Builder Context
 const BuilderIntegration: React.FC<{ templateId?: string }> = ({ templateId }) => {
@@ -164,28 +169,38 @@ const BuilderIntegration: React.FC<{ templateId?: string }> = ({ templateId }) =
 
 const LegacyTemplateViewer: React.FC<{ template: any }> = ({ template }) => {
   const navigate = useNavigate();
-  const schema = template?.templateSchema || {};
+  const rawSchema = template?.templateSchema;
+  const schema =
+    typeof rawSchema === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(rawSchema);
+          } catch {
+            return {};
+          }
+        })()
+      : rawSchema || {};
   const editableFields = Array.isArray(schema?.editableFields) ? schema.editableFields : [];
+  const systemKey = resolveSystemTemplateKey(template, schema);
+  const showDesignPreview = isSystemInlineTemplate(systemKey);
 
   return (
-    <div className="p-6 md:p-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{template?.name}</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">
-            {schema?.lockedStructure ? 'System template (structure locked)' : 'Legacy template'}
-          </p>
-        </div>
-        <div className="flex gap-2">
+    <div className="flex flex-col h-full min-h-0">
+      <div className="shrink-0 p-6 md:px-8 md:pt-8 pb-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a2632]">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{template?.name}</h1>
+            <p className="text-gray-500 dark:text-gray-400 mt-1">
+              {schema?.lockedStructure ? 'System template (structure locked)' : 'Legacy template'}
+            </p>
+          </div>
           <Button variant="outline" onClick={() => navigate('/super-admin/document-templates')}>
             <span className="material-symbols-outlined mr-2">arrow_back</span>
             Back
           </Button>
         </div>
-      </div>
 
-      <div className="bg-white dark:bg-[#1a2632] rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-5">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
           <div>
             <div className="text-xs text-gray-500 dark:text-gray-400">Type</div>
             <div className="font-semibold text-gray-900 dark:text-white">{template?.type}</div>
@@ -199,28 +214,42 @@ const LegacyTemplateViewer: React.FC<{ template: any }> = ({ template }) => {
             <div className="font-semibold text-gray-900 dark:text-white">{template?.version}</div>
           </div>
         </div>
+      </div>
 
-        <div>
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Editable fields</h2>
+      {showDesignPreview ? (
+        <div className="min-h-[75vh] overflow-auto bg-gray-200 dark:bg-gray-900 py-6">
+          <div className="max-w-[860px] mx-auto px-4 mb-3">
+            <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Design preview</h2>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+              Blank template layout. Users fill this from Documents → Create Document.
+            </p>
+          </div>
+          <SystemTemplateDesignPreview template={template} schema={schema} />
+        </div>
+      ) : (
+        <div className="p-6 md:p-8">
+          <div className="bg-white dark:bg-[#1a2632] rounded-xl border border-gray-200 dark:border-gray-700 p-6 text-sm text-gray-500">
+            No visual preview is configured for this template.
+          </div>
+        </div>
+      )}
+
+      <details className="shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a2632]">
+        <summary className="cursor-pointer px-6 md:px-8 py-4 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800">
+          Field schema (technical)
+        </summary>
+        <div className="px-6 md:px-8 pb-6">
           {editableFields.length === 0 ? (
             <div className="text-sm text-gray-500 dark:text-gray-400">No editable fields configured.</div>
           ) : (
-            <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 max-h-64">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-800">
+                <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0">
                   <tr>
-                    <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase">
-                      Name
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase">
-                      Label
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase">
-                      Type
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase">
-                      Required
-                    </th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase">Name</th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase">Label</th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase">Type</th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase">Required</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -229,9 +258,7 @@ const LegacyTemplateViewer: React.FC<{ template: any }> = ({ template }) => {
                       <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{f.name}</td>
                       <td className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">{f.label || '-'}</td>
                       <td className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">{f.type || 'text'}</td>
-                      <td className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">
-                        {f.required ? 'Yes' : 'No'}
-                      </td>
+                      <td className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">{f.required ? 'Yes' : 'No'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -239,11 +266,7 @@ const LegacyTemplateViewer: React.FC<{ template: any }> = ({ template }) => {
             </div>
           )}
         </div>
-
-        <div className="text-xs text-gray-500 dark:text-gray-400">
-          Structure editing is disabled for this template in the web UI.
-        </div>
-      </div>
+      </details>
     </div>
   );
 };

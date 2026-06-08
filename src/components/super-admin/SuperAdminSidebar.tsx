@@ -10,6 +10,8 @@ interface NavItem {
   label: string;
 }
 
+const ORGIT_LOGO_SRC = '/orgit-logo.png?v=3';
+
 const navItems: NavItem[] = [
   { path: '/super-admin', icon: 'grid_view', label: 'Dashboard' },
   { path: '/super-admin/organizations', icon: 'domain', label: 'Organisations' },
@@ -75,9 +77,11 @@ export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRe
         isCollapsed ? 'px-4 justify-center' : 'px-6'
       }`}>
         <div className={`flex items-center gap-3 ${isCollapsed ? '' : ''}`}>
-          <div className="bg-super-admin-primary text-white p-2 rounded-lg shadow-sm shrink-0">
-            <span className="material-symbols-outlined text-xl">admin_panel_settings</span>
-          </div>
+          <img
+            src={ORGIT_LOGO_SRC}
+            alt="ORGIT"
+            className={`shrink-0 object-contain ${isCollapsed ? 'h-9 w-9' : 'h-11 w-11'}`}
+          />
           {!isCollapsed && (
             <div className="flex flex-col min-w-0">
               <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white leading-none truncate">ORGIT</h1>
@@ -203,7 +207,7 @@ export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRe
       
       {/* Desktop Sidebar */}
       <aside
-        className={`hidden md:flex bg-super-admin-surface-light dark:bg-super-admin-surface-dark border-r border-super-admin-border-light dark:border-super-admin-border-dark flex-shrink-0 flex flex-col transition-all duration-300 z-20 overflow-visible ${
+        className={`hidden md:flex relative bg-super-admin-surface-light dark:bg-super-admin-surface-dark border-r border-super-admin-border-light dark:border-super-admin-border-dark flex-shrink-0 flex flex-col transition-all duration-300 z-20 overflow-visible ${
           isCollapsed ? 'w-20' : 'w-72'
         }`}
         onClick={(event) => {
@@ -213,6 +217,20 @@ export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRe
         }}
       >
         {sidebarContent}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleToggle();
+          }}
+          className="absolute top-1/2 right-0 z-30 flex h-9 w-9 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border-2 border-super-admin-primary bg-super-admin-primary text-white shadow-lg shadow-super-admin-primary/40 ring-4 ring-super-admin-primary/20 transition-all hover:scale-105 hover:bg-super-admin-primary/90 hover:shadow-xl hover:shadow-super-admin-primary/50"
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          <span className="material-symbols-outlined text-xl font-bold leading-none">
+            {isCollapsed ? 'chevron_right' : 'chevron_left'}
+          </span>
+        </button>
       </aside>
 
       {/* Mobile Sidebar */}
@@ -224,9 +242,7 @@ export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRe
         {/* Mobile Header */}
         <div className="flex items-center justify-between h-20 px-4 border-b border-super-admin-border-light dark:border-super-admin-border-dark shrink-0">
           <div className="flex items-center gap-3">
-            <div className="bg-super-admin-primary text-white p-2 rounded-lg shadow-sm shrink-0">
-              <span className="material-symbols-outlined text-lg">admin_panel_settings</span>
-            </div>
+            <img src={ORGIT_LOGO_SRC} alt="ORGIT" className="h-10 w-10 shrink-0 object-contain" />
             <div className="flex flex-col min-w-0">
               <h1 className="text-base font-bold tracking-tight text-gray-900 dark:text-white leading-none truncate">ORGIT</h1>
               <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Enterprise Admin</span>

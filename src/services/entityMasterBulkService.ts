@@ -37,49 +37,26 @@ export interface EntityMasterBulkStatusResponse {
   errors?: Array<{ sheet?: string; row?: number; message: string }>;
 }
 
+export const MASTER_BULK_FILENAME = 'OrgIt_Master_Bulk.xlsx';
+
 export const entityMasterBulkService = {
-  /**
-   * Download Excel template (GET blob, trigger save).
-   * @param only - 'organisation' | 'organisation-structure' | 'employees' | 'service-list' | 'entity-list' | undefined (full template).
-   */
-  getTemplate: async (
-    only?: 'organisation' | 'organisation-structure' | 'employees' | 'service-list' | 'entity-list'
-  ): Promise<void> => {
-    const params = only ? { only } : undefined;
-    console.log('[EntityMaster] getTemplate', { only, params });
+  /** Download unified OrgIt Master Bulk workbook. */
+  getTemplate: async (): Promise<void> => {
     const response = await api.get('/admin/entity-master/template', {
       responseType: 'blob',
-      params,
     });
     const blob = response.data as Blob;
-    const filename =
-      only === 'organisation'
-        ? 'Entity_Master_template.xlsx'
-        : only === 'organisation-structure'
-          ? 'Org_Structure_template.xlsx'
-          : only === 'employees'
-            ? 'Employee_template.xlsx'
-            : only === 'service-list'
-              ? 'Service_List_template.xlsx'
-              : only === 'entity-list'
-                ? 'Entity_List_template.xlsx'
-                : 'OrgIt_Settings_template.xlsx';
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename;
+    a.download = MASTER_BULK_FILENAME;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
-    console.log('[EntityMaster] template downloaded', { filename });
   },
 
-  /**
-   * Upload filled Excel file; enqueues for processing and returns uploadId.
-   */
   uploadFile: (file: File) => {
-    console.log('[EntityMaster] uploadFile', { name: file.name, size: file.size, type: file.type });
     const formData = new FormData();
     formData.append('file', file);
     return api.post<{ success: boolean; data: EntityMasterBulkEnqueueResponse }>(
@@ -91,18 +68,12 @@ export const entityMasterBulkService = {
     );
   },
 
-  /**
-   * Get status of an entity master bulk upload. Poll until status is 'completed' or 'failed'.
-   */
   getStatus: (uploadId: string) => {
     return api.get<{ success: boolean; data: EntityMasterBulkStatusResponse }>(
       `/admin/entity-master/status/${uploadId}`
     );
   },
 
-  /**
-   * Poll status until completed or failed. Resolves with final status. Polls every 2s, max 10 min.
-   */
   pollUntilDone: async (
     uploadId: string,
     onProgress?: (data: EntityMasterBulkStatusResponse) => void

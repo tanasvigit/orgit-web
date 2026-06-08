@@ -1,8 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { AdminLayout } from '../../components/admin/AdminLayout';
+import { BulkMasterUploadPanel } from '../../components/admin/BulkMasterUploadPanel';
 import { masterDataService, TaskServiceItem, TaskServiceType } from '../../services/masterDataService';
-import { entityMasterBulkService } from '../../services/entityMasterBulkService';
 import { useToast } from '../../context/ToastContext';
 
 const ROLLOUT_OPTIONS: Array<{ value: 'end_of_period' | 'one_month_before_period_end'; label: string }> = [
@@ -17,9 +17,6 @@ export const ServiceList: React.FC = () => {
   const [addTaskType, setAddTaskType] = useState<TaskServiceType>('recurring');
   const [addFrequency, setAddFrequency] = useState('Monthly');
   const [addRollout, setAddRollout] = useState<'end_of_period' | 'one_month_before_period_end'>('end_of_period');
-  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
-  const [isBulkUploading, setIsBulkUploading] = useState(false);
-  const bulkFileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -60,66 +57,6 @@ export const ServiceList: React.FC = () => {
   const formatRollout = (rule: string) => {
     if (rule === 'one_month_before_period_end') return '1 MONTH BEFORE PERIOD END';
     return 'End of Period';
-  };
-
-  const handleDownloadServiceListTemplate = async () => {
-    setIsDownloadingTemplate(true);
-    try {
-      await entityMasterBulkService.getTemplate('service-list');
-      toast.success('Service List template downloaded. Fill it and upload to bulk update.');
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || err.message || 'Failed to download template');
-    } finally {
-      setIsDownloadingTemplate(false);
-    }
-  };
-
-  const bulkUploadMutation = useMutation(
-    (file: File) => entityMasterBulkService.uploadFile(file),
-    {
-      onSuccess: async (res) => {
-        const data = res.data?.data;
-        if (!data?.uploadId) {
-          if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
-          return;
-        }
-        try {
-          const status = await entityMasterBulkService.pollUntilDone(data.uploadId);
-          if (status.status === 'completed') {
-            toast.success('Service List bulk upload completed.');
-          } else {
-            toast.warning('Bulk upload finished with errors.');
-          }
-          if (status.errors?.length) {
-            status.errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
-            if (status.errors.length > 5) toast.error(`… and ${status.errors.length - 5} more errors`);
-          }
-        } catch (err: any) {
-          toast.error(err?.message || 'Failed to get upload status');
-        }
-        queryClient.invalidateQueries('task-services');
-        if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
-      },
-      onError: (err: any) => {
-        toast.error(err.response?.data?.error || err.message || 'Upload failed');
-      },
-      onSettled: () => {
-        setIsBulkUploading(false);
-      },
-    }
-  );
-
-  const handleBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const name = (file.name || '').toLowerCase();
-    if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
-      toast.error('Please select an Excel file (.xlsx or .xls)');
-      e.target.value = '';
-      return;
-    }
-    setIsBulkUploading(true);
-    bulkUploadMutation.mutate(file);
   };
 
   const createMutation = useMutation(
@@ -184,35 +121,7 @@ export const ServiceList: React.FC = () => {
           </div>
         </div>
 
-        {/* Bulk update from Excel */}
-        <div className="mb-6 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Bulk update from Excel</h2>
-          <div className="flex flex-wrap gap-3 items-center">
-            <button
-              type="button"
-              onClick={handleDownloadServiceListTemplate}
-              disabled={isDownloadingTemplate}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 disabled:opacity-50"
-            >
-              {isDownloadingTemplate ? 'Downloading…' : 'Download Service List template'}
-            </button>
-            <input
-              ref={bulkFileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleBulkFileChange}
-            />
-            <button
-              type="button"
-              onClick={() => bulkFileInputRef.current?.click()}
-              disabled={isBulkUploading}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white disabled:opacity-50"
-            >
-              {isBulkUploading ? 'Uploading…' : 'Upload file'}
-            </button>
-          </div>
-        </div>
+        <BulkMasterUploadPanel variant="compact" className="mb-6" />
 
         {showAddForm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowAddForm(false)}>

@@ -246,8 +246,14 @@ export const UserList: React.FC = () => {
 
         {/* Delete Confirmation Dialog */}
         {deleteConfirm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-super-admin-surface-dark rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            onClick={() => !isDeleting && setDeleteConfirm(null)}
+          >
+            <div
+              className="bg-white dark:bg-super-admin-surface-dark rounded-lg shadow-xl p-6 max-w-md w-full mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
               <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Delete User</h3>
               <p className="text-gray-700 dark:text-gray-300 mb-6">
                 Are you sure you want to delete <strong>{deleteConfirm.name}</strong>? This action cannot be undone and will delete all associated data including messages, tasks, and notifications.

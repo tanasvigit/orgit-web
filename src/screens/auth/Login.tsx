@@ -217,9 +217,14 @@ export const Login: React.FC = () => {
       <TopAppBar title="Login" onBack={() => navigate(-1)} />
 
       <div className="flex flex-col flex-1 w-full max-w-md mx-auto">
+        <img
+          src="/orgit-logo.png?v=3"
+          alt="ORGIT"
+          className="mx-auto mt-6 h-20 w-20 object-contain"
+        />
         {/* Headline */}
         <h1 className="text-slate-900 dark:text-white tracking-tight text-[32px] font-bold leading-tight px-6 text-center pt-4">
-          Welcome 
+          Welcome
         </h1>
 
         {/* Body Text */}

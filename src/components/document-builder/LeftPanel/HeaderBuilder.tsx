@@ -29,7 +29,7 @@ export const HeaderBuilder: React.FC = () => {
                     </button>
                 </div>
                 <div className="text-xs text-gray-500">
-                    Logo will be pulled automatically from Entity Master settings.
+                    Logo will be pulled automatically from Organisation Structure root settings.
                 </div>
             </div>
 

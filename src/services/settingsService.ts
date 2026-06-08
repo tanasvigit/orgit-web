@@ -174,12 +174,16 @@ export interface OrganizationStructureNode {
 
 export interface OrganizationStructureTree {
   stages?: OrganizationStructureStage[];
+  /** Levels referenced by at least one org node (not the full preset catalog). */
   levels: OrganizationStructureLevel[];
+  /** Full level catalog from DB — for org-definition admin only. */
+  catalogLevels?: OrganizationStructureLevel[];
   nodes: OrganizationStructureNode[];
   rootNode: OrganizationStructureNode | null;
   summary: {
     totalStages?: number;
     totalLevels: number;
+    catalogLevelCount?: number;
     totalNodes: number;
     activeNodes: number;
     archivedNodes: number;

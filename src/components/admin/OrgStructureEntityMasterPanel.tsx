@@ -10,6 +10,7 @@ import type {
 } from '../../services/settingsService';
 import { updateOrganizationStructureNode } from '../../services/settingsService';
 import { useToast } from '../../context/ToastContext';
+import { getAssignmentSectionsFromTree } from '../../utils/employeeOrgNodeLevels';
 
 function getNodeEntityType(node: { metaJson?: Record<string, unknown>; levelLabel?: string }) {
   const raw =
@@ -71,23 +72,17 @@ export function OrgStructureEntityMasterPanel({
   const levels = tree?.levels ?? [];
   const nodes = tree?.nodes ?? [];
 
-  const levelsFromL2 = useMemo(
-    () =>
-      [...levels]
-        .filter((l) => l.levelNumber > 1 && l.isActive !== false)
-        .sort((a, b) => a.levelNumber - b.levelNumber),
-    [levels]
-  );
+  const assignmentSections = useMemo(() => getAssignmentSectionsFromTree(tree), [tree]);
 
-  const [selectedLevelNumber, setSelectedLevelNumber] = useState<number>(() => levelsFromL2[0]?.levelNumber ?? 2);
+  const [selectedLevelId, setSelectedLevelId] = useState<string>(() => assignmentSections[0]?.id ?? '');
 
   React.useEffect(() => {
-    if (levelsFromL2.length === 0) return;
-    const exists = levelsFromL2.some((l) => l.levelNumber === selectedLevelNumber);
+    if (assignmentSections.length === 0) return;
+    const exists = assignmentSections.some((l) => l.id === selectedLevelId);
     if (!exists) {
-      setSelectedLevelNumber(levelsFromL2[0].levelNumber);
+      setSelectedLevelId(assignmentSections[0].id);
     }
-  }, [levelsFromL2, selectedLevelNumber]);
+  }, [assignmentSections, selectedLevelId]);
 
   const rootEntityType = useMemo(() => {
     if (!rootNode) return { selectedEntityType: '', customEntityType: '' };
@@ -125,15 +120,22 @@ export function OrgStructureEntityMasterPanel({
     }
   );
 
-  const selectedLevel = levelsFromL2.find((l) => l.levelNumber === selectedLevelNumber);
+  const selectedLevel = assignmentSections.find((l) => l.id === selectedLevelId);
   const levelNodes = useMemo(
     () =>
       nodes
-        .filter((n) => n.levelNumber === selectedLevelNumber && n.status !== 'archived')
+        .filter(
+          (n) =>
+            n.status !== 'archived' &&
+            (n.levelId === selectedLevelId ||
+              (selectedLevel &&
+                (n.levelLabel || '').trim().toLowerCase() ===
+                  selectedLevel.levelLabel.trim().toLowerCase()))
+        )
         .sort((a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name)),
-    [nodes, selectedLevelNumber]
+    [nodes, selectedLevelId, selectedLevel]
   );
-  const schema = getLevelSchema(levels, selectedLevelNumber);
+  const schema = getLevelSchema(levels, selectedLevel?.levelNumber ?? 0);
 
   if (!(tree?.summary?.hasRootNode || tree?.summary?.hasRootGroup)) {
     return (
@@ -192,27 +194,27 @@ export function OrgStructureEntityMasterPanel({
             Select a level (from L2). Field definitions are managed in Org Definition; edit values with{' '}
             <span className="font-medium">Edit</span> above.
           </p>
-          {levelsFromL2.length === 0 ? (
+          {assignmentSections.length === 0 ? (
             <p className="text-sm text-slate-500">No levels below L1 defined yet. Add them in Org Definition.</p>
           ) : (
             <select
-              value={selectedLevelNumber}
-              onChange={(e) => setSelectedLevelNumber(Number(e.target.value))}
+              value={selectedLevelId}
+              onChange={(e) => setSelectedLevelId(e.target.value)}
               className="w-full md:max-w-md rounded-lg border border-slate-200 bg-white text-slate-900 text-sm py-2.5 px-3 focus:border-primary focus:ring-primary focus:ring-1 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
             >
-              {levelsFromL2.map((level) => (
-                <option key={level.id} value={level.levelNumber}>
-                  L{level.levelNumber} — {level.levelLabel}
+              {assignmentSections.map((level) => (
+                <option key={level.id} value={level.id}>
+                  {level.levelLabel}
                 </option>
               ))}
             </select>
           )}
         </div>
 
-        {levelsFromL2.length > 0 ? (
+        {assignmentSections.length > 0 ? (
           <OrgStructureLevelValuesTable
-            key={selectedLevelNumber}
-            levelLabel={selectedLevel?.levelLabel ?? `L${selectedLevelNumber}`}
+            key={selectedLevelId}
+            levelLabel={selectedLevel?.levelLabel ?? ''}
             nodes={levelNodes}
             schema={schema}
             valuesEditable={valuesEditable}

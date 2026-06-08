@@ -41,6 +41,44 @@ function subNavLinkClass(active: boolean) {
 const ADMIN_STORAGE_KEY = 'admin-sidebar-minimized-by-messages';
 const ADMIN_STORAGE_KEY_MANUAL = 'admin-sidebar-manually-expanded';
 
+const ORGIT_LOGO_SRC = '/orgit-logo.png?v=3';
+
+const settingsNavItems = [
+  {
+    to: '/admin/settings/organisation-structure',
+    icon: 'account_tree',
+    label: 'Organisation Structure',
+    isActive: (path: string) =>
+      path === '/admin/settings/org-definition' ||
+      path === '/admin/settings/organisation-structure' ||
+      path.startsWith('/admin/settings/reporting-hierarchy'),
+  },
+  {
+    to: '/admin/users',
+    icon: 'group',
+    label: 'Employees',
+    isActive: (path: string) => path === '/admin/users' || path.startsWith('/admin/users/'),
+  },
+  {
+    to: '/admin/services',
+    icon: 'list_alt',
+    label: 'Service List',
+    isActive: (path: string) => path === '/admin/services' || path.startsWith('/admin/services/'),
+  },
+  {
+    to: '/admin/entities',
+    icon: 'groups',
+    label: 'Client List',
+    isActive: (path: string) => path === '/admin/entities' || path.startsWith('/admin/entities/'),
+  },
+  {
+    to: '/admin/settings/user-config',
+    icon: 'tune',
+    label: 'User configuration',
+    isActive: (path: string) => path === '/admin/settings/user-config',
+  },
+] as const;
+
 interface AdminSidebarProps {
   onToggleRef?: React.MutableRefObject<(() => void) | null>;
 }
@@ -52,7 +90,8 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
   const { toast } = useToast();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  
+  const settingsMenuRef = useRef<HTMLDivElement>(null);
+
   // Use localStorage to persist state across remounts
   const getStoredMinimizedFlag = () => {
     try {
@@ -108,6 +147,20 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
   
   // Store the collapsed state in a ref to prevent unwanted resets
   const collapsedStateRef = useRef(isCollapsed);
+
+  // Close settings submenu on outside click (use `click` so submenu links stay open)
+  useEffect(() => {
+    if (!isSettingsOpen || isCollapsed) return;
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (settingsMenuRef.current?.contains(target)) return;
+      setIsSettingsOpen(false);
+    };
+
+    document.addEventListener('click', handleOutsideClick);
+    return () => document.removeEventListener('click', handleOutsideClick);
+  }, [isSettingsOpen, isCollapsed]);
 
   // Expose toggle function to parent component
   const handleToggle = useCallback(() => {
@@ -250,15 +303,8 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
   // Auto-open settings dropdown and highlight Settings when on SettingsScreen or any settings route
   const isSettingsActive =
     location.pathname === '/admin/settings' ||
-    location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users/') ||
-    location.pathname === '/admin/services' || location.pathname.startsWith('/admin/services/') ||
-    location.pathname === '/admin/entities' || location.pathname.startsWith('/admin/entities/') ||
-    location.pathname === '/admin/settings/org-definition' ||
-    location.pathname === '/admin/settings/organisation-structure' || location.pathname.startsWith('/admin/settings/reporting-hierarchy') ||
-    location.pathname === '/admin/settings/user-config' ||
-    location.pathname.startsWith('/admin/settings/reminder-config') ||
-    location.pathname.startsWith('/admin/settings/auto-escalation') ||
-    location.pathname.startsWith('/admin/settings/recurring-tasks');
+    location.pathname.startsWith('/admin/settings/') ||
+    settingsNavItems.some((item) => item.isActive(location.pathname));
 
   useEffect(() => {
     if (isSettingsActive && !isCollapsed) {
@@ -273,9 +319,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
       {/* Desktop Header */}
       <div className={`hidden md:block p-6 pb-2 shrink-0 relative max-[1366px]:p-3 max-[1366px]:pb-0.5 ${isCollapsed ? 'px-4 max-[1366px]:px-2.5' : ''}`}>
         <div className={`flex items-center gap-3 mb-8 max-[1366px]:mb-3 ${isCollapsed ? 'justify-center' : ''}`}>
-          <div className="bg-primary p-2 rounded-lg text-white shadow-lg shadow-primary/20 shrink-0 max-[1366px]:p-1.5">
-            <span className="material-symbols-outlined text-2xl max-[1366px]:text-xl">admin_panel_settings</span>
-          </div>
+          <img
+            src={ORGIT_LOGO_SRC}
+            alt="ORGIT"
+            className={`shrink-0 object-contain ${
+              isCollapsed ? 'h-9 w-9 max-[1366px]:h-8 max-[1366px]:w-8' : 'h-11 w-11 max-[1366px]:h-10 max-[1366px]:w-10'
+            }`}
+          />
           {!isCollapsed && (
             <div className="flex flex-col min-w-0">
               <h1 className="text-slate-900 text-lg font-extrabold tracking-tight leading-none truncate max-[1366px]:text-base">ORGIT</h1>
@@ -283,11 +333,6 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
             </div>
           )}
         </div>
-        {isCollapsed && (
-          <p className="text-[9px] leading-tight text-slate-500 text-center -mt-5 mb-2 max-[1366px]:text-[8px]">
-            ORGIT
-          </p>
-        )}
       </div>
       <nav
         className={`flex min-h-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto pb-2 max-[1366px]:gap-0 ${
@@ -337,7 +382,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
         })}
         
         {/* Settings: icon + label navigate; chevron toggles dropdown */}
-        <div className="relative min-w-0 w-full">
+        <div className="relative min-w-0 w-full" ref={settingsMenuRef}>
           <div
             className={`flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2.5 transition-colors group min-h-[44px] max-[1366px]:min-h-[34px] max-[1366px]:py-1.5 ${
               isCollapsed ? 'justify-center flex-col gap-0.5 py-2' : ''
@@ -392,94 +437,23 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
           {/* Dropdown Menu */}
           {!isCollapsed && isSettingsOpen && (
             <div className="ml-1.5 mt-1 min-w-0 space-y-0.5 border-l-2 border-slate-200 pl-2">
-              <Link
-                to="/admin/users"
-                onClick={() => {
-                  if (window.innerWidth < 768) {
-                    setIsMobileOpen(false);
-                  }
-                }}
-                className={subNavLinkClass(
-                  location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users/')
-                )}
-                title="Employees"
-              >
-                <span className="material-symbols-outlined shrink-0 text-[18px]">group</span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">Employees</span>
-              </Link>
-              <Link
-                to="/admin/services"
-                onClick={() => {
-                  if (window.innerWidth < 768) {
-                    setIsMobileOpen(false);
-                  }
-                }}
-                className={subNavLinkClass(
-                  location.pathname === '/admin/services' || location.pathname.startsWith('/admin/services/')
-                )}
-                title="Service List"
-              >
-                <span className="material-symbols-outlined shrink-0 text-[18px]">list_alt</span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">Service List</span>
-              </Link>
-              <Link
-                to="/admin/entity-master"
-                onClick={() => {
-                  if (window.innerWidth < 768) {
-                    setIsMobileOpen(false);
-                  }
-                }}
-                className={subNavLinkClass(location.pathname === '/admin/entity-master')}
-                title="Entity Master Data"
-              >
-                <span className="material-symbols-outlined shrink-0 text-[18px]">corporate_fare</span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">Entity Master Data</span>
-              </Link>
-              <Link
-                to="/admin/entities"
-                onClick={() => {
-                  if (window.innerWidth < 768) {
-                    setIsMobileOpen(false);
-                  }
-                }}
-                className={subNavLinkClass(
-                  location.pathname === '/admin/entities' || location.pathname.startsWith('/admin/entities/')
-                )}
-                title="Entity List"
-              >
-                <span className="material-symbols-outlined shrink-0 text-[18px]">groups</span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">Entity List</span>
-              </Link>
-              <Link
-                to="/admin/settings/organisation-structure"
-                onClick={() => {
-                  if (window.innerWidth < 768) {
-                    setIsMobileOpen(false);
-                  }
-                }}
-                className={subNavLinkClass(
-                  location.pathname === '/admin/settings/org-definition' ||
-                    location.pathname === '/admin/settings/organisation-structure' ||
-                    location.pathname.startsWith('/admin/settings/reporting-hierarchy')
-                )}
-                title="Organisation Structure"
-              >
-                <span className="material-symbols-outlined shrink-0 text-[18px]">account_tree</span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">Organisation Structure</span>
-              </Link>
-              <Link
-                to="/admin/settings/user-config"
-                onClick={() => {
-                  if (window.innerWidth < 768) {
-                    setIsMobileOpen(false);
-                  }
-                }}
-                className={subNavLinkClass(location.pathname === '/admin/settings/user-config')}
-                title="User configuration"
-              >
-                <span className="material-symbols-outlined shrink-0 text-[18px]">tune</span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">User configuration</span>
-              </Link>
+              {settingsNavItems.map((item) => (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => {
+                    setIsSettingsOpen(true);
+                    if (window.innerWidth < 768) {
+                      setIsMobileOpen(false);
+                    }
+                  }}
+                  className={subNavLinkClass(item.isActive(location.pathname))}
+                  title={item.label}
+                >
+                  <span className="material-symbols-outlined shrink-0 text-[18px]">{item.icon}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.label}</span>
+                </Link>
+              ))}
             </div>
           )}
         </div>
@@ -536,7 +510,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
       
       {/* Desktop Sidebar */}
       <aside
-        className={`hidden md:flex h-full shrink-0 z-20 flex-col overflow-hidden border-r border-slate-200 bg-white font-body transition-all duration-300 ${
+        className={`hidden md:flex relative h-full shrink-0 z-20 flex-col overflow-visible border-r border-slate-200 bg-white font-body transition-all duration-300 ${
           isCollapsed ? 'w-[70px]' : 'w-[240px]'
         }`}
         onClick={(event) => {
@@ -546,6 +520,20 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
         }}
       >
         {sidebarContent}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleToggle();
+          }}
+          className="absolute top-1/2 right-0 z-30 flex h-9 w-9 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border-2 border-primary bg-primary text-white shadow-lg shadow-primary/40 ring-4 ring-primary/20 transition-all hover:scale-105 hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/50"
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          <span className="material-icons-outlined text-xl font-bold leading-none">
+            {isCollapsed ? 'chevron_right' : 'chevron_left'}
+          </span>
+        </button>
       </aside>
 
       {/* Mobile Sidebar */}
@@ -557,9 +545,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
         {/* Mobile Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-200 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="bg-primary p-2 rounded-lg text-white shadow-lg shadow-primary/20 shrink-0">
-              <span className="material-symbols-outlined text-xl">admin_panel_settings</span>
-            </div>
+            <img src={ORGIT_LOGO_SRC} alt="ORGIT" className="h-10 w-10 shrink-0 object-contain" />
             <div className="flex flex-col min-w-0">
               <h1 className="text-slate-900 text-base font-extrabold tracking-tight leading-none truncate">ORGIT</h1>
               <span className="text-[10px] text-slate-500 font-medium">Enterprise Admin</span>

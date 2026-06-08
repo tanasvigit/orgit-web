@@ -12,6 +12,10 @@ import {
 } from '../../services/userTaskCreationConfigService';
 import {
   FALLBACK_TASK_CREATION_USER_CONFIG,
+  TASK_CARD_DISPLAY_FIELD_KEYS,
+  TASK_CARD_DISPLAY_FIELD_LABELS,
+  mergeTaskCardDisplayConfig,
+  type TaskCardDisplayConfig,
   type TaskCreationUserConfig,
 } from '../../utils/taskCreationUserConfig';
 
@@ -34,6 +38,9 @@ export const UserTaskConfigScreen: React.FC = () => {
   const [taskUnitPreference, setTaskUnitPreference] = useState<
     TaskCreationUserConfig['taskUnitPreference']
   >(FALLBACK_TASK_CREATION_USER_CONFIG.taskUnitPreference);
+  const [taskCardDisplay, setTaskCardDisplay] = useState<TaskCardDisplayConfig>(
+    mergeTaskCardDisplayConfig(FALLBACK_TASK_CREATION_USER_CONFIG.taskCardDisplay)
+  );
 
   const { isLoading, error } = useQuery(taskCreationUserConfigQueryKey, getTaskCreationUserConfig, {
     onSuccess: (data) => {
@@ -41,6 +48,7 @@ export const UserTaskConfigScreen: React.FC = () => {
       setTargetDaysBeforeDue(String(data.targetDaysBeforeDue));
       setAutoEscalateTrigger(data.autoEscalateTrigger);
       setTaskUnitPreference(data.taskUnitPreference || FALLBACK_TASK_CREATION_USER_CONFIG.taskUnitPreference);
+      setTaskCardDisplay(mergeTaskCardDisplayConfig(data.taskCardDisplay));
     },
     onError: () => {
       toast.error('Could not load your task defaults. Using built-in defaults until the server is updated.');
@@ -79,8 +87,13 @@ export const UserTaskConfigScreen: React.FC = () => {
       targetDaysBeforeDue: targetBefore,
       autoEscalateTrigger,
       taskUnitPreference,
+      taskCardDisplay,
     };
     saveMutation.mutate(payload);
+  };
+
+  const toggleTaskCardField = (key: keyof TaskCardDisplayConfig) => {
+    setTaskCardDisplay((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const content = (
@@ -150,6 +163,33 @@ export const UserTaskConfigScreen: React.FC = () => {
                 onChange={(e) => setTargetDaysBeforeDue(e.target.value)}
                 className="w-full max-w-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2.5 text-slate-900 dark:text-white"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">
+                Task card display
+              </label>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                Choose which fields appear on task cards in the dashboard and task list. All are on by default.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {TASK_CARD_DISPLAY_FIELD_KEYS.map((key) => (
+                  <label
+                    key={key}
+                    className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-600 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={taskCardDisplay[key]}
+                      onChange={() => toggleTaskCardField(key)}
+                      className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary/40"
+                    />
+                    <span className="text-sm text-slate-800 dark:text-slate-200">
+                      {TASK_CARD_DISPLAY_FIELD_LABELS[key]}
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
 
             <div>

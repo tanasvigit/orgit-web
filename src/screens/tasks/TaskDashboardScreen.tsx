@@ -12,12 +12,12 @@ import { useToast } from '../../context/ToastContext';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { TaskGroupChatConversation } from '../messaging/TaskGroupChatConversation';
-import { TaskCreateModal } from '../../components/tasks/TaskCreateModal';
 import { BulkAssignUsersModal } from '../../components/tasks/BulkAssignUsersModal';
 import { taskBulkService } from '../../services/taskBulkService';
 import { isTaskDeleted } from '../../utils/taskUtils';
 import { formatChatListTimestamp, timestampToMs } from '../../utils/chatTime';
 import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
+import { formatFrequencyLabel } from '../../utils/taskPeriod';
 import { parseDueSoonDays } from '../../utils/dueSoonDays';
 import { getLastTasksDueSoonDays } from '../../services/taskService';
 import { resolveTaskTitleWithPeriod } from '../../utils/taskPeriod';
@@ -184,7 +184,6 @@ export const TaskDashboardScreen: React.FC = () => {
   const [teamMemberSearch, setTeamMemberSearch] = useState('');
   const [selectedTeamMemberIds, setSelectedTeamMemberIds] = useState<string[]>([]);
   const teamMemberFilterRef = useRef<HTMLDivElement>(null);
-  const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectTaskId, setRejectTaskId] = useState<string | null>(null);
@@ -256,12 +255,12 @@ export const TaskDashboardScreen: React.FC = () => {
       taskLike?.task_type === 'recurring_instance' ||
       taskLike?.taskType === 'recurring_instance' ||
       !!taskLike?.recurrence_type;
-    return String(
+    return formatFrequencyLabel(
       taskLike?.recurrence_type ||
         taskLike?.frequency ||
         taskLike?.task_frequency ||
         (isRecurring ? 'Recurring' : 'One-Time')
-    ).replace(/_/g, ' ');
+    );
   };
 
   // Fetch all task services (recurring + one_time) for search suggestions
@@ -1175,37 +1174,26 @@ export const TaskDashboardScreen: React.FC = () => {
     <div className="flex flex-col h-full min-h-0 bg-background-light dark:bg-background-dark">
       {/* Header with Filters */}
       <div className="shrink-0 p-2.5 pb-2 border-b border-border-light dark:border-border-dark bg-white dark:bg-surface-dark/50 backdrop-blur-sm z-10">
-        {/* Header with Title and Create Button */}
         <div className="flex items-center justify-between mb-2">
           <h1 className="text-base font-bold tracking-tight text-gray-900 dark:text-white">Tasks</h1>
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                if (bulkSelectMode) exitBulkSelectMode();
-                else setBulkSelectMode(true);
-              }}
-              className={`h-9 px-2.5 rounded-lg flex items-center gap-1 text-xs font-semibold border transition-colors ${
-                bulkSelectMode
-                  ? 'bg-primary/10 border-primary text-primary'
-                  : 'border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'
-              }`}
-              title={bulkSelectMode ? 'Cancel selection' : 'Select tasks to assign users'}
-            >
-              <span className="material-icons-outlined text-base">
-                {bulkSelectMode ? 'close' : 'checklist'}
-              </span>
-              {bulkSelectMode ? 'Cancel' : 'Select'}
-            </button>
-            <button
-              onClick={() => setShowTaskCreateModal(true)}
-              className="w-9 h-9 bg-primary hover:bg-primary/90 text-white rounded-lg flex items-center justify-center shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all duration-200 hover:scale-105 active:scale-95"
-              title="Create Task"
-              aria-label="Create Task"
-            >
-              <span className="material-icons-outlined text-xl">add</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (bulkSelectMode) exitBulkSelectMode();
+              else setBulkSelectMode(true);
+            }}
+            className={`h-9 px-2.5 rounded-lg flex items-center gap-1 text-xs font-semibold border transition-colors ${
+              bulkSelectMode
+                ? 'bg-primary/10 border-primary text-primary'
+                : 'border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'
+            }`}
+            title={bulkSelectMode ? 'Cancel selection' : 'Select tasks to assign users'}
+          >
+            <span className="material-icons-outlined text-base">
+              {bulkSelectMode ? 'close' : 'checklist'}
+            </span>
+            {bulkSelectMode ? 'Cancel' : 'Select'}
+          </button>
         </div>
 
         {bulkSelectMode && (
@@ -1721,7 +1709,7 @@ export const TaskDashboardScreen: React.FC = () => {
             </p>
             {!searchQuery && (
               <p className="text-gray-500 dark:text-gray-500 text-sm text-center">
-                Create your first task using the + button above
+                Create your first task using the + button at the bottom right
               </p>
             )}
           </div>
@@ -1788,15 +1776,6 @@ export const TaskDashboardScreen: React.FC = () => {
             {mainContent}
                 </div>
               </div>
-
-        <TaskCreateModal
-          visible={showTaskCreateModal}
-          onClose={() => setShowTaskCreateModal(false)}
-          onSuccess={() => {
-            setShowTaskCreateModal(false);
-        queryClient.invalidateQueries(['conversations', 'task']);
-          }}
-        />
 
         <BulkAssignUsersModal
           open={showBulkAssignModal}
@@ -1882,15 +1861,6 @@ export const TaskDashboardScreen: React.FC = () => {
           {mainContent}
         </div>
       </div>
-
-      <TaskCreateModal
-        visible={showTaskCreateModal}
-        onClose={() => setShowTaskCreateModal(false)}
-        onSuccess={() => {
-          setShowTaskCreateModal(false);
-          queryClient.invalidateQueries(['conversations', 'task']);
-        }}
-      />
 
       <BulkAssignUsersModal
         open={showBulkAssignModal}

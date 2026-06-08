@@ -18,6 +18,7 @@ import { entityListService } from '../../services/entityListService';
 import { waitForSocketConnection } from '../../services/socketService';
 import { setTaskFinancial } from '../../utils/taskFinancialStorage';
 import { CustomDatePicker } from '../shared/CustomDatePicker';
+import { formatDateDDMMYYYY } from '../../utils/dateFormat';
 import api from '../../services/api';
 import { formatOrgUnitLabel } from '../../utils/orgUnitLabel';
 
@@ -65,6 +66,12 @@ const sectionContentClass = 'min-w-0 flex-1';
 const optionBaseClass =
   'rounded-lg border px-2 py-1 text-xs font-medium transition-colors border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280] hover:bg-[#F3F4F6]';
 const optionActiveClass = 'border-primary bg-primary text-white hover:bg-primary';
+const escalationFieldClass =
+  'box-border h-8 w-[6.5rem] min-w-[6.5rem] max-w-[6.5rem] shrink-0 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-xs text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50';
+const escalationSelectClass = `${escalationFieldClass} cursor-pointer py-0 pr-7 leading-normal`;
+const escalationNumberClass = `${escalationFieldClass} py-0 text-center leading-8`;
+const escalationLabelClass =
+  'flex h-8 shrink-0 items-center whitespace-nowrap text-xs font-medium leading-none text-[#4B5563]';
 
 type ComboboxKeyDownParams = {
   event: React.KeyboardEvent<HTMLInputElement>;
@@ -221,7 +228,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [basicInfoConfirmed, setBasicInfoConfirmed] = useState(false);
 
   const [isRecurring, setIsRecurring] = useState(false);
-  const [taskFrequency, setTaskFrequency] = useState<'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'>('weekly');
+  const [taskFrequency, setTaskFrequency] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('weekly');
   const [taskEnds, setTaskEnds] = useState<'never' | 'specific_date' | 'after_occurrences'>('never');
   const [recurrenceEndDate, setRecurrenceEndDate] = useState(addDays(baseDate, 30));
   const [occurrenceCount, setOccurrenceCount] = useState('10');
@@ -239,8 +246,9 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
   const [taskOwnerId, setTaskOwnerId] = useState<string>(currentUserId);
   const [selectedAssignees, setSelectedAssignees] = useState<UserLike[]>([]);
   const [autoEscalation, setAutoEscalation] = useState(false);
-  const [escalationTrigger, setEscalationTrigger] = useState<'target_date' | 'due_date'>('target_date');
-  const [escalationTiming, setEscalationTiming] = useState('1');
+  const [escalationWhen, setEscalationWhen] = useState<'before' | 'after' | 'on'>('on');
+  const [escalationOffsetDays, setEscalationOffsetDays] = useState('1');
+  const [escalationTrigger, setEscalationTrigger] = useState<'target_date' | 'due_date'>('due_date');
   const [escalationContacts, setEscalationContacts] = useState<UserLike[]>([]);
 
   const [addFinancialValue, setAddFinancialValue] = useState(false);
@@ -410,8 +418,9 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
     setTaskOwnerId(currentUserId);
     setSelectedAssignees([]);
     setAutoEscalation(false);
-    setEscalationTrigger(cfg.autoEscalateTrigger);
-    setEscalationTiming('1');
+    setEscalationWhen('on');
+    setEscalationOffsetDays('1');
+    setEscalationTrigger(cfg.autoEscalateTrigger === 'target_date' ? 'target_date' : 'due_date');
     setEscalationContacts([]);
     setAddFinancialValue(false);
     setFinancialValue('');
@@ -530,7 +539,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
 
     setCreateTaskLoading(true);
     try {
-      const recurrenceType = isRecurring ? (taskFrequency === 'custom' ? 'weekly' : taskFrequency) : null;
+      const recurrenceType = isRecurring ? taskFrequency : null;
       let taskDescription = description.trim();
       if (documentId) {
         taskDescription = `${taskDescription}\n\n---\n📄 Related Document ID: ${documentId}`.trim();
@@ -558,12 +567,21 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
         task_owner: 'self',
         auto_escalate: autoEscalation,
         escalation_trigger: autoEscalation ? escalationTrigger : null,
+        escalation_when: autoEscalation ? escalationWhen : null,
+        escalation_offset_days: autoEscalation
+          ? escalationWhen === 'on'
+            ? 0
+            : Math.max(1, Number.parseInt(escalationOffsetDays || '1', 10) || 1)
+          : null,
         escalation_days_before: autoEscalation
-          ? Number.parseInt(escalationTiming || '0', 10) || 0
+          ? escalationWhen === 'before'
+            ? Math.max(1, Number.parseInt(escalationOffsetDays || '1', 10) || 1)
+            : 0
           : null,
         escalation_contact_ids: autoEscalation ? escalationContacts.map((u) => u.id) : [],
         financial_value: addFinancialValue ? Number.parseFloat(financialValue || '0') || null : null,
         org_structure_node_id: selectedOrgStructureNodeId || undefined,
+        task_unit: taskUnit.trim() || undefined,
         client_name: tagInput.trim() || null,
         tags: [],
         compliance_id: complianceId || undefined,
@@ -857,7 +875,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                 {isRecurring ? (
                   <div className="space-y-2">
                     <div className="flex flex-wrap gap-2">
-                      {(['daily', 'weekly', 'monthly', 'yearly', 'custom'] as const).map((f) => (
+                      {(['daily', 'weekly', 'monthly', 'yearly'] as const).map((f) => (
                         <button
                           key={f}
                           type="button"
@@ -888,7 +906,7 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
 
                     {taskEnds === 'specific_date' ? (
                       <button type="button" onClick={() => setShowRecurrenceEndPicker(true)} className={`${inputClass} text-left`}>
-                        Recurrence end date: {recurrenceEndDate.toLocaleDateString()}
+                        Recurrence end date: {formatDateDDMMYYYY(recurrenceEndDate)}
                       </button>
                     ) : null}
 
@@ -917,13 +935,13 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
                 {setTimelines ? (
                   <div className="grid grid-cols-3 gap-2">
                     <button type="button" onClick={() => setShowStartPicker(true)} className={`${inputClass} text-left`}>
-                      Start Date: {startDate.toLocaleDateString()}
+                      Start Date: {formatDateDDMMYYYY(startDate)}
                     </button>
                     <button type="button" onClick={() => setShowTargetPicker(true)} className={`${inputClass} text-left`}>
-                      Target Date: {targetDate.toLocaleDateString()}
+                      Target Date: {formatDateDDMMYYYY(targetDate)}
                     </button>
                     <button type="button" onClick={() => setShowDuePicker(true)} className={`${inputClass} text-left`}>
-                      Due Date: {dueDate.toLocaleDateString()}
+                      Due Date: {formatDateDDMMYYYY(dueDate)}
                     </button>
                   </div>
                 ) : null}
@@ -962,35 +980,45 @@ export const TaskCreateModal: React.FC<TaskCreateModalProps> = ({
               <div className={sectionContentClass}>
                 {autoEscalation ? (
                   <div className="space-y-2">
-                    <div className="flex flex-wrap gap-2">
-                      {([
-                        { key: 'target_date', label: 'After Target Date' },
-                        { key: 'due_date', label: 'After Due Date' },
-                      ] as const).map((o) => (
-                        <button
-                          key={o.key}
-                          type="button"
-                          onClick={() => setEscalationTrigger(o.key)}
-                          className={`${optionBaseClass} ${escalationTrigger === o.key ? optionActiveClass : ''}`}
-                        >
-                          {o.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-nowrap items-center gap-2">
+                      <select
+                        value={escalationWhen}
+                        onChange={(e) => setEscalationWhen(e.target.value as 'before' | 'after' | 'on')}
+                        className={escalationSelectClass}
+                        aria-label="Escalation timing"
+                      >
+                        <option value="after">After</option>
+                        <option value="before">Before</option>
+                        <option value="on">on</option>
+                      </select>
                       <input
-                        value={escalationTiming}
-                        onChange={(e) => setEscalationTiming(e.target.value)}
+                        value={escalationOffsetDays}
+                        onChange={(e) => setEscalationOffsetDays(e.target.value.replace(/[^\d]/g, ''))}
                         inputMode="numeric"
-                        placeholder="Days before"
-                        className={inputClass}
+                        disabled={escalationWhen === 'on'}
+                        placeholder="1"
+                        className={escalationNumberClass}
+                        aria-label="Number of days"
                       />
-
-                      <button type="button" onClick={() => openUserModal('escalation')} className={`${inputClass} text-left`}>
-                        Contacts: {escalationContacts.length > 0 ? `${escalationContacts.length} selected` : 'Select contacts'}
-                      </button>
+                      <span className={escalationLabelClass}>day of</span>
+                      <select
+                        value={escalationTrigger}
+                        onChange={(e) => setEscalationTrigger(e.target.value as 'target_date' | 'due_date')}
+                        className={escalationSelectClass}
+                        aria-label="Reference date"
+                      >
+                        <option value="target_date">Target</option>
+                        <option value="due_date">Due Date</option>
+                      </select>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => openUserModal('escalation')}
+                      className={`${inputClass} h-9 w-full py-1.5 text-left text-xs`}
+                    >
+                      Contacts:{' '}
+                      {escalationContacts.length > 0 ? `${escalationContacts.length} selected` : 'Select contacts'}
+                    </button>
                   </div>
                 ) : null}
               </div>

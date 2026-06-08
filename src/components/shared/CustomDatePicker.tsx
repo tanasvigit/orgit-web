@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { formatDateDDMMYYYY } from '../../utils/dateFormat';
 
 interface CustomDatePickerProps {
   value: Date;
@@ -275,6 +276,10 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
               })}
             </div>
 
+            <p className="mt-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300">
+              Selected: {formatDateDDMMYYYY(tempDate)}
+            </p>
+
             {/* Time Selection Toggle - hidden when hideTimePicker (e.g. task creation: default 9:00 AM) */}
             {!hideTimePicker && (
               <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -304,8 +309,8 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
             </button>
 
             <div className="mb-4 text-center">
-              <div className="text-4xl font-bold text-gray-900 dark:text-white mb-1">
-                {tempDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mb-1">
+                {formatDateDDMMYYYY(tempDate)}
               </div>
               <div className="text-sm text-gray-500 dark:text-gray-400">{currentYear}</div>
             </div>

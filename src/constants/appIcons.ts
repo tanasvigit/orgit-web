@@ -26,6 +26,18 @@ export type AppIconName =
 
 export type TaskStatusAppIconName = 'todo' | 'inprogress' | 'duesoon' | 'overdue' | 'completed';
 
+/**
+ * Normalize task-status artwork to match duesoon visual weight in list/card slots.
+ * Todo SVG uses a wide viewBox (1536×1024) so it reads smaller without a boost.
+ */
+export const TASK_STATUS_ICON_VISUAL_SCALE: Record<TaskStatusAppIconName, number> = {
+  todo: 1.45,
+  inprogress: 1.18,
+  duesoon: 1.0,
+  overdue: 1.12,
+  completed: 1.12,
+};
+
 export const APP_ICON_SRC: Record<AppIconName, string> = {
   dashboard: dashboardIcon,
   chat: chatIcon,

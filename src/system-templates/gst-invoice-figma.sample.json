@@ -1,0 +1,121 @@
+{
+  "invoice_copy_label": "ORIGINAL FOR RECIPIENT",
+  "company_logo_data_uri": "",
+  "company_name": "ABC TRADING PVT LTD",
+  "company_address": "Plot No. 123, Industrial Area, Sector 45, Gurgaon, Haryana, 122003",
+  "company_gstin": "06AABCA1234B1Z5",
+  "company_pan": "AABCA1234B",
+  "company_cin": "U51909HR2010PTC041234",
+  "company_email": "info@abctrading.com",
+
+  "invoice_number": "INV/2023/0001",
+  "invoice_date": "07-Jul-2023",
+  "mode_of_supply": "Road",
+  "place_of_supply": "TELANGANA",
+  "date_of_supply": "07-Jul-2023",
+
+  "billing_customer_name": "XYZ Enterprises",
+  "billing_address": "456, Business Park, Bandra West, Mumbai, Maharashtra, 400050",
+  "billing_phone": "",
+  "billing_gstin": "",
+  "billing_state": "",
+
+  "shipping_customer_name": "Warehouse No. 12, Logistics Hub, Phase 2",
+  "shipping_address": "Mumbai, Maharashtra, 400051",
+  "shipping_gstin": "",
+  "shipping_state": "",
+
+  "item_rows": [
+    {
+      "description": "Industrial Equipment Model X1",
+      "hsn": "84143000",
+      "rate": "125000.00",
+      "qty": "2",
+      "taxable_value": "250000.00",
+      "cgst_rate": "9%",
+      "sgst_rate": "9%",
+      "cgst": "22500.00",
+      "sgst": "22500.00",
+      "amount": "295000.00"
+    },
+    {
+      "description": "Spare Parts Kit - Premium",
+      "hsn": "84149000",
+      "rate": "8500.00",
+      "qty": "5",
+      "taxable_value": "42500.00",
+      "cgst_rate": "9%",
+      "sgst_rate": "9%",
+      "cgst": "3825.00",
+      "sgst": "3825.00",
+      "amount": "50150.00"
+    },
+    {
+      "description": "Maintenance Tools Set",
+      "hsn": "82054000",
+      "rate": "1200.00",
+      "qty": "10",
+      "taxable_value": "12000.00",
+      "cgst_rate": "9%",
+      "sgst_rate": "9%",
+      "cgst": "1080.00",
+      "sgst": "1080.00",
+      "amount": "14160.00"
+    }
+  ],
+
+  "total_taxable_value": "304500.00",
+  "total_tax": "54810.00",
+  "grand_total": "359310.00",
+  "amount_in_words": "INR Three Lakh Fifty Nine Thousand Three Hundred and Ten Rupees Only",
+
+  "gst_summary_rows": [
+    {
+      "hsn": "84143000",
+      "rate": "18%",
+      "integrated_tax_amount": "0.00",
+      "central_tax_amount": "22500.00",
+      "state_tax_amount": "22500.00",
+      "total_tax_amount": "45000.00"
+    },
+    {
+      "hsn": "84149000",
+      "rate": "18%",
+      "integrated_tax_amount": "0.00",
+      "central_tax_amount": "3825.00",
+      "state_tax_amount": "3825.00",
+      "total_tax_amount": "7650.00"
+    },
+    {
+      "hsn": "82054000",
+      "rate": "18%",
+      "integrated_tax_amount": "0.00",
+      "central_tax_amount": "1080.00",
+      "state_tax_amount": "1080.00",
+      "total_tax_amount": "2160.00"
+    }
+  ],
+  "gst_summary_integrated_total": "0.00",
+  "gst_summary_central_total": "27405.00",
+  "gst_summary_state_total": "27405.00",
+  "gst_summary_tax_total": "54810.00",
+  "gst_payable_reverse_charge": "54810.00",
+
+  "bank_name": "HDFC BANK",
+  "bank_account_number": "12345678901234",
+  "bank_ifsc": "HDFC0001234",
+  "bank_branch": "Gurgaon Branch",
+
+  "qr_code_data_uri": "",
+  "signature_stamp_data_uri": "",
+  "notes": "Thank you for the Business.",
+  "terms_rows": [
+    { "text": "Goods once sold will not be taken back or exchanged." },
+    { "text": "All disputes are subject to Gurgaon jurisdiction only." },
+    { "text": "We declare that this invoice shows the actual price of the goods described." },
+    { "text": "Interest @ 18% p.a. will be charged if payment is delayed beyond due date." }
+  ],
+
+  "page_label": "Page 1/1",
+  "digital_sign_note": "This is a digitally signed document."
+}

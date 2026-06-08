@@ -1,0 +1,220 @@
+<div class="gst-inv-root">
+<div class="gst-inv-page">
+  <!-- Header: Company (left) | TAX INVOICE + meta table (right) -->
+  <table class="gst-inv-grid gst-inv-header-block">
+    <tr>
+      <td class="gst-inv-company-cell">
+        <div class="gst-inv-brand-row">
+          {{#if company_logo_data_uri}}
+          <div class="gst-inv-logo">
+            <img src="{{company_logo_data_uri}}" alt="Company Logo" />
+          </div>
+          {{/if}}
+          <div class="gst-inv-brand-name">{{company_name}}</div>
+        </div>
+        <div class="gst-inv-company-address gst-inv-preline">{{company_address}}</div>
+        <div class="gst-inv-company-meta">GSTIN/UIN: <span class="gst-inv-strong">{{company_gstin}}</span></div>
+        {{#if company_pan}}<div class="gst-inv-company-meta">PAN: <span class="gst-inv-strong">{{company_pan}}</span></div>{{/if}}
+        {{#if company_cin}}<div class="gst-inv-company-meta">CIN: <span class="gst-inv-strong">{{company_cin}}</span></div>{{/if}}
+        {{#if company_email}}<div class="gst-inv-company-meta">Email: <span class="gst-inv-strong">{{company_email}}</span></div>{{/if}}
+      </td>
+      <td class="gst-inv-invoice-cell">
+        <div class="gst-inv-invoice-title">TAX INVOICE</div>
+        <table class="gst-inv-invoice-meta">
+          <tr><td class="k">Invoice #</td><td class="v">{{invoice_number}}</td></tr>
+          <tr><td class="k">Invoice Date</td><td class="v">{{invoice_date}}</td></tr>
+          <tr><td class="k">Mode of Supply</td><td class="v">{{mode_of_supply}}</td></tr>
+          <tr><td class="k">Place of Supply</td><td class="v">{{place_of_supply}}</td></tr>
+          <tr><td class="k">Date of Supply</td><td class="v">{{date_of_supply}}</td></tr>
+        </table>
+        <div class="gst-inv-copy-label">{{invoice_copy_label}}</div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Billing | Shipping addresses -->
+  <table class="gst-inv-grid">
+    <tr>
+      <td class="gst-inv-addr-cell">
+        <div class="gst-inv-addr-title">Billing Address</div>
+        <div class="gst-inv-addr-body gst-inv-preline">{{billing_customer_name}}{{#if billing_address}}
+{{billing_address}}{{/if}}{{#if billing_phone}}
+Ph: {{billing_phone}}{{/if}}{{#if billing_gstin}}
+GSTIN: {{billing_gstin}}{{/if}}{{#if billing_state}}
+State: {{billing_state}}{{/if}}</div>
+      </td>
+      <td class="gst-inv-addr-cell">
+        <div class="gst-inv-addr-title">Shipping Address</div>
+        <div class="gst-inv-addr-body gst-inv-preline">{{shipping_customer_name}}{{#if shipping_address}}
+{{shipping_address}}{{/if}}{{#if shipping_gstin}}
+GSTIN: {{shipping_gstin}}{{/if}}{{#if shipping_state}}
+State: {{shipping_state}}{{/if}}</div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Line items -->
+  <div class="gst-inv-table-scroll">
+    <table class="gst-inv-items-table" aria-label="Invoice Items">
+      <thead>
+        <tr>
+          <th class="gst-inv-col-desc" rowspan="2">Description</th>
+          <th class="gst-inv-col-hsn" rowspan="2">HSN/SAC</th>
+          <th class="gst-inv-col-rate" rowspan="2">Rate (Rs.)</th>
+          <th class="gst-inv-col-qty" rowspan="2">Qty</th>
+          <th class="gst-inv-col-taxable" rowspan="2">Taxable Value</th>
+          <th class="gst-inv-col-tax-group" colspan="2">Tax Amount</th>
+          <th class="gst-inv-col-amount" rowspan="2">Amount</th>
+        </tr>
+        <tr>
+          <th class="gst-inv-col-cgst">CGST</th>
+          <th class="gst-inv-col-sgst">SGST</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each item_rows}}
+        <tr>
+          <td class="gst-inv-col-desc">
+            <p class="gst-inv-item-name">{{description}}</p>
+            {{#if details}}
+              {{#each details}}
+                <p class="gst-inv-item-meta">{{this}}</p>
+              {{/each}}
+            {{/if}}
+          </td>
+          <td class="gst-inv-col-hsn">{{hsn}}</td>
+          <td class="gst-inv-col-rate">{{rate}}</td>
+          <td class="gst-inv-col-qty">{{qty}}</td>
+          <td class="gst-inv-col-taxable">{{taxable_value}}</td>
+          <td class="gst-inv-col-cgst">
+            <div class="gst-inv-tax-pct">{{cgst_rate}}</div>
+            <div class="gst-inv-tax-amt">{{cgst}}</div>
+          </td>
+          <td class="gst-inv-col-sgst">
+            <div class="gst-inv-tax-pct">{{sgst_rate}}</div>
+            <div class="gst-inv-tax-amt">{{sgst}}</div>
+          </td>
+          <td class="gst-inv-col-amount">{{amount}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+      <tfoot>
+        <tr class="gst-inv-tfoot-row">
+          <td colspan="5" class="gst-inv-tfoot-spacer"></td>
+          <td colspan="2" class="gst-inv-tfoot-label">Total Taxable Value</td>
+          <td class="gst-inv-tfoot-val">{{total_taxable_value}}</td>
+        </tr>
+        <tr class="gst-inv-tfoot-row">
+          <td colspan="5" class="gst-inv-tfoot-spacer"></td>
+          <td colspan="2" class="gst-inv-tfoot-label">Total Tax</td>
+          <td class="gst-inv-tfoot-val">{{total_tax}}</td>
+        </tr>
+        <tr class="gst-inv-tfoot-row gst-inv-tfoot-grand">
+          <td colspan="5" class="gst-inv-tfoot-spacer"></td>
+          <td colspan="2" class="gst-inv-tfoot-label">Total Amount after Tax</td>
+          <td class="gst-inv-tfoot-val gst-inv-grand-val">₹ {{grand_total}}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div class="gst-inv-amount-words">
+    Total amount (in words): <span class="gst-inv-strong">{{amount_in_words}}</span>
+  </div>
+
+  <!-- GST / HSN summary -->
+  <div class="gst-inv-table-scroll">
+    <table class="gst-inv-gst-table" aria-label="GST Summary">
+      <thead>
+        <tr>
+          <th class="gst-inv-col-gst-hsn">HSN/SAC</th>
+          <th class="gst-inv-col-gst-rate">Rate</th>
+          <th class="gst-inv-col-gst-igst">Integrated Tax Amount</th>
+          <th class="gst-inv-col-gst-cgst">Central Tax Amount</th>
+          <th class="gst-inv-col-gst-sgst">State/UT Tax Amount</th>
+          <th class="gst-inv-col-gst-total">Total Tax Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each gst_summary_rows}}
+        <tr>
+          <td>{{hsn}}</td>
+          <td>{{rate}}</td>
+          <td>{{integrated_tax_amount}}</td>
+          <td>{{central_tax_amount}}</td>
+          <td>{{state_tax_amount}}</td>
+          <td>{{total_tax_amount}}</td>
+        </tr>
+        {{/each}}
+        <tr class="gst-inv-gst-total-row">
+          <td colspan="2" class="gst-inv-strong">TOTAL</td>
+          <td>{{gst_summary_integrated_total}}</td>
+          <td>{{gst_summary_central_total}}</td>
+          <td>{{gst_summary_state_total}}</td>
+          <td>{{gst_summary_tax_total}}</td>
+        </tr>
+        <tr class="gst-inv-gst-rc-row">
+          <td colspan="5" class="gst-inv-gst-rc-label">GST Payable on Reverse Charge</td>
+          <td>{{gst_payable_reverse_charge}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Bank | QR | Signature -->
+  <table class="gst-inv-grid gst-inv-bottom-3col">
+    <tr>
+      <td class="gst-inv-bank-cell">
+        <div class="gst-inv-section-title">Bank Details</div>
+        <div class="gst-inv-bank-line"><span class="k">Bank</span><span class="v">{{bank_name}}</span></div>
+        <div class="gst-inv-bank-line"><span class="k">Account #</span><span class="v">{{bank_account_number}}</span></div>
+        <div class="gst-inv-bank-line"><span class="k">IFSC</span><span class="v">{{bank_ifsc}}</span></div>
+        <div class="gst-inv-bank-line"><span class="k">Branch</span><span class="v">{{bank_branch}}</span></div>
+      </td>
+      <td class="gst-inv-qr-cell">
+        <div class="gst-inv-qr-box">
+          {{#if qr_code_data_uri}}
+            <img src="{{qr_code_data_uri}}" alt="QR Code" />
+          {{else}}
+            <span class="gst-inv-qr-placeholder">QR</span>
+          {{/if}}
+        </div>
+      </td>
+      <td class="gst-inv-sign-cell">
+        <div class="gst-inv-sign-for">For {{company_name}}</div>
+        <div class="gst-inv-stamp-wrap">
+          {{#if signature_stamp_data_uri}}
+            <img src="{{signature_stamp_data_uri}}" alt="Signature" class="gst-inv-stamp-img" />
+          {{else}}
+            <div class="gst-inv-stamp-placeholder">SIGNATURE</div>
+          {{/if}}
+        </div>
+        <div class="gst-inv-sign-label">Authorized Signatory</div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Notes | Terms -->
+  <table class="gst-inv-grid gst-inv-notes-terms">
+    <tr>
+      <td class="gst-inv-notes-cell">
+        <div class="gst-inv-section-title">Notes:</div>
+        <div class="gst-inv-preline">{{notes}}</div>
+      </td>
+      <td class="gst-inv-terms-cell">
+        <div class="gst-inv-section-title">Terms and Conditions:</div>
+        <ul class="gst-inv-terms-list">
+          {{#each terms_rows}}
+            <li>{{text}}</li>
+          {{/each}}
+        </ul>
+      </td>
+    </tr>
+  </table>
+
+  <div class="gst-inv-page-footer">
+    <span class="gst-inv-page-num">{{page_label}}</span>
+    <span class="gst-inv-digital-note">{{digital_sign_note}}</span>
+  </div>
+</div>
+</div>

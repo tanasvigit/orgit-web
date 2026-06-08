@@ -13,8 +13,13 @@ export function getSectionStorageKey(level: OrganizationStructureLevel): string 
   return level.levelLabel.trim();
 }
 
-export function getActiveLevelsFromL2(levels: OrganizationStructureLevel[]): OrganizationStructureLevel[] {
-  return [...levels]
+export function getActiveLevelsFromL2(
+  levelsOrTree: OrganizationStructureLevel[] | OrganizationStructureTree
+): OrganizationStructureLevel[] {
+  if (!Array.isArray(levelsOrTree) && levelsOrTree?.nodes) {
+    return getAssignmentSectionsFromTree(levelsOrTree);
+  }
+  return [...levelsOrTree]
     .filter((l) => l.levelNumber > 1 && l.isActive !== false)
     .sort((a, b) => a.levelNumber - b.levelNumber);
 }
@@ -249,4 +254,166 @@ export function formatOrgNodeByLevelSummary(
     }
   }
   return parts.join(' / ');
+}
+
+export function sortStructureNodes(list: OrganizationStructureNode[]): OrganizationStructureNode[] {
+  return [...list].sort((a, b) => {
+    if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+    return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+  });
+}
+
+export function buildChildrenByParentId(
+  nodes: OrganizationStructureNode[]
+): Map<string, OrganizationStructureNode[]> {
+  const map = new Map<string, OrganizationStructureNode[]>();
+  for (const n of nodes) {
+    const key = n.parentNodeId ? String(n.parentNodeId) : '__root__';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(n);
+  }
+  for (const [k, arr] of map.entries()) {
+    map.set(k, sortStructureNodes(arr));
+  }
+  return map;
+}
+
+/** Checked ids for the tree UI (includes ancestors of mapped units). */
+export function getCheckedOrgNodeIdsForTree(
+  orgNodeByLevel: OrgNodeByLevel,
+  secondaryOrgNodeIds: string[],
+  tree: OrganizationStructureTree | null | undefined
+): Set<string> {
+  const set = new Set<string>();
+  const addWithAncestors = (nodeId: string) => {
+    if (!nodeId || !tree) return;
+    set.add(nodeId);
+    const node = tree.nodes.find((n) => n.id === nodeId);
+    for (const aid of node?.pathIds ?? []) {
+      if (aid) set.add(aid);
+    }
+  };
+  for (const id of Object.values(orgNodeByLevel)) addWithAncestors(id);
+  for (const id of secondaryOrgNodeIds) addWithAncestors(id);
+  return set;
+}
+
+function hasSelectedDescendant(
+  ancestorId: string,
+  selected: Set<string>,
+  tree: OrganizationStructureTree
+): boolean {
+  for (const id of selected) {
+    if (id === ancestorId) continue;
+    const node = tree.nodes.find((n) => n.id === id);
+    if (node?.pathIds?.includes(ancestorId)) return true;
+  }
+  return false;
+}
+
+export function toggleOrgStructureNodeSelection(
+  nodeId: string,
+  checked: boolean,
+  selected: Set<string>,
+  tree: OrganizationStructureTree
+): Set<string> {
+  const node = tree.nodes.find((n) => n.id === nodeId);
+  if (!node) return selected;
+
+  const next = new Set(selected);
+  if (checked) {
+    next.add(nodeId);
+    for (const aid of node.pathIds ?? []) {
+      if (aid) next.add(aid);
+    }
+    return next;
+  }
+
+  next.delete(nodeId);
+  for (const aid of [...(node.pathIds ?? [])].reverse()) {
+    if (aid && !hasSelectedDescendant(aid, next, tree)) {
+      next.delete(aid);
+    }
+  }
+  return next;
+}
+
+export function pickPrimaryOrgNodeId(
+  selectedIds: Iterable<string>,
+  tree: OrganizationStructureTree | null | undefined
+): string | null {
+  if (!tree) return null;
+  const rootId = tree.rootNode?.id;
+  let best: OrganizationStructureNode | null = null;
+
+  for (const id of selectedIds) {
+    const node = tree.nodes.find((n) => n.id === id);
+    if (!node || node.status === 'archived' || node.id === rootId) continue;
+    if (!best) {
+      best = node;
+      continue;
+    }
+    if (node.levelNumber > best.levelNumber) {
+      best = node;
+    } else if (
+      node.levelNumber === best.levelNumber &&
+      (node.pathIds?.length ?? 0) > (best.pathIds?.length ?? 0)
+    ) {
+      best = node;
+    }
+  }
+  return best?.id ?? null;
+}
+
+export function syncOrgMappingFromSelectedIds(
+  selectedIds: Iterable<string>,
+  tree: OrganizationStructureTree | null | undefined
+): { orgNodeByLevel: OrgNodeByLevel; secondaryOrgNodeIds: string[] } {
+  if (!tree) {
+    return { orgNodeByLevel: {}, secondaryOrgNodeIds: [] };
+  }
+
+  const rootId = tree.rootNode?.id;
+  const selected = new Set(selectedIds);
+  const primaryId = pickPrimaryOrgNodeId(selected, tree);
+  const orgNodeByLevel = primaryId
+    ? normalizeOrgNodeByLevel(deriveOrgNodeByLevelFromPrimary(tree, primaryId), tree.levels)
+    : {};
+
+  const primaryPath = new Set(tree.nodes.find((n) => n.id === primaryId)?.pathIds ?? []);
+  const secondaryOrgNodeIds: string[] = [];
+
+  for (const id of selected) {
+    if (!id || id === primaryId || id === rootId) continue;
+    if (primaryPath.has(id)) continue;
+    const node = tree.nodes.find((n) => n.id === id);
+    if (node && node.status !== 'archived') {
+      secondaryOrgNodeIds.push(id);
+    }
+  }
+
+  return { orgNodeByLevel, secondaryOrgNodeIds };
+}
+
+export function formatMappedOrgNodesSummary(
+  tree: OrganizationStructureTree | null | undefined,
+  orgNodeByLevel: OrgNodeByLevel,
+  secondaryOrgNodeIds: string[]
+): string {
+  const primary = formatOrgNodeByLevelSummary(tree, orgNodeByLevel);
+  const secondaryLabels = secondaryOrgNodeIds
+    .map((id) => {
+      const node = tree?.nodes.find((n) => n.id === id);
+      return node ? formatOrgNodeOptionLabel(tree, node) : '';
+    })
+    .filter(Boolean);
+
+  if (primary && secondaryLabels.length > 0) {
+    return `${primary} + ${secondaryLabels.length} more`;
+  }
+  if (primary) return primary;
+  if (secondaryLabels.length > 0) {
+    return secondaryLabels.slice(0, 2).join(', ') + (secondaryLabels.length > 2 ? '…' : '');
+  }
+  return '';
 }

@@ -33,8 +33,12 @@ function ingestTaskFinancial(task: any) {
 }
 
 export const dashboardService = {
-  getDashboard: async (dueSoonDays = 3) => {
-    const response = await api.get(`/dashboard?dueSoonDays=${dueSoonDays}`);
+  getDashboard: async (dueSoonDays?: number) => {
+    const query =
+      dueSoonDays != null && Number.isFinite(dueSoonDays)
+        ? `?dueSoonDays=${dueSoonDays}`
+        : '';
+    const response = await api.get(`/dashboard${query}`);
     const data = response.data;
     const self = data?.data?.selfTasks ?? data?.selfTasks;
     const assigned = data?.data?.assignedTasks ?? data?.assignedTasks;

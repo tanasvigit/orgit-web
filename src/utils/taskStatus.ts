@@ -8,6 +8,17 @@ const toDayStartMs = (input?: string | Date | null): number | null => {
   return date.getTime();
 };
 
+/** Calendar day: true when today is strictly before start_date's day. */
+export const isBeforeStartDateCalendarDay = (
+  startDate?: string | Date | null,
+  now?: Date
+): boolean => {
+  const todayMs = toDayStartMs(now ?? new Date());
+  const startMs = toDayStartMs(startDate);
+  if (startMs == null || todayMs == null) return false;
+  return todayMs < startMs;
+};
+
 const isExplicitInProgressStatus = (status: string | null | undefined): boolean => {
   const normalized = String(status || '').toLowerCase().trim();
   return (
@@ -141,7 +152,7 @@ export const resolveUserLifecycleCategory = (input: {
 
 export function getTaskStatusCategoryFromTask(
   task: any,
-  dueSoonDays: number = 3,
+  dueSoonDays?: number,
   currentUserId?: string | null
 ): TaskStatusCategory | null {
   if (!task) return null;
@@ -149,6 +160,11 @@ export function getTaskStatusCategoryFromTask(
 
   const me = getCurrentUserAssignee(task, currentUserId);
   const cu = task.current_user_status;
+  const resolvedDueSoonDays =
+    dueSoonDays ??
+    (task.dueSoonDays as number | undefined) ??
+    (task.due_soon_days as number | undefined) ??
+    3;
 
   return resolveUserLifecycleCategory({
     assigneeStatus: cu?.assignee_status ?? me?.assignee_status,
@@ -156,6 +172,6 @@ export function getTaskStatusCategoryFromTask(
     startDate: task.start_date ?? task.startDate,
     targetDate: task.target_date ?? task.targetDate,
     dueDate: task.due_date ?? task.dueDate,
-    dueSoonDays,
+    dueSoonDays: resolvedDueSoonDays,
   });
 }

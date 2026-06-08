@@ -1,23 +1,17 @@
-import React, { useRef, useState } from 'react';
+import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useMutation, useQueryClient } from 'react-query';
 import { useAuth } from '../../context/AuthContext';
-import { useToast } from '../../context/ToastContext';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
-import { entityMasterBulkService } from '../../services/entityMasterBulkService';
+import { BulkMasterUploadPanel } from '../../components/admin/BulkMasterUploadPanel';
 import AnimatedList from '../../components/shared/AnimatedList';
 
 export const SettingsScreen: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
   // Show All Settings when user is admin OR when on admin settings route (/admin/settings)
   const isAdmin = user?.role === 'admin' || location.pathname === '/admin/settings';
-  const bulkFileInputRef = useRef<HTMLInputElement>(null);
-  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
 
   const commonSettings = [
     { 
@@ -68,10 +62,17 @@ export const SettingsScreen: React.FC = () => {
     },
     { 
       icon: 'groups', 
-      title: 'Entity List', 
+      title: 'Client List', 
       subtitle: 'Assign clients to org units and manage service coverage', 
       screen: '/admin/entities',
       color: 'pink'
+    },
+    {
+      icon: 'tune',
+      title: 'User configuration',
+      subtitle: 'User roles, permissions, and module access',
+      screen: '/admin/settings/user-config',
+      color: 'orange',
     },
     { 
       icon: 'settings', 
@@ -81,74 +82,6 @@ export const SettingsScreen: React.FC = () => {
       color: 'cyan'
     },
   ];
-
-  const handleDownloadTemplate = async () => {
-    setIsDownloadingTemplate(true);
-    try {
-      await entityMasterBulkService.getTemplate();
-      toast.success(
-        'OrgIt Settings template downloaded: Instructions, Org Node Lookups, Organisation Structure, Entity List, Service List, Tasks, Employees. Use section dropdowns (same as web). Edit organisation profile in Admin → Entity Master.'
-      );
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || error.message || 'Failed to download template');
-    } finally {
-      setIsDownloadingTemplate(false);
-    }
-  };
-
-  const bulkUploadMutation = useMutation(
-    (file: File) => entityMasterBulkService.uploadFile(file),
-    {
-      onSuccess: async (res) => {
-        const data = res.data?.data;
-        if (!data?.uploadId) {
-          if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
-          return;
-        }
-        try {
-          const status = await entityMasterBulkService.pollUntilDone(data.uploadId);
-        if (status.status === 'completed') {
-          const s = status.summary;
-          const summaryLine = s
-            ? `Org:${s.organizations ?? 0}, Services:${s.task_services ?? 0}, Entities:${s.client_entities ?? 0}, Entity services:${s.client_entity_services ?? 0}, Employees:${s.employees ?? 0}, Tasks:${s.tasks ?? 0}`
-            : null;
-          toast.success(summaryLine ? `Settings bulk upload completed. ${summaryLine}` : 'Settings bulk upload completed.');
-        } else {
-          toast.info('Bulk upload finished with errors.');
-        }
-          if (status.errors?.length) {
-            status.errors.slice(0, 8).forEach((e: any) => {
-              const prefix = `${e.sheet ? `[${e.sheet}]` : '[Sheet?]'}${typeof e.row === 'number' ? ` Row ${e.row}` : ''}`;
-              toast.error(`${prefix}: ${e.message || 'Unknown error'}`);
-            });
-            if (status.errors.length > 8) toast.error(`… and ${status.errors.length - 8} more errors`);
-          }
-        } catch (err: any) {
-          toast.error(err?.message || 'Failed to get upload status');
-        }
-        queryClient.invalidateQueries('admin-organization');
-        queryClient.invalidateQueries(['client-entities']);
-        queryClient.invalidateQueries('employees');
-        queryClient.invalidateQueries(['task-services']);
-        if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
-      },
-      onError: (error: any) => {
-        toast.error(error.response?.data?.error || error.message || 'Upload failed');
-      },
-    }
-  );
-
-  const handleBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const name = (file.name || '').toLowerCase();
-    if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
-      toast.error('Please select an Excel file (.xlsx or .xls)');
-      e.target.value = '';
-      return;
-    }
-    bulkUploadMutation.mutate(file);
-  };
 
   const getColorClasses = (color: string) => {
     // Used to theme just the icon/accent; list rows themselves stay minimal (no cards)
@@ -255,39 +188,12 @@ export const SettingsScreen: React.FC = () => {
                 </h1>
               </div>
               <p className="text-sm text-gray-600 dark:text-gray-400 max-w-2xl leading-relaxed">
-                Manage your account settings and preferences. Download <strong className="text-primary">OrgIt Settings</strong> for a workbook covering organisation structure, clients, services, tasks, and employees — organisation profile (legal/contact) bulk upload is available from{' '}
-                <strong className="text-primary">Admin → Entity Master</strong>.
+                Manage your account settings and preferences. Admins can download the unified{' '}
+                <strong className="text-primary">OrgIt Master Bulk</strong> workbook for organisation structure,
+                services, clients, employees, and tasks.
               </p>
             </div>
-            {isAdmin && (
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <input
-                  ref={bulkFileInputRef}
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={handleBulkFileChange}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={handleDownloadTemplate}
-                  disabled={isDownloadingTemplate}
-                  className="px-4 py-2.5 bg-white dark:bg-slate-800 border-2 border-gray-200 dark:border-gray-700 hover:border-primary dark:hover:border-primary/50 text-gray-700 dark:text-gray-200 rounded-xl font-semibold text-sm flex items-center gap-2 disabled:opacity-50 transition-all hover:shadow-lg hover:-translate-y-0.5 active:scale-95"
-                >
-                  <span className="material-icons-outlined text-[18px]">download</span>
-                  {isDownloadingTemplate ? 'Downloading...' : 'Download Template'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => bulkFileInputRef.current?.click()}
-                  disabled={bulkUploadMutation.isLoading}
-                  className="px-4 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-xl font-semibold text-sm flex items-center gap-2 disabled:opacity-50 transition-all shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5 active:scale-95"
-                >
-                  <span className="material-icons-outlined text-[18px]">upload</span>
-                  {bulkUploadMutation.isLoading ? 'Uploading...' : 'Upload File'}
-                </button>
-              </div>
-            )}
+            {isAdmin && <BulkMasterUploadPanel />}
           </div>
         </div>
 

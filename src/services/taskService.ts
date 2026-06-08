@@ -7,6 +7,9 @@ import { Task, TaskType, TaskCategory, TaskFrequency } from '../../../shared/src
 // the dashboard list. This mirrors the mobile "keep existing tasks"
 // behavior for cache-friendly responses.
 let lastTasksSnapshot: any[] | null = null;
+let lastTasksDueSoonDays: number = 3;
+
+export const getLastTasksDueSoonDays = (): number => lastTasksDueSoonDays;
 
 function ingestTaskFinancial(task: any) {
   if (!task?.id) return;
@@ -67,6 +70,10 @@ export const taskService = {
 
     // Backend returns: { tasks: [...] } or { data: [...] }
     const tasks = response.data?.tasks ?? response.data?.data ?? [];
+    const dueSoonDaysRaw = response.data?.dueSoonDays;
+    if (dueSoonDaysRaw != null && Number.isFinite(Number(dueSoonDaysRaw))) {
+      lastTasksDueSoonDays = Math.max(1, Math.min(30, Math.floor(Number(dueSoonDaysRaw))));
+    }
 
     // If response payload is empty / missing, also keep prior snapshot.
     if (!tasks || (Array.isArray(tasks) && tasks.length === 0)) {
@@ -235,6 +242,14 @@ export const taskService = {
    */
   addTaskAssignees: async (taskId: string, assigneeIds: string[]) => {
     const response = await api.post(`/tasks/${taskId}/assignees`, {
+      assignee_ids: assigneeIds,
+    });
+    return response.data;
+  },
+
+  bulkAddTaskAssignees: async (taskIds: string[], assigneeIds: string[]) => {
+    const response = await api.post('/tasks/bulk-assignees', {
+      task_ids: taskIds,
       assignee_ids: assigneeIds,
     });
     return response.data;

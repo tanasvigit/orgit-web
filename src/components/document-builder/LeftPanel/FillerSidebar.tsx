@@ -2,7 +2,8 @@ import React from 'react';
 import { useDocumentBuilder, TableBlock, TextBlock, KeyValueBlock, SignatureBlock, AmountSummaryBlock } from '../DocumentBuilderProvider';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
-import { organizationService } from '../../../services/organizationService';
+import { getOrganizationStructureTree } from '../../../services/settingsService';
+import { buildOrgProfileFromStructure } from '../../../utils/orgStructureDocumentProfile';
 import { getBackendBaseUrlWithSlash } from '../../../config/env';
 
 const TextFiller: React.FC<{ section: TextBlock }> = ({ section }) => {
@@ -319,18 +320,20 @@ const HeaderFiller: React.FC = () => {
         dispatch({ type: 'UPDATE_HEADER', payload });
     };
 
-    const loadFromEntityMaster = async () => {
-        if (!user?.organizationId) {
+    const loadFromOrgStructure = async () => {
+        if (!user) {
             toast.error('Organization not found. Please ensure you are associated with an organization.');
             return;
         }
 
         setIsLoadingOrg(true);
         try {
-            const response = user?.role === 'admin' 
-                ? await organizationService.getMyOrganization()
-                : await organizationService.getById(user.organizationId);
-            const orgData = response.data.data;
+            const response = await getOrganizationStructureTree({ includeArchived: true, includeInactive: true });
+            const orgData = buildOrgProfileFromStructure(response?.data || response || null);
+            if (!orgData) {
+                toast.error('Organisation Structure root node is not configured yet.');
+                return;
+            }
 
             const updates: any = {};
             if (orgData.name) updates.orgName = orgData.name;
@@ -350,7 +353,7 @@ const HeaderFiller: React.FC = () => {
             dispatch({ type: 'UPDATE_HEADER', payload: updates });
         } catch (error: any) {
             console.error('Error loading organization data:', error);
-            toast.error(`Failed to load Entity Master Data: ${error.response?.data?.error || error.message}`);
+            toast.error(`Failed to load Organisation Structure data: ${error.response?.data?.error || error.message}`);
         } finally {
             setIsLoadingOrg(false);
         }
@@ -361,10 +364,10 @@ const HeaderFiller: React.FC = () => {
             <div className="flex items-center justify-between mb-4 border-b pb-2">
                 <h3 className="text-sm font-bold text-gray-800">Business Details</h3>
                 <button
-                    onClick={loadFromEntityMaster}
+                    onClick={loadFromOrgStructure}
                     disabled={isLoadingOrg}
                     className="text-xs px-2 py-1 text-primary hover:text-primary-700 hover:bg-primary/10 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                    title="Load from Entity Master Data"
+                    title="Load from Organisation Structure"
                 >
                     <span className="material-symbols-outlined text-sm">refresh</span>
                     <span>Auto-fill</span>

@@ -2,7 +2,7 @@ import React from 'react';
 import type { TaskStatusCategory } from '../../utils/taskStatus';
 import { taskStatusToAppIcon } from '../../constants/appIcons';
 import { AppIcon } from './AppIcon';
-import { extractBaseTaskTitle } from '../../utils/taskPeriod';
+import { extractBaseTaskTitle, formatFrequencyLabel } from '../../utils/taskPeriod';
 import { useTaskCardDisplayConfig } from '../../hooks/useTaskCardDisplayConfig';
 import type { TaskCardDisplayConfig } from '../../utils/taskCardDisplayConfig';
 
@@ -115,7 +115,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const displayPeriod = (taskPeriod || '').trim();
   const displayTitle = displayPeriod ? `${baseTitle} - ${displayPeriod}` : baseTitle;
   const dueText = formatTaskDueDate(dueDate || null);
-  const frequencyText = String(frequency || 'One-Time').replace(/_/g, ' ');
+  const frequencyText = formatFrequencyLabel(frequency);
   const unitText = taskUnitName && taskUnitName !== '-' ? String(taskUnitName).trim() : '';
 
   const statusAppIcon = taskStatusToAppIcon(status);

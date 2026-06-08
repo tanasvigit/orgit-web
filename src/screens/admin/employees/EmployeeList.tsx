@@ -24,13 +24,13 @@ import {
   deriveOrgNodeByLevelFromPrimary,
   extractOrgNodeByLevel,
   formatOrgNodeByLevelSummary,
+  getActiveNodesUnderRoot,
   getAssignmentSectionsFromTree,
   getDeepestSelectedNodeId,
-  lookupOrgNodeId,
   normalizeOrgNodeByLevel,
   type OrgNodeByLevel,
 } from '../../../utils/employeeOrgNodeLevels';
-import { entityMasterBulkService } from '../../../services/entityMasterBulkService';
+import { BulkMasterUploadPanel } from '../../../components/admin/BulkMasterUploadPanel';
 
 export const EmployeeList: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -44,71 +44,8 @@ export const EmployeeList: React.FC = () => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isResettingPassword, setIsResettingPassword] = useState(false);
-  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
-  const [isBulkUploading, setIsBulkUploading] = useState(false);
-  const bulkFileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
-
-  const handleDownloadEmployeeTemplate = async () => {
-    setIsDownloadingTemplate(true);
-    try {
-      await entityMasterBulkService.getTemplate('employees');
-      toast.success('Employee template downloaded. Fill it and upload to bulk update.');
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || error.message || 'Failed to download template');
-    } finally {
-      setIsDownloadingTemplate(false);
-    }
-  };
-
-  const bulkUploadMutation = useMutation(
-    (file: File) => entityMasterBulkService.uploadFile(file),
-    {
-      onSuccess: async (res) => {
-        const data = res.data?.data;
-        if (!data?.uploadId) {
-          if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
-          return;
-        }
-        try {
-          const status = await entityMasterBulkService.pollUntilDone(data.uploadId);
-          if (status.status === 'completed') {
-            toast.success('Employee bulk upload completed.');
-          } else {
-            toast.info('Bulk upload finished with errors.');
-          }
-          if (status.errors?.length) {
-            status.errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
-            if (status.errors.length > 5) toast.error(`… and ${status.errors.length - 5} more errors`);
-          }
-        } catch (err: any) {
-          toast.error(err?.message || 'Failed to get upload status');
-        }
-        queryClient.invalidateQueries('employees');
-        if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
-      },
-      onError: (error: any) => {
-        toast.error(error.response?.data?.error || error.message || 'Upload failed');
-      },
-      onSettled: () => {
-        setIsBulkUploading(false);
-      },
-    }
-  );
-
-  const handleBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const name = (file.name || '').toLowerCase();
-    if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
-      toast.error('Please select an Excel file (.xlsx or .xls)');
-      e.target.value = '';
-      return;
-    }
-    setIsBulkUploading(true);
-    bulkUploadMutation.mutate(file);
-  };
 
   const { data, isLoading, error } = useQuery(
     'employees',
@@ -299,43 +236,7 @@ export const EmployeeList: React.FC = () => {
           </div>
         ) : null}
 
-        {/* Bulk update from Excel (same process as Entity Master Data) */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-          <h2 className="text-lg font-bold text-text-main mb-2 flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary text-2xl">upload_file</span>
-            Bulk update from Excel
-          </h2>
-          <p className="text-text-muted text-sm mb-4">
-            
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={handleDownloadEmployeeTemplate}
-              disabled={isDownloadingTemplate}
-              className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-text-main rounded-lg font-medium text-sm flex items-center gap-2 disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-[18px]">download</span>
-              {isDownloadingTemplate ? 'Downloading...' : 'Download Employee template'}
-            </button>
-            <input
-              ref={bulkFileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={handleBulkFileChange}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => bulkFileInputRef.current?.click()}
-              disabled={isBulkUploading}
-              className="px-4 py-2.5 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium text-sm flex items-center gap-2 disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-[18px]">upload</span>
-              {isBulkUploading ? 'Uploading...' : 'Upload file'}
-            </button>
-          </div>
-        </div>
+        <BulkMasterUploadPanel variant="compact" className="mb-4" />
 
         {/* Filters */}
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4">
@@ -481,8 +382,19 @@ export const EmployeeList: React.FC = () => {
 
         {/* Add/Edit Employee Form Modal */}
         {(showAddForm || editEmployee) && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            onClick={() => {
+              if (!isSaving) {
+                setEditEmployee(null);
+                setShowAddForm(false);
+              }
+            }}
+          >
+            <div
+              className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
               <h3 className="text-lg font-bold text-text-main mb-4">
                 {editEmployee ? 'Edit Employee' : 'Add New Employee'}
               </h3>
@@ -503,8 +415,20 @@ export const EmployeeList: React.FC = () => {
 
         {/* Reset Password Dialog */}
         {resetPasswordEmployee && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            onClick={() => {
+              if (!isResettingPassword) {
+                setResetPasswordEmployee(null);
+                setNewPassword('');
+                setConfirmPassword('');
+              }
+            }}
+          >
+            <div
+              className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
               <h3 className="text-lg font-bold text-text-main mb-4">Reset Password</h3>
               <p className="text-text-muted mb-4">
                 Set a new password for <strong className="text-text-main">{resetPasswordEmployee.name}</strong>.
@@ -581,8 +505,14 @@ export const EmployeeList: React.FC = () => {
 
         {/* Delete Confirmation Dialog */}
         {deleteConfirm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            onClick={() => !isDeleting && setDeleteConfirm(null)}
+          >
+            <div
+              className="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
               <h3 className="text-lg font-bold text-text-main mb-4">Remove Employee</h3>
               <p className="text-text-muted mb-6">
                 Are you sure you want to remove <strong className="text-text-main">{deleteConfirm.name}</strong> from your organization? 
@@ -738,16 +668,14 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
       ? normalizeOrgNodeByLevel(masterForm.orgNodeByLevel, orgStructureTreeData.levels)
       : masterForm.orgNodeByLevel;
 
-    if (levelsFromL2.length > 0) {
-      for (const level of levelsFromL2) {
-        if (!lookupOrgNodeId(orgNodeByLevel, level)) {
-          toast.error(`Please select ${level.levelLabel}`);
-          return;
-        }
-      }
-    }
-
     const primaryOrgNodeId = getDeepestSelectedNodeId(orgNodeByLevel, levelsFromL2);
+    const assignableNodes = getActiveNodesUnderRoot(orgStructureTreeData).filter(
+      (n) => n.status === 'active'
+    );
+    if (assignableNodes.length > 0 && !primaryOrgNodeId) {
+      toast.error('Please select at least one org unit in Org unit mapping');
+      return;
+    }
     const submitData: any = {
       mobile: masterForm.mobile,
       name: masterForm.name,

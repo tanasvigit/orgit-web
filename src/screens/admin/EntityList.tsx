@@ -1,8 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { entityListService } from '../../services/entityListService';
-import { entityMasterBulkService } from '../../services/entityMasterBulkService';
+import { BulkMasterUploadPanel } from '../../components/admin/BulkMasterUploadPanel';
 import { masterDataService, TaskServiceFrequency, OrgConstitutionOption } from '../../services/masterDataService';
 import { getOrganizationStructureTree } from '../../services/settingsService';
 import { useToast } from '../../context/ToastContext';
@@ -25,9 +25,6 @@ export const EntityList: React.FC = () => {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<'clients' | 'matrix'>('clients');
   const [matrixEdits, setMatrixEdits] = useState<Record<string, Record<string, TaskServiceFrequency>>>({});
-  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
-  const [isBulkUploading, setIsBulkUploading] = useState(false);
-  const bulkFileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: orgStructureTreeData } = useQuery(['entity-list-org-structure-tree'], async () => {
     const res = await getOrganizationStructureTree({ includeArchived: false, includeInactive: false });
@@ -199,68 +196,6 @@ export const EntityList: React.FC = () => {
     }
   );
 
-  const handleDownloadEntityListTemplate = async () => {
-    setIsDownloadingTemplate(true);
-    try {
-      await entityMasterBulkService.getTemplate('entity-list');
-      toast.success('Entity List template downloaded. Fill client details and org-unit assignments, then upload.');
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || err.message || 'Failed to download template');
-    } finally {
-      setIsDownloadingTemplate(false);
-    }
-  };
-
-  const bulkUploadMutation = useMutation(
-    (file: File) => entityMasterBulkService.uploadFile(file),
-    {
-      onSuccess: async (res) => {
-        const data = res.data?.data;
-        if (!data?.uploadId) {
-          if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
-          return;
-        }
-        try {
-          const status = await entityMasterBulkService.pollUntilDone(data.uploadId);
-          if (status.status === 'completed') {
-            toast.success('Entity List bulk upload completed.');
-          } else {
-            toast.warning('Bulk upload finished with errors.');
-          }
-          if (status.errors?.length) {
-            status.errors.slice(0, 5).forEach((e: any) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
-            if (status.errors.length > 5) toast.error(`… and ${status.errors.length - 5} more errors`);
-          }
-        } catch (err: any) {
-          toast.error(err?.message || 'Failed to get upload status');
-        }
-        qc.invalidateQueries(['client-entities']);
-        qc.invalidateQueries(['client-matrix', 'recurring']);
-        qc.invalidateQueries(['client-matrix', 'one_time']);
-        if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
-      },
-      onError: (err: any) => {
-        toast.error(err.response?.data?.error || err.message || 'Upload failed');
-      },
-      onSettled: () => {
-        setIsBulkUploading(false);
-      },
-    }
-  );
-
-  const handleBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const name = (file.name || '').toLowerCase();
-    if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
-      toast.error('Please select an Excel file (.xlsx or .xls)');
-      e.target.value = '';
-      return;
-    }
-    setIsBulkUploading(true);
-    bulkUploadMutation.mutate(file);
-  };
-
   const formatRollout = (rule: string) =>
     rule === 'one_month_before_period_end' ? '1 MONTH BEFORE PERIOD END' : 'End of Period';
 
@@ -269,7 +204,7 @@ export const EntityList: React.FC = () => {
       <div className="p-6 md:p-8 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-1.5">Entity List</h1>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-1.5">Client List</h1>
             <p className="text-gray-500 dark:text-gray-400 text-sm">
               
             </p>
@@ -294,36 +229,7 @@ export const EntityList: React.FC = () => {
           </div>
         </div>
 
-        {/* Bulk update from Excel */}
-        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Bulk Update from Excel</h2>
-          <div className="flex flex-wrap gap-3 items-center">
-            <button
-              type="button"
-              onClick={handleDownloadEntityListTemplate}
-              disabled={isDownloadingTemplate}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 disabled:opacity-50"
-            >
-              {isDownloadingTemplate ? 'Downloading…' : 'Download Entity List template'}
-            </button>
-            <input
-              ref={bulkFileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleBulkFileChange}
-            />
-            <button
-              type="button"
-              onClick={() => bulkFileInputRef.current?.click()}
-              disabled={isBulkUploading}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white disabled:opacity-50"
-            >
-              {isBulkUploading ? 'Uploading…' : 'Upload file'}
-            </button>
-            <span className="text-xs text-slate-500"></span>
-          </div>
-        </div>
+        <BulkMasterUploadPanel variant="compact" className="mb-4" />
 
         {activeTab === 'clients' && (
           <div className="space-y-4">
@@ -678,8 +584,14 @@ export const EntityList: React.FC = () => {
         )}
 
         {modal && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="bg-white dark:bg-slate-800 rounded-xl w-full max-w-lg mx-auto flex flex-col max-h-[90vh] my-auto">
+          <div
+            className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto"
+            onClick={() => setModal(null)}
+          >
+            <div
+              className="bg-white dark:bg-slate-800 rounded-xl w-full max-w-lg mx-auto flex flex-col max-h-[90vh] my-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div className="p-6 pb-2 flex-shrink-0">
                 <div className="text-lg font-bold text-slate-900 dark:text-white">
                   {modal.mode === 'add' ? 'Add Client' : 'Edit Client'}

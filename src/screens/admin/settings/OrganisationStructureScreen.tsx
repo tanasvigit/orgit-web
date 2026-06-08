@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import { AdminLayout } from '../../../components/admin/AdminLayout';
 import { useToast } from '../../../context/ToastContext';
-import { entityMasterBulkService } from '../../../services/entityMasterBulkService';
 import {
   createOrganizationStructureNode,
   deleteOrganizationStructureNode,
@@ -649,8 +648,7 @@ export const OrganizationStructureBuilderPanel: React.FC = () => {
     <>
       <div className="mx-auto w-full max-w-none px-2 py-3 pb-6 sm:px-3 md:px-4 md:py-4">
         <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-          Stages are ordered columns (Root, Stage 2, …). Use green + for child, blue + for sibling on each card.
-          Pick section, entity field, and name per node — multiple sections can share the same stage.
+          Stages are ordered columns (Root, Stage 2, …). Add, view, and edit nodes from each card; use the toolbar to delete the selected node.
         </p>
         {treeQuery.isLoading ? (
           <div className="rounded-lg border border-dashed border-slate-300 py-8 text-center text-sm text-slate-500 dark:border-slate-600 dark:text-slate-400">
@@ -674,42 +672,6 @@ export const OrganizationStructureBuilderPanel: React.FC = () => {
             {rootNode ? (
               <>
                 <div className="mb-2 flex flex-wrap justify-end gap-1.5">
-                  <button
-                    type="button"
-                    title="Add sibling (same parent)"
-                    onClick={() => selectedNode && openInlineDraft('sibling', selectedNode)}
-                    disabled={!selectedNode || !selectedNode.parentNodeId}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200"
-                  >
-                    <span className="material-symbols-outlined text-[22px]">add_circle</span>
-                  </button>
-                  <button
-                    type="button"
-                    title="Add child (next level)"
-                    onClick={() => selectedNode && openInlineDraft('child', selectedNode)}
-                    disabled={!selectedNode}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200"
-                  >
-                    <span className="material-symbols-outlined text-[22px]">control_point_duplicate</span>
-                  </button>
-                  <button
-                    type="button"
-                    title="View selected node"
-                    onClick={() => selectedNode && openNodeModal(selectedNode, 'view')}
-                    disabled={!selectedNode}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                  >
-                    <span className="material-symbols-outlined text-[22px]">visibility</span>
-                  </button>
-                  <button
-                    type="button"
-                    title="Edit selected node"
-                    onClick={() => selectedNode && openNodeModal(selectedNode, 'edit')}
-                    disabled={!selectedNode}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                  >
-                    <span className="material-symbols-outlined text-[22px]">edit</span>
-                  </button>
                   <button
                     type="button"
                     title="Delete selected node (and descendants)"
@@ -802,240 +764,35 @@ export const OrganisationDefinitionScreen: React.FC = () => {
 };
 
 export const OrganisationStructureScreen: React.FC = () => {
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  const bulkFileInputRef = useRef<HTMLInputElement>(null);
-  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
-  const [isBulkUploading, setIsBulkUploading] = useState(false);
-
-  const treeQuery = useQuery(
-    ['organization-structure-tree-overview'],
-    () =>
-      getOrganizationStructureTree({
-        includeArchived: true,
-        includeInactive: true,
-      }).then((response) => response.data || response),
-    {
-      refetchOnWindowFocus: false,
-    }
-  );
-
-  const rootDefined = Boolean(
-    treeQuery.data?.rootNode || treeQuery.data?.summary?.hasRootNode || treeQuery.data?.summary?.hasRootGroup
-  );
-  const summary = treeQuery.data?.summary;
-
-  const handleDownloadStructureTemplate = async () => {
-    setIsDownloadingTemplate(true);
-    try {
-      await entityMasterBulkService.getTemplate('organisation-structure');
-      toast.success('Template downloaded. Fill SECTION, ENTITY_TYPE, Name, PARENT_NAME — then upload (or use Excel VBA helper).');
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || err.message || 'Failed to download template');
-    } finally {
-      setIsDownloadingTemplate(false);
-    }
-  };
-
-  const bulkUploadMutation = useMutation((file: File) => entityMasterBulkService.uploadFile(file), {
-    onSuccess: async (res) => {
-      const data = res.data?.data;
-      if (!data?.uploadId) {
-        if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
-        return;
-      }
-      try {
-        const status = await entityMasterBulkService.pollUntilDone(data.uploadId);
-        if (status.status === 'completed') {
-          toast.success('Organisation Structure bulk upload completed.');
-        } else {
-          toast.warning('Bulk upload finished with errors.');
-        }
-        if (status.errors?.length) {
-          status.errors.slice(0, 5).forEach((e) => toast.error(e.message || `Row ${e.row}: ${e.sheet || ''}`));
-          if (status.errors.length > 5) toast.error(`… and ${status.errors.length - 5} more errors`);
-        }
-      } catch (err: any) {
-        toast.error(err?.message || 'Failed to get upload status');
-      }
-      treeQuery.refetch();
-      if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
-    },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.error || err.message || 'Upload failed');
-    },
-    onSettled: () => {
-      setIsBulkUploading(false);
-    },
-  });
-
-  const handleBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const name = (file.name || '').toLowerCase();
-    if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
-      toast.error('Please select an Excel file (.xlsx or .xls)');
-      e.target.value = '';
-      return;
-    }
-    setIsBulkUploading(true);
-    bulkUploadMutation.mutate(file);
-  };
-
-  const scrollToBuilder = () => {
-    document.getElementById('org-builder')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
   useEffect(() => {
     if (window.location.hash === '#org-builder') {
-      scrollToBuilder();
+      document.getElementById('org-builder')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-  }, [treeQuery.isLoading]);
-
-  const cards = [
-    {
-      icon: 'groups',
-      title: 'Entity List',
-      subtitle: 'Assign client entities directly to org units once the hierarchy is defined.',
-      actionLabel: 'Open Entity List',
-      screen: '/admin/entities',
-      tone: 'neutral',
-    },
-    {
-      icon: 'group',
-      title: 'Employees',
-      subtitle: 'Employee mappings and org-unit assignments are applied after org definition is created.',
-      actionLabel: 'Open Employees',
-      screen: '/admin/users',
-      tone: 'neutral',
-    },
-  ] as const;
+  }, []);
 
   return (
-    <AdminLayout>
-      <div className="mx-auto max-w-6xl p-6 md:p-8 space-y-6">
-        <div>
+    <AdminLayout contentFitViewport>
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col p-6 md:p-8">
+        <div className="mb-4 shrink-0">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Organisation Structure</h1>
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            Define every hierarchy level (Group, Entity, Region, Plant, Department, and more) in one screen below.
-            Entity master data, employees, tasks, and reporting then use that structure across web and mobile.
+            Create and manage your organisation hierarchy in the builder below.
           </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-            <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Hierarchy</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">
-              {rootDefined ? 'Defined' : 'Pending'}
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-            <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Levels</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{summary?.totalLevels || 0}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-            <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Nodes</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{summary?.totalNodes || 0}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-            <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Archived</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{summary?.archivedNodes || 0}</p>
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Bulk update from Excel</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
-            Same flow as the web form: SECTION → entity field (ENTITY_TYPE) → Name / Code, plus PARENT_NAME for placement.
-            Stage is set automatically from the parent. Optional: import the VBA module from{' '}
-            <code className="text-[11px]">orgit-tools/org-structure-bulk-vba</code> for guided Excel entry.
-          </p>
-          <div className="flex flex-wrap gap-3 items-center">
-            <button
-              type="button"
-              onClick={handleDownloadStructureTemplate}
-              disabled={isDownloadingTemplate}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 disabled:opacity-50"
-            >
-              {isDownloadingTemplate ? 'Downloading…' : 'Download Organisation Structure template'}
-            </button>
-            <input
-              ref={bulkFileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleBulkFileChange}
-            />
-            <button
-              type="button"
-              onClick={() => bulkFileInputRef.current?.click()}
-              disabled={isBulkUploading}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white disabled:opacity-50"
-            >
-              {isBulkUploading ? 'Uploading…' : 'Upload Excel file'}
-            </button>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-primary/20 bg-primary/5 p-5 dark:border-primary/30 dark:bg-primary/10">
-          <div className="flex items-start gap-3">
-            <span className="material-symbols-outlined text-primary">info</span>
-            <div className="space-y-1 text-sm text-text-main">
-              <p className="font-semibold text-gray-900 dark:text-white">Recommended workflow</p>
-              <p>1. Use the hierarchy builder below to create the Group root and add each level in the chart.</p>
-              <p>2. Apply that structure to entity master data, employees, task units, and reporting.</p>
-              <p>3. Mobile uses the defined structure operationally; hierarchy authoring stays on this web screen.</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={scrollToBuilder}
-            className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-dark"
-          >
-            {rootDefined ? 'Edit hierarchy' : 'Create hierarchy'}
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {cards.map((card) => (
-            <div
-              key={card.title}
-              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800"
-            >
-              <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200">
-                  <span className="material-symbols-outlined">{card.icon}</span>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-base font-semibold text-gray-900 dark:text-white">{card.title}</p>
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{card.subtitle}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => navigate(card.screen)}
-                className="mt-5 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-text-main hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
-              >
-                {card.actionLabel}
-              </button>
-            </div>
-          ))}
         </div>
 
         <section
           id="org-builder"
-          className="scroll-mt-6 rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-800"
+          className="flex min-h-0 flex-1 flex-col scroll-mt-6 rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800"
         >
-          <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+          <div className="shrink-0 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Hierarchy builder</h2>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               Stages are chart columns only. Each node uses its own level, entity field, and name — fully dynamic.
             </p>
           </div>
-          <OrganizationStructureBuilderPanel />
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <OrganizationStructureBuilderPanel />
+          </div>
         </section>
       </div>
     </AdminLayout>

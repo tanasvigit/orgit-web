@@ -10,10 +10,16 @@ import { DocumentBuilderProvider, useDocumentBuilder } from '../../../components
 import { DocumentBuilderContent } from '../../../components/document-builder/DocumentBuilderLayout';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
-import { organizationService } from '../../../services/organizationService';
+import { getOrganizationStructureTree } from '../../../services/settingsService';
 import { getBackendBaseUrlWithSlash } from '../../../config/env';
 import { SchemaDrivenDocumentEditor } from '../../../components/document-templates/SchemaDrivenDocumentEditor';
 import { InlineDocumentEditor } from '../../../components/document-templates/InlineDocumentEditor';
+import {
+  buildEmptyTemplateDefaults,
+  isSystemInlineTemplate,
+  resolveSystemTemplateKey,
+} from '../../../components/document-templates/SystemTemplateDesignPreview';
+import { buildOrgProfileFromStructure } from '../../../utils/orgStructureDocumentProfile';
 
 const DocumentFillerIntegration: React.FC<{ templateId: string | null; onBack: () => void; isAdmin: boolean }> = ({ templateId, onBack, isAdmin }) => {
 
@@ -25,18 +31,14 @@ const DocumentFillerIntegration: React.FC<{ templateId: string | null; onBack: (
   const [title, setTitle] = useState('');
   const [templateLoaded, setTemplateLoaded] = useState(false);
 
-  // Fetch organization data for auto-fill
+  // Fetch organization profile from org structure for document auto-fill
   const { data: orgData } = useQuery(
-    ['admin-organization'],
+    ['document-org-structure-profile'],
     async () => {
-      if (!user?.organizationId) return null;
-      // Use admin endpoint if user is admin, otherwise use super-admin endpoint
-      const response = user?.role === 'admin' 
-        ? await organizationService.getMyOrganization()
-        : await organizationService.getById(user.organizationId);
-      return response.data.data;
+      const response = await getOrganizationStructureTree({ includeArchived: true, includeInactive: true });
+      return buildOrgProfileFromStructure(response?.data || response || null);
     },
-    { enabled: !!user?.organizationId }
+    { enabled: !!user }
   );
 
   const { isLoading } = useQuery(
@@ -111,7 +113,7 @@ const DocumentFillerIntegration: React.FC<{ templateId: string | null; onBack: (
     }
   }, [state.mode, dispatch]);
 
-  // Auto-fill header from Entity Master Data when template loads and org data is available
+  // Auto-fill header from organisation structure root fields when available
   useEffect(() => {
     if (templateLoaded && orgData && state.header && templateId) {
       const formatOrgAddress = () => {
@@ -247,28 +249,26 @@ export const CreateDocument: React.FC = () => {
     'activeTemplates',
     async () => {
       const res = await documentTemplateService.getActiveTemplates();
-      return res.data.data;
+      const list = res.data.data || [];
+      return list.filter((t: any) => {
+        let schema = t.templateSchema;
+        if (typeof schema === 'string') {
+          try {
+            schema = JSON.parse(schema);
+          } catch {
+            schema = {};
+          }
+        }
+        const key = resolveSystemTemplateKey(t, schema);
+        return isSystemInlineTemplate(key) || t.type === 'gst_invoice_figma';
+      });
     }
   );
 
   const TemplateFillRouter: React.FC<{ templateId: string; onBack: () => void; isAdmin: boolean }> = ({ templateId, onBack, isAdmin }) => {
     const { toast } = useToast();
-    const { user } = useAuth();
     const queryClient = useQueryClient();
     const navigate = useNavigate();
-
-    const { data: orgData } = useQuery(
-      ['schema-org'],
-      async () => {
-        if (!user?.organizationId) return null;
-        const response =
-          user?.role === 'admin'
-            ? await organizationService.getMyOrganization()
-            : await organizationService.getById(user.organizationId);
-        return response.data.data;
-      },
-      { enabled: !!user?.organizationId }
-    );
 
     const { data: template, isLoading, error } = useQuery(
       ['template-fill-router', templateId],
@@ -359,34 +359,16 @@ export const CreateDocument: React.FC = () => {
 
     const Layout = isAdmin ? AdminLayout : EmployeeLayout;
 
-    const initialValues: Record<string, any> = {
-      invoice_copy_label: 'ORIGINAL FOR RECIPIENT',
-      ...((template as any).autoFillFields || {}),
-      ...(schema?.defaultValues || {}),
-    };
-
-    const systemTemplateKey = (schema?.systemTemplateKey || (template as any).type || '') as string;
-    const isPaymentVoucher = /payment-voucher|payment_voucher/i.test(systemTemplateKey);
-
-    // Best-effort org autofill from Entity Master Data
-    if (orgData) {
-      initialValues.company_name = initialValues.company_name || orgData.name || '';
-      initialValues.company_legal_name = initialValues.company_legal_name || orgData.name || '';
-      initialValues.company_gstin = initialValues.company_gstin || orgData.gst || '';
-      initialValues.company_email = initialValues.company_email || orgData.email || '';
-      initialValues.company_phone = initialValues.company_phone || orgData.phoneNumber || orgData.mobile || '';
-      initialValues.company_address = initialValues.company_address || orgData.address || '';
-      if (isPaymentVoucher) {
-        initialValues.address_line1 = initialValues.address_line1 || orgData.addressLine1 || '';
-        initialValues.address_line2 = initialValues.address_line2 || orgData.addressLine2 || '';
-        initialValues.city = initialValues.city || (typeof orgData.city === 'string' ? orgData.city : orgData.city?.name) || '';
-        initialValues.pincode = initialValues.pincode || orgData.pinCode || '';
-        initialValues.company_logo_url = initialValues.company_logo_url || orgData.logoUrl || orgData.logo_url || '';
-      }
-    }
-
+    const systemTemplateKey = resolveSystemTemplateKey(template, schema);
     const computedTitle = `${template.name} - ${new Date().toLocaleDateString()}`;
-    const useInlineEditor = /tax-invoice|payment-voucher|tax_invoice|payment_voucher/i.test(systemTemplateKey);
+    const useInlineEditor = isSystemInlineTemplate(systemTemplateKey);
+
+    const initialValues: Record<string, any> = useInlineEditor
+      ? buildEmptyTemplateDefaults()
+      : {
+          ...((template as any).autoFillFields || {}),
+          ...(schema?.defaultValues || {}),
+        };
 
     if (useInlineEditor) {
       return (

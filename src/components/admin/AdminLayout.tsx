@@ -12,10 +12,12 @@ interface AdminLayoutProps {
   headerActions?: React.ReactNode;
   hideHeader?: boolean;
   hideSearch?: boolean;
+  /** When true, page content fills the viewport; child panels manage their own scroll. */
+  contentFitViewport?: boolean;
 }
 
 export const AdminLayout: React.FC<AdminLayoutProps> = (props) => {
-  const { children } = props;
+  const { children, contentFitViewport = false } = props;
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -30,7 +32,13 @@ export const AdminLayout: React.FC<AdminLayoutProps> = (props) => {
     <div className="flex h-full min-h-0 w-full overflow-hidden bg-background">
       <AdminSidebar onToggleRef={sidebarToggleRef} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto w-full">{children}</main>
+        <main
+          className={`min-h-0 flex-1 overflow-x-hidden w-full ${
+            contentFitViewport ? 'overflow-hidden' : 'overflow-y-auto'
+          }`}
+        >
+          {children}
+        </main>
       </div>
 
       <FloatingActionButton

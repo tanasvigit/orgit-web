@@ -113,12 +113,16 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       {confirmState && (
-        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm pointer-events-auto">
+        <div
+          className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm pointer-events-auto"
+          onClick={handleCancel}
+        >
           <div
             className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 p-6 max-w-md w-full animate-in fade-in zoom-in duration-200"
             role="dialog"
             aria-modal="true"
             aria-labelledby="confirm-title"
+            onClick={(e) => e.stopPropagation()}
           >
             <p id="confirm-title" className="text-slate-800 dark:text-slate-100 font-medium mb-6">
               {confirmState.message}

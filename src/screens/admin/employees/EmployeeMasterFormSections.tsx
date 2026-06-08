@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import type { OrganizationStructureTree } from '../../../services/settingsService';
-import { EmployeeOrgLevelNodeSelectors } from '../../../components/admin/EmployeeOrgLevelNodeSelectors';
+import { OrgStructureCheckboxTreeSelect } from '../../../components/admin/OrgStructureCheckboxTreeSelect';
 import {
   formatOrgNodeOptionLabel,
   getActiveNodesUnderRoot,
@@ -124,13 +124,6 @@ export function EmployeeMasterFormSections({
         documentRights: { ...form.permissions.documentRights, [key]: value },
       },
     });
-  };
-
-  const toggleSecondary = (nodeId: string) => {
-    const set = new Set(form.secondaryOrgNodeIds);
-    if (set.has(nodeId)) set.delete(nodeId);
-    else set.add(nodeId);
-    onChange({ secondaryOrgNodeIds: Array.from(set) });
   };
 
   return (
@@ -296,33 +289,12 @@ export function EmployeeMasterFormSections({
       </Section>
 
       <Section title="3. Org unit mapping">
-        <EmployeeOrgLevelNodeSelectors
+        <OrgStructureCheckboxTreeSelect
           tree={tree}
-          value={form.orgNodeByLevel}
-          onChange={(orgNodeByLevel) => onChange({ orgNodeByLevel })}
+          orgNodeByLevel={form.orgNodeByLevel}
+          secondaryOrgNodeIds={form.secondaryOrgNodeIds}
+          onChange={(patch) => onChange(patch)}
         />
-        <p className="text-xs text-slate-500">
-          Primary org unit = deepest section you select. List matches nodes on your org chart only.
-        </p>
-        <div>
-          <label className="mb-1 block text-sm font-medium">Multiple org units (secondary)</label>
-          <div className="max-h-32 overflow-y-auto rounded-lg border border-slate-200 p-2 dark:border-slate-600">
-            {workLocationOptions.length === 0 ? (
-              <p className="text-xs text-slate-500">Add child nodes in Org Definition first.</p>
-            ) : (
-              workLocationOptions.map((node) => (
-                <label key={node.id} className="flex items-center gap-2 py-0.5 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={form.secondaryOrgNodeIds.includes(node.id)}
-                    onChange={() => toggleSecondary(node.id)}
-                  />
-                  {formatOrgNodeOptionLabel(tree, node)}
-                </label>
-              ))
-            )}
-          </div>
-        </div>
       </Section>
 
       <Section title="4. Module access">

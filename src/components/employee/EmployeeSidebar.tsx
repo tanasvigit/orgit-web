@@ -15,6 +15,8 @@ interface NavItem {
   module: AppModule;
 }
 
+const ORGIT_LOGO_SRC = '/orgit-logo.png?v=3';
+
 const collapsedLabelMap: Record<string, string> = {
   Dashboard: 'Dash board',
   Chats: 'Chats',
@@ -46,7 +48,8 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
   const visibleNavItems = navItems.filter((item) => canAccessModule(item.module));
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  
+  const settingsMenuRef = useRef<HTMLDivElement>(null);
+
   // Use localStorage to persist state across remounts
   const getStoredMinimizedFlag = () => {
     try {
@@ -102,6 +105,20 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
   
   // Store the collapsed state in a ref to prevent unwanted resets
   const collapsedStateRef = useRef(isCollapsed);
+
+  // Close settings submenu on outside click (use `click` so submenu links stay open)
+  useEffect(() => {
+    if (!isSettingsOpen || isCollapsed) return;
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (settingsMenuRef.current?.contains(target)) return;
+      setIsSettingsOpen(false);
+    };
+
+    document.addEventListener('click', handleOutsideClick);
+    return () => document.removeEventListener('click', handleOutsideClick);
+  }, [isSettingsOpen, isCollapsed]);
 
   // Expose toggle function to parent component
   const handleToggle = useCallback(() => {
@@ -266,22 +283,13 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
       {/* Desktop Header */}
       <div className={`hidden md:block p-6 pb-4 shrink-0 border-b border-border-light dark:border-border-dark relative max-[1366px]:p-3 max-[1366px]:pb-1 ${isCollapsed ? 'px-4 max-[1366px]:px-2.5' : ''}`}>
         <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center' : ''}`}>
-          <div className="relative shrink-0">
-            <div className="w-12 h-12 rounded-full bg-secondary dark:bg-primary/20 flex items-center justify-center text-primary dark:text-primary-dark max-[1366px]:w-10 max-[1366px]:h-10">
-              {user?.profilePhotoUrl ? (
-                <img
-                  alt="User Avatar"
-                  className="w-10 h-10 rounded-full border-2 border-white dark:border-gray-700 object-cover max-[1366px]:w-8 max-[1366px]:h-8"
-                  src={user.profilePhotoUrl}
-                />
-              ) : (
-                <span className="text-primary text-xl font-bold max-[1366px]:text-lg">
-                  {user?.name?.charAt(0).toUpperCase() || 'U'}
-                </span>
-              )}
-            </div>
-            <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-800"></div>
-          </div>
+          <img
+            src={ORGIT_LOGO_SRC}
+            alt="ORGIT"
+            className={`shrink-0 object-contain ${
+              isCollapsed ? 'h-9 w-9 max-[1366px]:h-8 max-[1366px]:w-8' : 'h-11 w-11 max-[1366px]:h-10 max-[1366px]:w-10'
+            }`}
+          />
           {!isCollapsed && (
             <div className="flex flex-col min-w-0">
               <h1 className="text-slate-900 dark:text-white text-lg font-extrabold tracking-tight leading-none truncate max-[1366px]:text-base">
@@ -338,7 +346,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
         })}
         
         {/* Settings: icon + label navigate to Settings page; chevron toggles dropdown */}
-        <div className="relative">
+        <div className="relative" ref={settingsMenuRef}>
           <div
             className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
               isCollapsed ? 'justify-center' : ''
@@ -399,6 +407,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
               <Link
                 to="/settings"
                 onClick={() => {
+                  setIsSettingsOpen(true);
                   if (window.innerWidth < 768) {
                     setIsMobileOpen(false);
                   }
@@ -470,7 +479,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
       
       {/* Desktop Sidebar */}
       <aside
-        className={`hidden md:flex flex-col bg-surface-light dark:bg-surface-dark border-r border-border-light dark:border-border-dark shadow-sm z-20 transition-all duration-300 ${
+        className={`hidden md:flex relative flex-col overflow-visible bg-surface-light dark:bg-surface-dark border-r border-border-light dark:border-border-dark shadow-sm z-20 transition-all duration-300 ${
           isCollapsed ? 'w-[70px]' : 'w-[240px]'
         }`}
         onClick={(event) => {
@@ -480,6 +489,20 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
         }}
       >
         {sidebarContent}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleToggle();
+          }}
+          className="absolute top-1/2 right-0 z-30 flex h-9 w-9 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border-2 border-primary bg-primary text-white shadow-lg shadow-primary/40 ring-4 ring-primary/20 transition-all hover:scale-105 hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/50"
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          <span className="material-icons-outlined text-xl font-bold leading-none">
+            {isCollapsed ? 'chevron_right' : 'chevron_left'}
+          </span>
+        </button>
       </aside>
 
       {/* Mobile Sidebar */}
@@ -491,22 +514,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
         {/* Mobile Header with Close Button */}
         <div className="flex items-center justify-between p-4 border-b border-border-light dark:border-border-dark shrink-0">
           <div className="flex items-center gap-3">
-            <div className="relative shrink-0">
-              <div className="w-10 h-10 rounded-full bg-secondary dark:bg-primary/20 flex items-center justify-center text-primary dark:text-primary-dark">
-                {user?.profilePhotoUrl ? (
-                  <img
-                    alt="User Avatar"
-                    className="w-9 h-9 rounded-full border-2 border-white dark:border-gray-700 object-cover"
-                    src={user.profilePhotoUrl}
-                  />
-                ) : (
-                  <span className="text-primary text-lg font-bold">
-                    {user?.name?.charAt(0).toUpperCase() || 'U'}
-                  </span>
-                )}
-              </div>
-              <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-800"></div>
-            </div>
+            <img src={ORGIT_LOGO_SRC} alt="ORGIT" className="h-10 w-10 shrink-0 object-contain" />
             <div className="flex flex-col min-w-0">
               <h1 className="text-slate-900 dark:text-white text-base font-extrabold tracking-tight leading-none truncate">
                 ORGIT

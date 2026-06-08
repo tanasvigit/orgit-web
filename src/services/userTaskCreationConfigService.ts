@@ -1,5 +1,5 @@
 import api from './api';
-import type { TaskCreationUserConfig } from '../utils/taskCreationUserConfig';
+import { mergeTaskCreationUserConfig, type TaskCreationUserConfig } from '../utils/taskCreationUserConfig';
 
 export const taskCreationUserConfigQueryKey = ['task-creation-user-config'] as const;
 
@@ -9,7 +9,7 @@ export async function getTaskCreationUserConfig(): Promise<TaskCreationUserConfi
   );
   const data = res.data?.data;
   if (data && typeof data.dueDaysFromStart === 'number') {
-    return data;
+    return mergeTaskCreationUserConfig(data);
   }
   throw new Error('Invalid task creation config response');
 }
@@ -23,7 +23,7 @@ export async function updateTaskCreationUserConfig(
   );
   const data = res.data?.data;
   if (data && typeof data.dueDaysFromStart === 'number') {
-    return data;
+    return mergeTaskCreationUserConfig(data);
   }
   throw new Error('Invalid task creation config response');
 }

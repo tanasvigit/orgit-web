@@ -28,8 +28,6 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
     canUploadDocument,
   } = useEmployeePermissions();
 
-  const isOnTasksModule = /^\/(?:admin\/)?tasks(\/|$)/.test(location.pathname);
-
   const showMessageAction = canAccessModule('Messaging');
   const showDocumentAction = canUploadDocument() && canAccessModule('Documents');
   const showTaskAction = canCreateTask() && canAccessModule('Tasks');
@@ -77,7 +75,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
   //   setIsOpen(false);
   // };
 
-  if (isOnTasksModule || (!hasAnyAction && !isAdmin)) {
+  if (!hasAnyAction && !isAdmin) {
     return null;
   }
 
