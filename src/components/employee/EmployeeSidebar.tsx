@@ -436,7 +436,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
             }
           }}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
-            isCollapsed ? 'justify-center' : ''
+            isCollapsed ? 'justify-center flex-col gap-0.5 py-2' : 'justify-start'
           } ${
             location.pathname === '/profile'
               ? 'bg-primary text-white shadow-md shadow-primary/20'
@@ -445,7 +445,11 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
           title={isCollapsed ? 'Profile' : ''}
         >
           <span className="material-icons-outlined text-2xl shrink-0 max-[1366px]:text-xl">person</span>
-          {!isCollapsed && <span className="font-medium text-sm max-[1366px]:text-xs">Profile</span>}
+          {isCollapsed ? (
+            <span className="text-[9px] leading-tight text-center whitespace-nowrap max-[1366px]:text-[8px]">Profile</span>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-left font-medium text-sm max-[1366px]:text-xs">Profile</span>
+          )}
         </button>
         <button
           onClick={() => {
@@ -456,12 +460,16 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
             });
           }}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors min-h-[44px] max-[1366px]:py-1.5 max-[1366px]:min-h-[34px] ${
-            isCollapsed ? 'justify-center' : ''
+            isCollapsed ? 'justify-center flex-col gap-0.5 py-2' : 'justify-start'
           } text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20`}
           title={isCollapsed ? 'Logout' : ''}
         >
           <span className="material-icons-outlined text-2xl shrink-0 max-[1366px]:text-xl">logout</span>
-          {!isCollapsed && <span className="font-medium text-sm max-[1366px]:text-xs">Logout</span>}
+          {isCollapsed ? (
+            <span className="text-[9px] leading-tight text-center whitespace-nowrap max-[1366px]:text-[8px]">Logout</span>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-left font-medium text-sm max-[1366px]:text-xs">Logout</span>
+          )}
         </button>
       </div>
     </>

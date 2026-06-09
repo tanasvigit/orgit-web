@@ -193,7 +193,11 @@ export const SettingsScreen: React.FC = () => {
                 services, clients, employees, and tasks.
               </p>
             </div>
-            {isAdmin && <BulkMasterUploadPanel />}
+            {isAdmin && (
+              <div className="flex shrink-0 self-start sm:self-center">
+                <BulkMasterUploadPanel />
+              </div>
+            )}
           </div>
         </div>
 

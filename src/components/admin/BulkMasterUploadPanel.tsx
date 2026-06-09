@@ -117,12 +117,12 @@ export const BulkMasterUploadPanel: React.FC<BulkMasterUploadPanelProps> = ({
         onChange={handleBulkFileChange}
         className="hidden"
       />
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-row flex-wrap sm:flex-nowrap items-center gap-2 shrink-0">
         <button
           type="button"
           onClick={handleDownloadTemplate}
           disabled={isDownloadingTemplate}
-          className="px-4 py-2.5 bg-white dark:bg-slate-800 border-2 border-gray-200 dark:border-gray-700 hover:border-primary dark:hover:border-primary/50 text-gray-700 dark:text-gray-200 rounded-xl font-semibold text-sm flex items-center gap-2 disabled:opacity-50 transition-all"
+          className="px-4 py-2.5 bg-white dark:bg-slate-800 border-2 border-gray-200 dark:border-gray-700 hover:border-primary dark:hover:border-primary/50 text-gray-700 dark:text-gray-200 rounded-xl font-semibold text-sm flex items-center gap-2 whitespace-nowrap disabled:opacity-50 transition-all"
         >
           <span className="material-icons-outlined text-[18px]">download</span>
           {isDownloadingTemplate ? 'Downloading…' : 'Download Master Bulk'}
@@ -131,7 +131,7 @@ export const BulkMasterUploadPanel: React.FC<BulkMasterUploadPanelProps> = ({
           type="button"
           onClick={() => bulkFileInputRef.current?.click()}
           disabled={bulkUploadMutation.isLoading}
-          className="px-4 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-xl font-semibold text-sm flex items-center gap-2 disabled:opacity-50 transition-all shadow-lg shadow-primary/30"
+          className="px-4 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-xl font-semibold text-sm flex items-center gap-2 whitespace-nowrap disabled:opacity-50 transition-all shadow-lg shadow-primary/30"
         >
           <span className="material-icons-outlined text-[18px]">upload</span>
           {bulkUploadMutation.isLoading ? 'Uploading…' : 'Upload Master Bulk'}

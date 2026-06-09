@@ -163,7 +163,7 @@ export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRe
             if (window.innerWidth < 768) setIsMobileOpen(false);
           }}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors min-h-[44px] ${
-            isCollapsed ? 'justify-center' : ''
+            isCollapsed ? 'justify-center flex-col gap-0.5 py-2' : 'justify-start'
           } ${
             location.pathname === '/profile'
               ? 'bg-super-admin-primary text-white shadow-md'
@@ -172,7 +172,11 @@ export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRe
           title={isCollapsed ? 'Profile' : undefined}
         >
           <span className="material-symbols-outlined text-[22px] shrink-0">person</span>
-          {!isCollapsed && <span className="font-medium text-sm">Profile</span>}
+          {isCollapsed ? (
+            <span className="text-[9px] leading-tight text-center whitespace-nowrap">Profile</span>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-left font-medium text-sm">Profile</span>
+          )}
         </button>
         <button
           type="button"
@@ -184,12 +188,16 @@ export const SuperAdminSidebar: React.FC<SuperAdminSidebarProps> = ({ onToggleRe
             });
           }}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors min-h-[44px] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 ${
-            isCollapsed ? 'justify-center' : ''
+            isCollapsed ? 'justify-center flex-col gap-0.5 py-2' : 'justify-start'
           }`}
           title={isCollapsed ? 'Logout' : undefined}
         >
           <span className="material-symbols-outlined text-[22px] shrink-0">logout</span>
-          {!isCollapsed && <span className="font-medium text-sm">Logout</span>}
+          {isCollapsed ? (
+            <span className="text-[9px] leading-tight text-center whitespace-nowrap">Logout</span>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-left font-medium text-sm">Logout</span>
+          )}
         </button>
       </div>
     </>
