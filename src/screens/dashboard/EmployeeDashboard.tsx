@@ -630,31 +630,31 @@ export const EmployeeDashboard: React.FC = () => {
     completedIconRef?: React.RefObject<HTMLDivElement>
   ) => {
     return (
-      <div className="flex h-full min-h-0 w-full min-w-0 flex-col space-y-4 max-[1366px]:space-y-3">
-        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2 max-[1366px]:mb-1.5">
-          <div className="h-8 w-1 shrink-0 rounded-full bg-primary"></div>
-          <h2 className="shrink-0 text-lg font-semibold text-gray-900 dark:text-white md:text-xl max-[1366px]:text-base">{title}</h2>
+      <div className="flex h-full min-h-0 w-full min-w-0 flex-col space-y-2">
+        <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+          <div className="h-5 w-1 shrink-0 rounded-full bg-primary"></div>
+          <h2 className="shrink-0 text-sm font-semibold text-gray-900 dark:text-white md:text-base">{title}</h2>
           <div className="h-px min-w-[2rem] flex-1 bg-gray-200 dark:bg-gray-700"></div>
         </div>
 
         {/* Statistics Cards for this section */}
-        <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5 max-[1366px]:mb-2 max-[1366px]:gap-2">
+        <div className="mb-1 grid grid-cols-5 gap-1">
           {/* To-Do Card (Today’s recurring, not completed) */}
           <button
             type="button"
             onClick={() => navigate(`/tasks?view=${viewType}&status=todo`)}
-            className="relative flex h-fit w-full min-w-0 flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-blue-500 bg-white p-2.5 text-center shadow-sm transition-colors duration-200 hover:shadow-md dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:p-2"
+            className="relative flex h-fit w-full min-w-0 flex-col items-center rounded-lg border border-gray-200 border-l-[3px] border-l-blue-500 bg-white px-1.5 py-2 text-center shadow-sm transition-colors duration-200 hover:shadow-md dark:border-gray-700 dark:bg-slate-800/95"
           >
             <div
               ref={toDoIconRef}
-              className={`mb-2 flex size-9 items-center justify-center rounded-full max-[1366px]:size-8 ${getTaskStatusCardCircleClass('todo')}`}
+              className={`mb-1 flex size-7 items-center justify-center rounded-full ${getTaskStatusCardCircleClass('todo')}`}
             >
-              <TaskStatusCardIcon status="todo" />
+              <TaskStatusCardIcon status="todo" size={16} />
             </div>
-            <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
+            <span className="mb-0.5 text-base font-semibold leading-none text-gray-900 dark:text-white">
               {getStatusCount('todo', viewType)}
             </span>
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+            <span className="w-full truncate px-0.5 text-[9px] font-medium uppercase leading-tight tracking-wide text-gray-600 dark:text-gray-400">
               TO DO
             </span>
           </button>
@@ -663,18 +663,18 @@ export const EmployeeDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate(`/tasks?view=${viewType}&status=inprogress`)}
-            className="relative flex w-full min-w-0 flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-purple-500 bg-white p-3 text-center shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:p-2.5"
+            className="relative flex h-fit w-full min-w-0 flex-col items-center rounded-lg border border-gray-200 border-l-[3px] border-l-purple-500 bg-white px-1.5 py-2 text-center shadow-sm transition-colors duration-200 hover:shadow-md dark:border-gray-700 dark:bg-slate-800/95"
           >
             <div
               ref={inProgressIconRef}
-              className={`mb-2 flex size-9 items-center justify-center rounded-full max-[1366px]:size-8 ${getTaskStatusCardCircleClass('inprogress')}`}
+              className={`mb-1 flex size-7 items-center justify-center rounded-full ${getTaskStatusCardCircleClass('inprogress')}`}
             >
-              <TaskStatusCardIcon status="inprogress" />
+              <TaskStatusCardIcon status="inprogress" size={16} />
             </div>
-            <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
+            <span className="mb-0.5 text-base font-semibold leading-none text-gray-900 dark:text-white">
               {getStatusCount('inprogress', viewType)}
             </span>
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+            <span className="w-full truncate px-0.5 text-[9px] font-medium uppercase leading-tight tracking-wide text-gray-600 dark:text-gray-400">
               In Progress
             </span>
           </button>
@@ -683,17 +683,17 @@ export const EmployeeDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate(`/tasks?view=${viewType}&status=duesoon`)}
-            className="relative flex h-fit w-full min-w-0 flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-amber-500 bg-white p-2.5 text-center shadow-sm transition-colors duration-200 hover:shadow-md dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:p-2"
+            className="relative flex h-fit w-full min-w-0 flex-col items-center rounded-lg border border-gray-200 border-l-[3px] border-l-amber-500 bg-white px-1.5 py-2 text-center shadow-sm transition-colors duration-200 hover:shadow-md dark:border-gray-700 dark:bg-slate-800/95"
           >
             <div
-              className={`mb-2 flex size-9 items-center justify-center rounded-full max-[1366px]:size-8 ${getTaskStatusCardCircleClass('duesoon')}`}
+              className={`mb-1 flex size-7 items-center justify-center rounded-full ${getTaskStatusCardCircleClass('duesoon')}`}
             >
-              <TaskStatusCardIcon status="duesoon" />
+              <TaskStatusCardIcon status="duesoon" size={16} />
             </div>
-            <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
+            <span className="mb-0.5 text-base font-semibold leading-none text-gray-900 dark:text-white">
               {getStatusCount('duesoon', viewType)}
             </span>
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+            <span className="w-full truncate px-0.5 text-[9px] font-medium uppercase leading-tight tracking-wide text-gray-600 dark:text-gray-400">
               Due Soon
             </span>
           </button>
@@ -702,17 +702,17 @@ export const EmployeeDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate(`/tasks?view=${viewType}&status=overdue`)}
-            className="relative flex h-fit w-full min-w-0 flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-red-500 bg-white p-2.5 text-center shadow-sm transition-colors duration-200 hover:shadow-md dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:p-2"
+            className="relative flex h-fit w-full min-w-0 flex-col items-center rounded-lg border border-gray-200 border-l-[3px] border-l-red-500 bg-white px-1.5 py-2 text-center shadow-sm transition-colors duration-200 hover:shadow-md dark:border-gray-700 dark:bg-slate-800/95"
           >
             <div
-              className={`mb-2 flex size-9 items-center justify-center rounded-full max-[1366px]:size-8 ${getTaskStatusCardCircleClass('overdue')}`}
+              className={`mb-1 flex size-7 items-center justify-center rounded-full ${getTaskStatusCardCircleClass('overdue')}`}
             >
-              <TaskStatusCardIcon status="overdue" />
+              <TaskStatusCardIcon status="overdue" size={16} />
             </div>
-            <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
+            <span className="mb-0.5 text-base font-semibold leading-none text-gray-900 dark:text-white">
               {getStatusCount('overdue', viewType)}
             </span>
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+            <span className="w-full truncate px-0.5 text-[9px] font-medium uppercase leading-tight tracking-wide text-gray-600 dark:text-gray-400">
               Overdue
             </span>
           </button>
@@ -721,18 +721,18 @@ export const EmployeeDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate(`/tasks?view=${viewType}&status=completed`)}
-            className="relative flex h-fit w-full min-w-0 flex-col items-center rounded-[10px] border border-gray-200 border-l-[4px] border-l-emerald-500 bg-white p-2.5 text-center shadow-sm transition-colors duration-200 hover:shadow-md dark:border-gray-700 dark:bg-slate-800/95 max-[1366px]:p-2"
+            className="relative flex h-fit w-full min-w-0 flex-col items-center rounded-lg border border-gray-200 border-l-[3px] border-l-emerald-500 bg-white px-1.5 py-2 text-center shadow-sm transition-colors duration-200 hover:shadow-md dark:border-gray-700 dark:bg-slate-800/95"
           >
             <div
               ref={completedIconRef}
-              className={`mb-2 flex size-9 items-center justify-center rounded-full max-[1366px]:size-8 ${getTaskStatusCardCircleClass('completed')}`}
+              className={`mb-1 flex size-7 items-center justify-center rounded-full ${getTaskStatusCardCircleClass('completed')}`}
             >
-              <TaskStatusCardIcon status="completed" />
+              <TaskStatusCardIcon status="completed" size={16} />
             </div>
-            <span className="mb-1 text-xl font-semibold text-gray-900 dark:text-white max-[1366px]:text-lg">
+            <span className="mb-0.5 text-base font-semibold leading-none text-gray-900 dark:text-white">
               {getStatusCount('completed', viewType)}
             </span>
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+            <span className="w-full truncate px-0.5 text-[9px] font-medium uppercase leading-tight tracking-wide text-gray-600 dark:text-gray-400">
               Completed
             </span>
           </button>
@@ -777,21 +777,21 @@ export const EmployeeDashboard: React.FC = () => {
     );
 
     return (
-      <div className="flex h-full min-h-0 flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800/95 p-3">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
-            <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+      <div className="flex h-full min-h-0 flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800/95 p-2.5 sm:p-3">
+        <div className="mb-2 flex shrink-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h3 className="text-xs font-semibold text-gray-900 dark:text-white sm:text-sm">{title}</h3>
+            <p className="mt-0.5 text-[9px] text-gray-500 dark:text-gray-400 sm:text-[10px]">
               By due date · Self + Asgn (Assigned)
             </p>
           </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <button type="button" onClick={() => onShiftMonth(-1)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
-              <span className="material-icons-outlined text-base">chevron_left</span>
+          <div className="flex shrink-0 items-center gap-0.5 self-start sm:self-center">
+            <button type="button" onClick={() => onShiftMonth(-1)} className="rounded p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700">
+              <span className="material-icons-outlined text-sm">chevron_left</span>
             </button>
-            <span className="text-xs font-medium text-gray-700 dark:text-gray-300 min-w-[120px] text-center">{monthLabel}</span>
-            <button type="button" onClick={() => onShiftMonth(1)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
-              <span className="material-icons-outlined text-base">chevron_right</span>
+            <span className="min-w-[6.5rem] text-center text-[11px] font-medium text-gray-700 dark:text-gray-300 sm:min-w-[7.5rem]">{monthLabel}</span>
+            <button type="button" onClick={() => onShiftMonth(1)} className="rounded p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700">
+              <span className="material-icons-outlined text-sm">chevron_right</span>
             </button>
           </div>
         </div>
@@ -800,23 +800,30 @@ export const EmployeeDashboard: React.FC = () => {
             Loading calendar...
           </div>
         ) : (
-          <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-7 gap-1 overflow-y-auto">
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((w) => (
-              <div key={w} className="text-[10px] text-center font-semibold text-gray-500 dark:text-gray-400">{w}</div>
-            ))}
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="mb-0.5 grid shrink-0 grid-cols-7 gap-0.5 sm:gap-1">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((w) => (
+                <div key={w} className="py-0.5 text-center text-[8px] font-semibold text-gray-500 dark:text-gray-400 sm:text-[9px]">
+                  <span className="sm:hidden">{w.charAt(0)}</span>
+                  <span className="hidden sm:inline">{w}</span>
+                </div>
+              ))}
+            </div>
+            <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-7 gap-0.5 sm:gap-1">
             {cells.map((day: any, idx) => (
               <div
                 key={`${day?.date || 'blank'}-${idx}`}
-                className={`min-h-[3.25rem] rounded border p-1 sm:min-h-[3.75rem] ${day ? 'border-gray-200 dark:border-gray-700' : 'border-transparent'}`}
+                className={`min-h-[2.5rem] rounded border p-0.5 sm:min-h-[2.75rem] sm:p-1 ${day ? 'border-gray-200 dark:border-gray-700' : 'border-transparent'}`}
               >
                 {day ? (
                   <>
-                    <div className="text-[10px] font-bold text-gray-700 dark:text-gray-200">{new Date(day.date + 'T12:00:00').getDate()}</div>
+                    <div className="text-[9px] font-bold leading-none text-gray-700 dark:text-gray-200 sm:text-[10px]">{new Date(day.date + 'T12:00:00').getDate()}</div>
                     {dueDayBox(day)}
                   </>
                 ) : null}
               </div>
             ))}
+            </div>
           </div>
         )}
       </div>
@@ -824,8 +831,8 @@ export const EmployeeDashboard: React.FC = () => {
   };
 
   return (
-    <EmployeeLayout contentFitViewport>
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-[1600px] flex-col overflow-y-auto overflow-x-hidden bg-gray-50 px-4 py-2 dark:bg-gray-900 sm:px-5 md:px-6 md:py-3 max-[1366px]:px-2.5 max-[1366px]:py-2">
+    <EmployeeLayout>
+      <div className="mx-auto flex w-full max-w-[1600px] flex-col overflow-x-hidden bg-gray-50 px-3 py-3 pb-24 dark:bg-gray-900 sm:px-5 md:px-6 md:py-4 lg:pb-20">
         {/* Welcome Header */}
         <div className="mb-2 shrink-0 max-[1366px]:mb-1.5">
           <div className="mb-2 flex items-center justify-between max-[1366px]:mb-1.5">
@@ -846,11 +853,11 @@ export const EmployeeDashboard: React.FC = () => {
                     {String(user?.name || 'U').trim().charAt(0).toUpperCase()}
                   </div>
                 )}
-                <div>
-                  <h1 className="text-xl md:text-2xl font-semibold text-gray-900 dark:text-white">
+                <div className="min-w-0">
+                  <h1 className="truncate text-lg font-semibold text-gray-900 dark:text-white sm:text-xl md:text-2xl">
                     Hello {user?.name || 'User'}
                   </h1>
-                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-400 md:text-sm max-[1366px]:mt-0.5 max-[1366px]:text-[11px]">
+                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-400 sm:text-sm">
                     Here's an overview of your tasks and progress
                   </p>
                 </div>
@@ -884,14 +891,17 @@ export const EmployeeDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Tasks + calendar keep full height; financial/events scroll below */}
-        <div className="flex shrink-0 min-h-[calc(100svh-12.5rem)] flex-col gap-3 max-[1366px]:min-h-[calc(100svh-11rem)] lg:min-h-[calc(100svh-10.5rem)]">
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 md:gap-5 lg:grid-cols-2 lg:items-stretch">
-            <div className="flex min-h-0 min-w-0 flex-col gap-6 overflow-y-auto overflow-x-hidden md:gap-8 max-[1366px]:gap-4">
-              {renderTaskRow(selfTasks, 'self', 'Self Tasks', selfTasksToDoIconRef, selfTasksInProgressIconRef, selfTasksCompletedIconRef)}
-              {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks', assignedTasksToDoIconRef, assignedTasksInProgressIconRef, assignedTasksCompletedIconRef)}
+        <div className="flex flex-col gap-4 md:gap-5">
+          <div className="grid grid-cols-1 gap-3 md:gap-4 lg:grid-cols-2 lg:items-stretch">
+            <div className="flex min-h-0 min-w-0 flex-col gap-3 lg:grid lg:h-full lg:grid-rows-2 lg:gap-3">
+              <div className="flex min-h-0 flex-1 flex-col">
+                {renderTaskRow(selfTasks, 'self', 'Self Tasks', selfTasksToDoIconRef, selfTasksInProgressIconRef, selfTasksCompletedIconRef)}
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col">
+                {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks', assignedTasksToDoIconRef, assignedTasksInProgressIconRef, assignedTasksCompletedIconRef)}
+              </div>
             </div>
-            <section className="flex min-h-0 min-w-0 flex-col overflow-y-auto overflow-x-hidden">
+            <section className="flex min-h-[320px] min-w-0 flex-col lg:min-h-0 lg:h-full">
               {renderCalendarSection(
                 'Tasks (by due date)',
                 selfCalendarMonth,

@@ -545,8 +545,8 @@ export function OrganizationStructureHorizontalChart({
       ) : null}
 
       <div className="rounded-xl border border-slate-200 bg-slate-100/80 dark:border-slate-700 dark:bg-slate-900/40">
-        <div className="max-w-full overflow-x-auto overflow-y-visible pb-2">
-          <div className="relative" style={{ width: chartWidth }}>
+        <div className="max-w-full overflow-x-auto pb-2">
+          <div className="relative" style={{ width: chartWidth, minHeight: chartBodyHeight }}>
           {Array.from({ length: resolvedColumnCount }, (_, i) => {
             const theme = levelThemePalette[i % levelThemePalette.length];
             return (

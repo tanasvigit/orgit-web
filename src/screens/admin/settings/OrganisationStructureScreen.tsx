@@ -646,7 +646,7 @@ export const OrganizationStructureBuilderPanel: React.FC = () => {
 
   return (
     <>
-      <div className="mx-auto w-full max-w-none px-2 py-3 pb-6 sm:px-3 md:px-4 md:py-4">
+      <div className="w-full px-2 py-3 pb-4 sm:px-3 md:px-4 md:py-4">
         <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
           Stages are ordered columns (Root, Stage 2, …). Add, view, and edit nodes from each card; use the toolbar to delete the selected node.
         </p>
@@ -771,9 +771,9 @@ export const OrganisationStructureScreen: React.FC = () => {
   }, []);
 
   return (
-    <AdminLayout contentFitViewport>
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col p-6 md:p-8">
-        <div className="mb-4 shrink-0">
+    <AdminLayout>
+      <div className="mx-auto w-full max-w-6xl p-6 pb-24 md:p-8 md:pb-20">
+        <div className="mb-4">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Organisation Structure</h1>
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
             Create and manage your organisation hierarchy in the builder below.
@@ -782,17 +782,15 @@ export const OrganisationStructureScreen: React.FC = () => {
 
         <section
           id="org-builder"
-          className="flex min-h-0 flex-1 flex-col scroll-mt-6 rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800"
+          className="scroll-mt-6 rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800"
         >
-          <div className="shrink-0 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+          <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Hierarchy builder</h2>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               Stages are chart columns only. Each node uses its own level, entity field, and name — fully dynamic.
             </p>
           </div>
-          <div className="min-h-0 flex-1 overflow-hidden">
-            <OrganizationStructureBuilderPanel />
-          </div>
+          <OrganizationStructureBuilderPanel />
         </section>
       </div>
     </AdminLayout>
