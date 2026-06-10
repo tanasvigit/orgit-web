@@ -53,7 +53,7 @@ export const GENDER_OPTIONS = ['Male', 'Female', 'Other', 'Prefer not to say'] a
 export const MODULE_ACCESS_OPTIONS = ['All', 'Messaging', 'Dashboard', 'Tasks', 'Documents'] as const;
 
 export const DEFAULT_EMPLOYEE_PERMISSIONS: EmployeePermissions = {
-  moduleAccess: ['Tasks', 'Messaging'],
+  moduleAccess: ['Dashboard', 'Tasks', 'Messaging'],
   rights: { create: false, edit: true, delete: false, approve: false, view: true },
   taskRights: {
     createTask: false,
