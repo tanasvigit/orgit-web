@@ -87,25 +87,25 @@ export const DocumentLibrary: React.FC = () => {
 
   return (
     <AdminLayout>
-      <div className="p-6 md:p-8 relative">
-        {/* Create Document Button - Top Right Corner */}
-        <button
-          onClick={() => navigate('/admin/documents/create')}
-          className="fixed top-24 right-8 z-40 bg-primary hover:bg-primary-dark text-white font-semibold py-2.5 px-4 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-primary/40 active:scale-95 hover:scale-105"
-        >
-          <span className="material-symbols-outlined text-[20px]">add</span>
-          <span>Create Document</span>
-        </button>
+      <div className="p-6 md:p-8">
         {/* Page Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+        <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-1.5">
+            <h1 className="mb-1.5 text-xl font-bold text-gray-900 dark:text-white md:text-2xl">
               Document Management
             </h1>
-            <p className="text-gray-500 dark:text-gray-400 text-sm">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               Create, manage, and organize your documents
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => navigate('/admin/documents/create')}
+            className="flex shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-bold text-white shadow-md transition-all hover:bg-primary/90 focus:outline-none focus:ring-4 focus:ring-primary/20 active:scale-[0.98]"
+          >
+            <span className="material-symbols-outlined">add</span>
+            <span>Create Document</span>
+          </button>
         </div>
 
         {/* Filters */}
