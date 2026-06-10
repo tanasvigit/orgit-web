@@ -317,21 +317,35 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
   const sidebarContent = (
     <>
       {/* Desktop Header */}
-      <div className={`hidden md:block p-6 pb-2 shrink-0 relative max-[1366px]:p-3 max-[1366px]:pb-0.5 ${isCollapsed ? 'px-4 max-[1366px]:px-2.5' : ''}`}>
-        <div className={`flex items-center gap-3 mb-8 max-[1366px]:mb-3 ${isCollapsed ? 'justify-center' : ''}`}>
+      <div className={`hidden md:block p-6 pb-2 shrink-0 relative max-[1366px]:p-3 max-[1366px]:pb-0.5 ${isCollapsed ? 'px-3 max-[1366px]:px-2' : ''}`}>
+        <div className={`mb-8 flex items-center gap-2 max-[1366px]:mb-3 ${isCollapsed ? 'justify-center' : 'w-full'}`}>
           <img
             src={ORGIT_LOGO_SRC}
             alt="ORGIT"
             className={`shrink-0 object-contain ${
-              isCollapsed ? 'h-9 w-9 max-[1366px]:h-8 max-[1366px]:w-8' : 'h-11 w-11 max-[1366px]:h-10 max-[1366px]:w-10'
+              isCollapsed ? 'h-8 w-8 max-[1366px]:h-7 max-[1366px]:w-7' : 'h-11 w-11 max-[1366px]:h-10 max-[1366px]:w-10'
             }`}
           />
           {!isCollapsed && (
-            <div className="flex flex-col min-w-0">
-              <h1 className="text-slate-900 text-lg font-extrabold tracking-tight leading-none truncate max-[1366px]:text-base">ORGIT</h1>
-              <span className="text-[10px] text-slate-500 font-medium max-[1366px]:text-[9px]">Enterprise Admin</span>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <h1 className="truncate text-lg font-extrabold leading-none tracking-tight text-slate-900 max-[1366px]:text-base">ORGIT</h1>
+              <span className="text-[10px] font-medium text-slate-500 max-[1366px]:text-[9px]">Enterprise Admin</span>
             </div>
           )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggle();
+            }}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-primary text-white shadow-md shadow-primary/30 transition-all hover:scale-105 hover:bg-primary/90 max-[1366px]:h-7 max-[1366px]:w-7"
+            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            <span className="material-icons-outlined text-base font-bold leading-none max-[1366px]:text-sm">
+              {isCollapsed ? 'chevron_right' : 'chevron_left'}
+            </span>
+          </button>
         </div>
       </div>
       <nav
@@ -528,20 +542,6 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
         }}
       >
         {sidebarContent}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleToggle();
-          }}
-          className="absolute top-1/2 right-0 z-30 flex h-9 w-9 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border-2 border-primary bg-primary text-white shadow-lg shadow-primary/40 ring-4 ring-primary/20 transition-all hover:scale-105 hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/50"
-          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <span className="material-icons-outlined text-xl font-bold leading-none">
-            {isCollapsed ? 'chevron_right' : 'chevron_left'}
-          </span>
-        </button>
       </aside>
 
       {/* Mobile Sidebar */}

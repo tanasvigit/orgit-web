@@ -22,7 +22,7 @@ import { waitForSocketConnection } from '../../services/socketService';
 import { getTaskCreationUserConfig, taskCreationUserConfigQueryKey } from '../../services/userTaskCreationConfigService';
 import { useTaskCardDisplayConfig } from '../../hooks/useTaskCardDisplayConfig';
 import { DashboardCalendarDayBadge } from '../../components/dashboard/DashboardCalendarDayBadge';
-import { FinancialInsightsReport } from '../../components/dashboard/FinancialInsightsReport';
+import { DashboardReportsSection } from '../../components/dashboard/DashboardReportsSection';
 import {
   getTaskStatusCardCircleClass,
   TaskStatusCardIcon,
@@ -781,9 +781,6 @@ export const EmployeeDashboard: React.FC = () => {
         <div className="mb-2 flex shrink-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <h3 className="text-xs font-semibold text-gray-900 dark:text-white sm:text-sm">{title}</h3>
-            <p className="mt-0.5 text-[9px] text-gray-500 dark:text-gray-400 sm:text-[10px]">
-              By due date · Self + Asgn (Assigned)
-            </p>
           </div>
           <div className="flex shrink-0 items-center gap-0.5 self-start sm:self-center">
             <button type="button" onClick={() => onShiftMonth(-1)} className="rounded p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -893,17 +890,22 @@ export const EmployeeDashboard: React.FC = () => {
 
         <div className="flex flex-col gap-4 md:gap-5">
           <div className="grid grid-cols-1 gap-3 md:gap-4 lg:grid-cols-2 lg:items-stretch">
-            <div className="flex min-h-0 min-w-0 flex-col gap-3 lg:grid lg:h-full lg:grid-rows-2 lg:gap-3">
-              <div className="flex min-h-0 flex-1 flex-col">
-                {renderTaskRow(selfTasks, 'self', 'Self Tasks', selfTasksToDoIconRef, selfTasksInProgressIconRef, selfTasksCompletedIconRef)}
+            <section className="flex min-h-0 min-w-0 flex-col rounded-xl border border-gray-200 bg-white p-2.5 dark:border-gray-700 dark:bg-slate-800/95 sm:p-3 lg:h-full">
+              <div className="mb-2 shrink-0">
+                <h3 className="text-xs font-semibold text-gray-900 dark:text-white sm:text-sm">Dashboard</h3>
               </div>
-              <div className="flex min-h-0 flex-1 flex-col">
-                {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks', assignedTasksToDoIconRef, assignedTasksInProgressIconRef, assignedTasksCompletedIconRef)}
+              <div className="flex min-h-0 flex-1 flex-col gap-3 lg:grid lg:grid-rows-2 lg:gap-0">
+                <div className="flex min-h-0 flex-1 flex-col lg:pb-3">
+                  {renderTaskRow(selfTasks, 'self', 'Self Tasks', selfTasksToDoIconRef, selfTasksInProgressIconRef, selfTasksCompletedIconRef)}
+                </div>
+                <div className="flex min-h-0 flex-1 flex-col border-t border-gray-100 pt-3 dark:border-gray-700 lg:pt-3">
+                  {renderTaskRow(assignedTasks, 'assigned', 'Assigned Tasks', assignedTasksToDoIconRef, assignedTasksInProgressIconRef, assignedTasksCompletedIconRef)}
+                </div>
               </div>
-            </div>
+            </section>
             <section className="flex min-h-[320px] min-w-0 flex-col lg:min-h-0 lg:h-full">
               {renderCalendarSection(
-                'Tasks (by due date)',
+                'Calendar',
                 selfCalendarMonth,
                 (delta) => {
                   setSelfCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
@@ -917,10 +919,11 @@ export const EmployeeDashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="mt-4 shrink-0 w-full overflow-x-auto">
-          <FinancialInsightsReport
+        <div className="mt-4 shrink-0 w-full">
+          <DashboardReportsSection
             tasks={getCurrentTasks}
             creatorUserId={user?.id || (user as any)?.userId}
+            dueSoonDays={dueSoonDays}
           />
         </div>
 

@@ -14,12 +14,18 @@ export {
 } from './taskCardDisplayConfig';
 
 /** Mirrors backend DEFAULT_TASK_CREATION_USER_CONFIG for offline/fallback use. */
+export const DEFAULT_TASK_PUSH_NOTIFICATION_TIME = '09:00';
+export const DEFAULT_TASK_PUSH_TIMEZONE = 'Asia/Kolkata';
+
 export const FALLBACK_TASK_CREATION_USER_CONFIG = {
   dueDaysFromStart: 10,
   targetDaysBeforeDue: 3,
   autoEscalateTrigger: 'target_date' as const,
   taskUnitPreference: TASK_UNIT_PREFERENCE_ORG,
   taskCardDisplay: { ...DEFAULT_TASK_CARD_DISPLAY },
+  taskPushNotificationTime: DEFAULT_TASK_PUSH_NOTIFICATION_TIME,
+  taskPushNotificationsEnabled: true,
+  timezone: DEFAULT_TASK_PUSH_TIMEZONE,
 };
 
 export type TaskCreationUserConfig = {
@@ -28,7 +34,38 @@ export type TaskCreationUserConfig = {
   autoEscalateTrigger: 'target_date' | 'due_date';
   taskUnitPreference: TaskUnitPreferenceOrg;
   taskCardDisplay?: TaskCardDisplayConfig;
+  taskPushNotificationTime: string;
+  taskPushNotificationsEnabled: boolean;
+  timezone: string;
 };
+
+function normalizeTaskPushTime(raw: unknown): string {
+  const s = String(raw ?? '').trim();
+  const match = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return DEFAULT_TASK_PUSH_NOTIFICATION_TIME;
+  const hour = Math.min(23, Math.max(0, Number.parseInt(match[1], 10)));
+  const minute = Math.min(59, Math.max(0, Number.parseInt(match[2], 10)));
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function normalizeTimezone(raw: unknown): string {
+  const tz = String(raw ?? '').trim();
+  if (!tz) return DEFAULT_TASK_PUSH_TIMEZONE;
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return tz;
+  } catch {
+    return DEFAULT_TASK_PUSH_TIMEZONE;
+  }
+}
+
+export function detectBrowserTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TASK_PUSH_TIMEZONE;
+  } catch {
+    return DEFAULT_TASK_PUSH_TIMEZONE;
+  }
+}
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -70,6 +107,12 @@ export function mergeTaskCreationUserConfig(
   }
 
   base.taskCardDisplay = mergeTaskCardDisplayConfig(stored.taskCardDisplay);
+
+  base.taskPushNotificationTime = normalizeTaskPushTime(stored.taskPushNotificationTime);
+  if (typeof stored.taskPushNotificationsEnabled === 'boolean') {
+    base.taskPushNotificationsEnabled = stored.taskPushNotificationsEnabled;
+  }
+  base.timezone = normalizeTimezone(stored.timezone);
 
   return base;
 }

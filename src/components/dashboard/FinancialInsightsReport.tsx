@@ -15,9 +15,16 @@ interface FinancialInsightsReportProps {
   tasks: any[];
   creatorUserId?: string | null;
   compact?: boolean;
+  /** When nested inside Reports accordion, omit the section title row. */
+  hideTitle?: boolean;
 }
 
-export function FinancialInsightsReport({ tasks, creatorUserId, compact = false }: FinancialInsightsReportProps) {
+export function FinancialInsightsReport({
+  tasks,
+  creatorUserId,
+  compact = false,
+  hideTitle = false,
+}: FinancialInsightsReportProps) {
   const [periodFilter, setPeriodFilter] = useState<FinancialReportPeriod>('weekly');
   const financialTasks = filterFinancialTasks(tasks, creatorUserId);
   const rows = buildFinancialReportRows(financialTasks);
@@ -33,13 +40,21 @@ export function FinancialInsightsReport({ tasks, creatorUserId, compact = false 
 
   return (
     <div className={compact ? 'space-y-2' : 'space-y-4'}>
-      <div className={`flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between ${compact ? 'mb-1' : 'mb-4 sm:gap-3'}`}>
-        <div className="flex min-w-0 items-center gap-2">
-          <div className={`w-1 shrink-0 bg-emerald-500 rounded-full ${compact ? 'h-5' : 'h-8'}`} />
-          <h2 className={`font-semibold text-gray-900 dark:text-white ${compact ? 'text-sm' : 'text-lg sm:text-xl md:text-2xl'}`}>
-            {FINANCIAL_REPORT_TITLE}
-          </h2>
-        </div>
+      <div
+        className={`flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center ${
+          hideTitle ? 'sm:justify-end' : 'sm:justify-between'
+        } ${compact ? 'mb-1' : 'mb-4 sm:gap-3'}`}
+      >
+        {!hideTitle ? (
+          <div className="flex min-w-0 items-center gap-2">
+            <div className={`w-1 shrink-0 bg-emerald-500 rounded-full ${compact ? 'h-5' : 'h-8'}`} />
+            <h2
+              className={`font-semibold text-gray-900 dark:text-white ${compact ? 'text-sm' : 'text-lg sm:text-xl md:text-2xl'}`}
+            >
+              {FINANCIAL_REPORT_TITLE}
+            </h2>
+          </div>
+        ) : null}
         <button
           type="button"
           onClick={handleDownload}

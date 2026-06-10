@@ -127,7 +127,7 @@ export function EmployeeMasterFormSections({
   };
 
   return (
-    <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+    <div className="space-y-4">
       <Section title="1. Employee personal details">
         <div className="grid gap-3 sm:grid-cols-2">
           <div>

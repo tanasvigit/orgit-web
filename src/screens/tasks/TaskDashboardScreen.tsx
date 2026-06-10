@@ -24,8 +24,12 @@ import { resolveTaskTitleWithPeriod } from '../../utils/taskPeriod';
 import { resolveTaskUnitForPreference } from '../../utils/taskUnitDisplay';
 import { getTaskCreationUserConfig, taskCreationUserConfigQueryKey } from '../../services/userTaskCreationConfigService';
 import { useClickOutside } from '../../hooks/useClickOutside';
-import { AppIcon } from '../../components/shared/AppIcon';
 import { FilterChipScrollRow } from '../../components/shared/FilterChipScrollRow';
+import {
+  getTaskStatusCardCircleClass,
+  TaskStatusCardIcon,
+  type DashboardTaskStatStatus,
+} from '../../components/dashboard/TaskStatusCardIcon';
 import { taskStatusToAppIcon } from '../../constants/appIcons';
 import { useTaskCardDisplayConfig } from '../../hooks/useTaskCardDisplayConfig';
 import type { TaskCardDisplayConfig } from '../../utils/taskCardDisplayConfig';
@@ -149,15 +153,26 @@ function TaskStatusIcon({ category }: { category: Exclude<StatusFilter, 'all'> }
   const appIcon = taskStatusToAppIcon(category);
   const title = STATUS_LABELS[category];
   if (appIcon) {
-    return <AppIcon name={appIcon} variant="inline" alt={title} />;
+    return (
+      <span
+        className={`flex size-9 shrink-0 items-center justify-center rounded-full ${getTaskStatusCardCircleClass(category as DashboardTaskStatStatus)}`}
+        title={title}
+      >
+        <TaskStatusCardIcon status={category as DashboardTaskStatStatus} size={25} />
+      </span>
+    );
   }
   return (
     <span
-      className={`material-icons-round text-[22px] ${STATUS_ICON_COLORS[category]}`}
+      className="flex size-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 ring-1 ring-indigo-200/70 dark:bg-indigo-900/30 dark:ring-indigo-800/50"
       title={title}
-      aria-hidden
     >
-      event_note
+      <span
+        className={`material-icons-round text-[25px] ${STATUS_ICON_COLORS[category]}`}
+        aria-hidden
+      >
+        event_note
+      </span>
     </span>
   );
 }
@@ -1174,26 +1189,123 @@ export const TaskDashboardScreen: React.FC = () => {
     <div className="flex flex-col h-full min-h-0 bg-background-light dark:bg-background-dark">
       {/* Header with Filters */}
       <div className="shrink-0 p-2.5 pb-2 border-b border-border-light dark:border-border-dark bg-white dark:bg-surface-dark/50 backdrop-blur-sm z-10">
-        <div className="flex items-center justify-between mb-2">
-          <h1 className="text-base font-bold tracking-tight text-gray-900 dark:text-white">Tasks</h1>
-          <button
-            type="button"
-            onClick={() => {
-              if (bulkSelectMode) exitBulkSelectMode();
-              else setBulkSelectMode(true);
-            }}
-            className={`h-9 px-2.5 rounded-lg flex items-center gap-1 text-xs font-semibold border transition-colors ${
-              bulkSelectMode
-                ? 'bg-primary/10 border-primary text-primary'
-                : 'border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'
-            }`}
-            title={bulkSelectMode ? 'Cancel selection' : 'Select tasks to assign users'}
-          >
-            <span className="material-icons-outlined text-base">
-              {bulkSelectMode ? 'close' : 'checklist'}
-            </span>
-            {bulkSelectMode ? 'Cancel' : 'Select'}
-          </button>
+        {/* Row 1: Tasks heading + search */}
+        <div className="flex items-center gap-2 mb-2">
+          <h1 className="shrink-0 text-base font-bold tracking-tight text-gray-900 dark:text-white">Tasks</h1>
+          <div className="relative z-30 min-w-0 flex-1" ref={suggestionsRef}>
+            <div
+              className={`relative flex items-center rounded-xl border bg-white dark:bg-surface-dark transition-all duration-200 ${
+                showSuggestions && suggestions.length > 0
+                  ? 'border-primary/40 shadow-md shadow-primary/5 dark:shadow-primary/10'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-sm'
+              }`}
+            >
+              <span className="absolute left-3 flex items-center text-gray-400 dark:text-gray-500 pointer-events-none">
+                <span className="material-icons-outlined text-lg">search</span>
+              </span>
+              <input
+                ref={searchInputRef}
+                className="w-full pl-9 pr-8 py-2 bg-transparent border-0 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-0 focus:outline-none rounded-xl"
+                placeholder="Search tasks (e.g. G, GS for GSTR 1, GSTR 9…)"
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setShowSuggestions(true);
+                  setHighlightedIndex(-1);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                onKeyDown={(e) => {
+                  if (!showSuggestions || suggestions.length === 0) {
+                    if (e.key === 'Escape') setShowSuggestions(false);
+                    return;
+                  }
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setHighlightedIndex((i) => (i < suggestions.length - 1 ? i + 1 : 0));
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setHighlightedIndex((i) => (i > 0 ? i - 1 : suggestions.length - 1));
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const item = suggestions[highlightedIndex >= 0 ? highlightedIndex : 0];
+                    if (item?.title) {
+                      setSearchQuery(item.title);
+                      setShowSuggestions(false);
+                      setHighlightedIndex(-1);
+                    }
+                  } else if (e.key === 'Escape') {
+                    setShowSuggestions(false);
+                    setHighlightedIndex(-1);
+                  }
+                }}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setShowSuggestions(false);
+                    setHighlightedIndex(-1);
+                    searchInputRef.current?.focus();
+                  }}
+                  className="absolute right-2 flex items-center justify-center w-7 h-7 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-gray-300 transition-colors"
+                  aria-label="Clear search"
+                >
+                  <span className="material-icons-outlined text-base">close</span>
+                </button>
+              )}
+            </div>
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="absolute top-full left-0 right-0 z-50 mt-1 overflow-hidden rounded-xl border border-primary/40 bg-white shadow-lg shadow-primary/5 dark:border-gray-600 dark:bg-surface-dark dark:shadow-primary/10">
+                <div className="max-h-60 overflow-y-auto py-1">
+                  {suggestions.map((item, index) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setSearchQuery(item.title || '');
+                        setShowSuggestions(false);
+                        setHighlightedIndex(-1);
+                        searchInputRef.current?.focus();
+                      }}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
+                        index === highlightedIndex
+                          ? 'bg-gray-100 dark:bg-gray-700/80 text-gray-900 dark:text-white'
+                          : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800/50'
+                      }`}
+                    >
+                      <span className="material-icons-outlined text-[22px] text-gray-400 dark:text-gray-500 shrink-0">
+                        {item.type === 'client' ? 'business' : item.type === 'tag' ? 'sell' : 'assignment'}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium truncate block">
+                          {item.title}
+                        </span>
+                        {item.type === 'client' && item.code && (
+                          <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate block">
+                            Client • {item.code}
+                          </span>
+                        )}
+                        {item.type === 'service' && item.frequency && (
+                          <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate block">
+                            Service • {item.frequency}
+                          </span>
+                        )}
+                        {item.type === 'tag' && (
+                          <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate block">
+                            Tag
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {bulkSelectMode && (
@@ -1228,124 +1340,6 @@ export const TaskDashboardScreen: React.FC = () => {
             </div>
           </div>
         )}
-        
-        {/* Google-style Search Box: input + suggestions in one container */}
-        <div
-          className={`relative mb-2.5 rounded-xl border bg-white dark:bg-surface-dark overflow-hidden transition-all duration-200 z-10 ${
-            showSuggestions && suggestions.length > 0
-              ? 'border-primary/40 shadow-lg shadow-primary/5 dark:shadow-primary/10'
-              : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-md'
-          }`}
-          ref={suggestionsRef}
-        >
-          <div className="relative flex items-center">
-            <span className="absolute left-4 flex items-center text-gray-400 dark:text-gray-500 pointer-events-none">
-              <span className="material-icons-outlined text-xl">search</span>
-            </span>
-            <input
-              ref={searchInputRef}
-              className="w-full pl-11 pr-10 py-2 bg-transparent border-0 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-0 focus:outline-none"
-              placeholder="Search tasks (e.g. G, GS for GSTR 1, GSTR 9…)"
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setShowSuggestions(true);
-                setHighlightedIndex(-1);
-              }}
-              onFocus={() => setShowSuggestions(true)}
-              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-              onKeyDown={(e) => {
-                if (!showSuggestions || suggestions.length === 0) {
-                  if (e.key === 'Escape') setShowSuggestions(false);
-                  return;
-                }
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  setHighlightedIndex((i) => (i < suggestions.length - 1 ? i + 1 : 0));
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  setHighlightedIndex((i) => (i > 0 ? i - 1 : suggestions.length - 1));
-                } else if (e.key === 'Enter') {
-                  e.preventDefault();
-                  const item = suggestions[highlightedIndex >= 0 ? highlightedIndex : 0];
-                  if (item?.title) {
-                    setSearchQuery(item.title);
-                    setShowSuggestions(false);
-                    setHighlightedIndex(-1);
-                  }
-                } else if (e.key === 'Escape') {
-                  setShowSuggestions(false);
-                  setHighlightedIndex(-1);
-                }
-              }}
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  setShowSuggestions(false);
-                  setHighlightedIndex(-1);
-                  searchInputRef.current?.focus();
-                }}
-                className="absolute right-3 flex items-center justify-center w-8 h-8 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-gray-300 transition-colors"
-                aria-label="Clear search"
-              >
-                <span className="material-icons-outlined text-lg">close</span>
-              </button>
-            )}
-          </div>
-          {showSuggestions && suggestions.length > 0 && (
-            <>
-              <div className="border-t border-gray-100 dark:border-gray-700" />
-              <div className="max-h-60 overflow-y-auto py-1">
-                {suggestions.map((item, index) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      setSearchQuery(item.title || '');
-                      setShowSuggestions(false);
-                      setHighlightedIndex(-1);
-                      searchInputRef.current?.focus();
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
-                      index === highlightedIndex
-                        ? 'bg-gray-100 dark:bg-gray-700/80 text-gray-900 dark:text-white'
-                        : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800/50'
-                    }`}
-                  >
-                    <span className="material-icons-outlined text-[22px] text-gray-400 dark:text-gray-500 shrink-0">
-                      {item.type === 'client' ? 'business' : item.type === 'tag' ? 'sell' : 'assignment'}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <span className="font-medium truncate block">
-                        {item.title}
-                      </span>
-                      {item.type === 'client' && item.code && (
-                        <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate block">
-                          Client • {item.code}
-                        </span>
-                      )}
-                      {item.type === 'service' && item.frequency && (
-                        <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate block">
-                          Service • {item.frequency}
-                        </span>
-                      )}
-                      {item.type === 'tag' && (
-                        <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate block">
-                          Tag
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
 
         {viewFilter === 'assigned' && (
           <div className="mb-2.5 relative" ref={teamMemberFilterRef}>
@@ -1428,42 +1422,61 @@ export const TaskDashboardScreen: React.FC = () => {
           </div>
         )}
 
-        {/* Status Filters - Enhanced Design */}
-        <div className="space-y-2">
-          <FilterChipScrollRow>
-            {([
-              { key: 'all', label: 'All' },
-              { key: 'self', label: 'Self Tasks' },
-              { key: 'assigned', label: 'Assigned Tasks' },
-            ] as const).map(({ key, label }) => {
-              const isActive = viewFilter === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => {
-                    setViewFilter(key as ViewFilter);
-                  }}
-                  className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-semibold border transition-all duration-200 ${
-                    isActive
-                      ? 'bg-slate-700 text-white border-slate-700'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </FilterChipScrollRow>
-          <FilterChipScrollRow>
+        {/* Row 2: All | Self | Assigned + Select */}
+        <div className="flex items-center gap-1 mb-2">
+          {([
+            { key: 'all', label: 'All' },
+            { key: 'self', label: 'Self Tasks' },
+            { key: 'assigned', label: 'Assigned Tasks' },
+          ] as const).map(({ key, label }) => {
+            const isActive = viewFilter === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  setViewFilter(key as ViewFilter);
+                }}
+                className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-semibold border transition-all duration-200 ${
+                  isActive
+                    ? 'bg-slate-700 text-white border-slate-700'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => {
+              if (bulkSelectMode) exitBulkSelectMode();
+              else setBulkSelectMode(true);
+            }}
+            className={`ml-auto shrink-0 h-8 px-2.5 rounded-lg flex items-center gap-1 text-[10px] font-semibold border transition-colors ${
+              bulkSelectMode
+                ? 'bg-primary/10 border-primary text-primary'
+                : 'border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'
+            }`}
+            title={bulkSelectMode ? 'Cancel selection' : 'Select tasks to assign users'}
+          >
+            <span className="material-icons-outlined text-base">
+              {bulkSelectMode ? 'close' : 'checklist'}
+            </span>
+            {bulkSelectMode ? 'Cancel' : 'Select'}
+          </button>
+        </div>
+
+        {/* Row 3: Status filters with scroll arrows */}
+        <FilterChipScrollRow>
               {([
+                { key: 'all', label: 'All', color: 'gray' },
                 { key: 'scheduled', label: 'Scheduled', color: 'indigo' },
                 { key: 'todo', label: 'To Do', color: 'blue' },
                 { key: 'inprogress', label: 'In Progress', color: 'purple' },
                 { key: 'duesoon', label: 'Due Soon', color: 'orange' },
                 { key: 'overdue', label: 'Overdue', color: 'red' },
                 { key: 'completed', label: 'Completed', color: 'green' },
-                { key: 'all', label: 'All', color: 'gray' },
               ] as const).map(({ key, label, color }) => {
                 const isActive = statusFilter === key;
                 const colorClasses = {
@@ -1490,8 +1503,7 @@ export const TaskDashboardScreen: React.FC = () => {
                   </button>
                 );
               })}
-          </FilterChipScrollRow>
-        </div>
+        </FilterChipScrollRow>
       </div>
 
       {/* Bulk Upload Tasks - Admin/Super Admin only */}

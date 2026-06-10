@@ -91,10 +91,35 @@ const getISOWeekNumber = (date: Date): number => {
   return Math.ceil(((utc.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 };
 
+/** Previous calendar month (e.g. June cycle → May bill period). Display only. */
+export const shiftToPreviousCalendarMonth = (date: Date): Date =>
+  new Date(date.getFullYear(), date.getMonth() - 1, 1);
+
+const resolveRecurrenceRaw = (task: TaskPeriodTaskLike): string =>
+  String(task.recurrence_type || task.frequency || task.task_frequency || '')
+    .toLowerCase()
+    .trim();
+
+/**
+ * Monthly recurring tasks show the prior month's bill period (e.g. created in June → May).
+ * Applies to manual and auto-generated recurring instances. Not stored in DB.
+ */
+export const shouldDisplayPreviousMonthPeriod = (task: TaskPeriodTaskLike): boolean => {
+  const raw = resolveRecurrenceRaw(task);
+  if (raw === 'quarterly') return false;
+  if (raw === 'monthly') return true;
+  const taskType = String(task.task_type || task.taskType || '').toLowerCase();
+  if (taskType === 'recurring' || taskType === 'recurring_instance') {
+    return resolveRecurrencePeriodKind(task) === 'monthly';
+  }
+  return false;
+};
+
 /** Format task period label from recurrence kind and cycle anchor date. */
 export const formatTaskPeriod = (
   kind: RecurrencePeriodKind,
-  anchorDate: Date
+  anchorDate: Date,
+  options?: { previousMonthForMonthly?: boolean }
 ): string => {
   switch (kind) {
     case 'daily':
@@ -103,8 +128,13 @@ export const formatTaskPeriod = (
       const week = getISOWeekNumber(anchorDate);
       return `Week ${week}, ${MONTH_SHORT(anchorDate)} ${anchorDate.getFullYear()}`;
     }
-    case 'monthly':
-      return `${MONTH_SHORT(anchorDate)} ${anchorDate.getFullYear()}`;
+    case 'monthly': {
+      const periodDate =
+        options?.previousMonthForMonthly === true
+          ? shiftToPreviousCalendarMonth(anchorDate)
+          : anchorDate;
+      return `${MONTH_SHORT(periodDate)} ${periodDate.getFullYear()}`;
+    }
     case 'yearly':
       return String(anchorDate.getFullYear());
     default:
@@ -119,7 +149,9 @@ export const formatTaskPeriodFromTask = (task: TaskPeriodTaskLike | null | undef
   if (kind === 'one_time') return '';
   const anchor = parseAnchorDate(task);
   if (!anchor) return '';
-  return formatTaskPeriod(kind, anchor);
+  return formatTaskPeriod(kind, anchor, {
+    previousMonthForMonthly: shouldDisplayPreviousMonthPeriod(task),
+  });
 };
 
 const FREQUENCY_DISPLAY_LABELS: Record<string, string> = {

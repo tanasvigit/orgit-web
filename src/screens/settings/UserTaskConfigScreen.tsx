@@ -15,6 +15,7 @@ import {
   TASK_CARD_DISPLAY_FIELD_KEYS,
   TASK_CARD_DISPLAY_FIELD_LABELS,
   mergeTaskCardDisplayConfig,
+  detectBrowserTimezone,
   type TaskCardDisplayConfig,
   type TaskCreationUserConfig,
 } from '../../utils/taskCreationUserConfig';
@@ -41,6 +42,12 @@ export const UserTaskConfigScreen: React.FC = () => {
   const [taskCardDisplay, setTaskCardDisplay] = useState<TaskCardDisplayConfig>(
     mergeTaskCardDisplayConfig(FALLBACK_TASK_CREATION_USER_CONFIG.taskCardDisplay)
   );
+  const [taskPushNotificationsEnabled, setTaskPushNotificationsEnabled] = useState(
+    FALLBACK_TASK_CREATION_USER_CONFIG.taskPushNotificationsEnabled
+  );
+  const [taskPushNotificationTime, setTaskPushNotificationTime] = useState(
+    FALLBACK_TASK_CREATION_USER_CONFIG.taskPushNotificationTime
+  );
 
   const { isLoading, error } = useQuery(taskCreationUserConfigQueryKey, getTaskCreationUserConfig, {
     onSuccess: (data) => {
@@ -49,6 +56,8 @@ export const UserTaskConfigScreen: React.FC = () => {
       setAutoEscalateTrigger(data.autoEscalateTrigger);
       setTaskUnitPreference(data.taskUnitPreference || FALLBACK_TASK_CREATION_USER_CONFIG.taskUnitPreference);
       setTaskCardDisplay(mergeTaskCardDisplayConfig(data.taskCardDisplay));
+      setTaskPushNotificationsEnabled(data.taskPushNotificationsEnabled ?? true);
+      setTaskPushNotificationTime(data.taskPushNotificationTime || FALLBACK_TASK_CREATION_USER_CONFIG.taskPushNotificationTime);
     },
     onError: () => {
       toast.error('Could not load your task defaults. Using built-in defaults until the server is updated.');
@@ -82,12 +91,19 @@ export const UserTaskConfigScreen: React.FC = () => {
       toast.error('Target cannot be more days before due than the due offset from start');
       return;
     }
+    if (!/^\d{2}:\d{2}$/.test(taskPushNotificationTime)) {
+      toast.error('Push notification time must be in HH:MM format (e.g. 09:00)');
+      return;
+    }
     const payload: TaskCreationUserConfig = {
       dueDaysFromStart: due,
       targetDaysBeforeDue: targetBefore,
       autoEscalateTrigger,
       taskUnitPreference,
       taskCardDisplay,
+      taskPushNotificationsEnabled,
+      taskPushNotificationTime,
+      timezone: detectBrowserTimezone(),
     };
     saveMutation.mutate(payload);
   };
@@ -105,8 +121,7 @@ export const UserTaskConfigScreen: React.FC = () => {
               User configuration
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-400">
-              Defaults for new tasks: timeline spacing and auto-escalation trigger when you enable escalation on
-              create.
+              Defaults for new tasks, task card display, daily push notification time, and auto-escalation trigger.
             </p>
           </div>
           <button
@@ -202,6 +217,32 @@ export const UserTaskConfigScreen: React.FC = () => {
               <div className="inline-flex px-4 py-2 rounded-xl text-sm font-semibold border-2 border-primary bg-primary/10 text-primary">
                 Organization unit
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">
+                Time of push notifications for tasks
+              </label>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                Tasks are often created overnight or early morning. You will receive a daily mobile push at this
+                local time summarizing new tasks assigned to you since midnight.
+              </p>
+              <label className="flex cursor-pointer items-center gap-2 mb-3">
+                <input
+                  type="checkbox"
+                  checked={taskPushNotificationsEnabled}
+                  onChange={(e) => setTaskPushNotificationsEnabled(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary/40"
+                />
+                <span className="text-sm text-slate-800 dark:text-slate-200">Enable daily task push notifications</span>
+              </label>
+              <input
+                type="time"
+                value={taskPushNotificationTime}
+                onChange={(e) => setTaskPushNotificationTime(e.target.value)}
+                disabled={!taskPushNotificationsEnabled}
+                className="w-full max-w-xs rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2.5 text-slate-900 dark:text-white disabled:opacity-50"
+              />
             </div>
 
             <div>
