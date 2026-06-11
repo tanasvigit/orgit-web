@@ -316,6 +316,13 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         const type = String(payload?.type || '').toLowerCase();
         if (type === 'message_received') return;
         void updateCounts();
+        if (type === 'task_assigned') {
+          void updateTaskCount();
+        }
+      }),
+      onSocketEvent('task:assignees_added', () => {
+        void updateTaskCount();
+        void updateCounts();
       }),
       onSocketEvent('task:status_changed', () => { void updateCounts(); }),
       onSocketEvent('task:recurrence_created', () => { void updateCounts(); }),
@@ -331,6 +338,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     bumpUnreadForMessage,
     clearConversationUnread,
     updateCounts,
+    updateTaskCount,
   ]);
 
   useEffect(() => {

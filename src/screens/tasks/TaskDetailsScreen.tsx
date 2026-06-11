@@ -740,6 +740,7 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
           queryClient.invalidateQueries(['task', taskId]);
         }
         queryClient.invalidateQueries('tasks');
+        queryClient.invalidateQueries(['conversations', 'task']);
         queryClient.invalidateQueries(['dashboard']);
         queryClient.invalidateQueries(['dashboard-statistics']);
         if (isAdmin) {

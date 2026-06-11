@@ -1098,8 +1098,14 @@ export const TaskDashboardScreen: React.FC = () => {
         socket.on('new_message', handleNewMessage);
         socket.on('message_status_update', handleMessageStatusUpdate);
         socket.on('conversation_messages_read', handleConversationMessagesRead);
+        const handleAssigneesAdded = () => {
+          queryClient.invalidateQueries(['conversations', 'task']);
+          queryClient.invalidateQueries('tasks');
+        };
+
         socket.on('task:status_changed', handleTaskStatusChanged);
         socket.on('task:recurrence_created', handleTaskStatusChanged);
+        socket.on('task:assignees_added', handleAssigneesAdded);
 
         socketRef.current = socket;
 
@@ -1109,6 +1115,7 @@ export const TaskDashboardScreen: React.FC = () => {
           socket.off('conversation_messages_read', handleConversationMessagesRead);
           socket.off('task:status_changed', handleTaskStatusChanged);
           socket.off('task:recurrence_created', handleTaskStatusChanged);
+          socket.off('task:assignees_added', handleAssigneesAdded);
         };
       } catch (error) {
         console.error('Socket setup error:', error);
