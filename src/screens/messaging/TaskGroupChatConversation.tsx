@@ -8,6 +8,7 @@ import { conversationService } from '../../services/conversationService';
 import { taskService } from '../../services/taskService';
 import { waitForSocketConnection, joinConversationRoom, leaveConversationRoom, onSocketEvent, offSocketEvent, sendMessageViaSocket, getSocket } from '../../services/socketService';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { useToast } from '../../context/ToastContext';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
@@ -51,6 +52,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const { clearConversationUnread, setActiveViewingConversation } = useNotifications();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin' || location.pathname.startsWith('/admin');
@@ -65,6 +67,9 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastPendingTempIdRef = useRef<string | null>(null);
   const hasMarkedAsReadRef = useRef<boolean>(false);
+  const isMountedRef = useRef(false);
+  const chatEngagedRef = useRef(false);
+  const markReadInFlightRef = useRef(false);
   const attachmentMenuInputRef = useRef<HTMLInputElement>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
@@ -275,6 +280,49 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     }
   );
 
+  const canMarkMessagesRead = useCallback(() => {
+    if (!isMountedRef.current || !conversationId) return false;
+    if (document.visibilityState !== 'visible') return false;
+    if (embedInTaskDashboard) return chatEngagedRef.current;
+    return true;
+  }, [conversationId, embedInTaskDashboard]);
+
+  const markConversationAsRead = useCallback(async () => {
+    if (!canMarkMessagesRead() || !conversationId || markReadInFlightRef.current) return;
+    markReadInFlightRef.current = true;
+    try {
+      clearConversationUnread(conversationId);
+      await markAsReadMutation.mutateAsync();
+      const socket = await waitForSocketConnection();
+      socket.emit('message_read', { conversationId });
+    } catch (err) {
+      console.error('Mark as read error:', err);
+    } finally {
+      markReadInFlightRef.current = false;
+    }
+  }, [canMarkMessagesRead, conversationId, clearConversationUnread, markAsReadMutation]);
+
+  const handleChatEngage = useCallback(() => {
+    if (!conversationId) return;
+    chatEngagedRef.current = true;
+    if (embedInTaskDashboard) {
+      setActiveViewingConversation(conversationId);
+    }
+    void markConversationAsRead();
+  }, [conversationId, embedInTaskDashboard, setActiveViewingConversation, markConversationAsRead]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    if (!embedInTaskDashboard && conversationId) {
+      setActiveViewingConversation(conversationId);
+    }
+    return () => {
+      isMountedRef.current = false;
+      chatEngagedRef.current = false;
+      setActiveViewingConversation(null);
+    };
+  }, [conversationId, embedInTaskDashboard, setActiveViewingConversation]);
+
   // Send message mutation
   const sendMessageMutation = useMutation(
     (data: { content: string; replyToMessageId?: string }) => messageService.sendMessage({
@@ -368,87 +416,63 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           
           setTimeout(() => scrollToBottom(), 50);
           
-          if (!isMyMessage) {
-            setTimeout(async () => {
-              try {
-                // Mark all unread messages in conversation as read
-                await markAsReadMutation.mutateAsync();
-                // Emit read receipt for this conversation
-                socket.emit('message_read', {
-                  conversationId,
-                });
-                console.log('✅ Marked messages as read when new message arrived');
-              } catch (err) {
-                console.error('Mark as read error:', err);
-              }
-            }, 300);
+          if (!isMyMessage && document.visibilityState === 'visible') {
+            setTimeout(() => { void markConversationAsRead(); }, 300);
           }
         };
 
         const handleMessageStatusUpdate = (update: any) => {
           console.log('📊 Message status update received in TaskGroup:', update);
           if (update.conversationId && update.conversationId !== conversationId) return;
-          
+
+          const currentUserId = user?.id || user?.userId;
+          const isSenderReadReceipt =
+            update.status === 'read' && !update.userId;
+
           setMessages((prev) => {
             let hasChanges = false;
-            const updated = prev.map(msg => {
+            const updated = prev.map((msg) => {
+              const msgSenderId = msg.sender_id || msg.senderId;
+              const isMyMessage = msgSenderId === currentUserId;
+
               if (msg.id === update.messageId) {
+                if (update.status === 'read' && isMyMessage && update.userId) {
+                  return msg;
+                }
                 if (msg.status !== update.status) {
-                  console.log('✅ Updating message status by ID:', {
-                    messageId: msg.id,
-                    oldStatus: msg.status,
-                    newStatus: update.status,
-                  });
                   hasChanges = true;
                   return { ...msg, status: update.status };
                 }
                 return msg;
               }
-              const currentUserId = user?.id || user?.userId;
-              const msgSenderId = msg.sender_id || msg.senderId;
-              if (update.status === 'read' && 
-                  update.conversationId === conversationId &&
-                  msgSenderId === currentUserId && 
-                  msg.status !== 'read') {
-                console.log('✅ Bulk updating message to read:', msg.id);
+
+              if (
+                isSenderReadReceipt &&
+                update.conversationId === conversationId &&
+                isMyMessage &&
+                msg.status !== 'read'
+              ) {
                 hasChanges = true;
                 return { ...msg, status: 'read' };
               }
-              if (update.status === 'delivered' && 
-                  msgSenderId === currentUserId && 
-                  msg.status === 'sent') {
-                console.log('✅ Bulk updating message to delivered:', msg.id);
+              if (
+                update.status === 'delivered' &&
+                isMyMessage &&
+                msg.status === 'sent'
+              ) {
                 hasChanges = true;
                 return { ...msg, status: 'delivered' };
               }
               return msg;
             });
-            // Force re-render by creating new array reference if changes were made
             return hasChanges ? [...updated] : prev;
           });
         };
 
         const handleConversationMessagesRead = (data: any) => {
           console.log('📖 Conversation messages read event in TaskGroup:', data);
-          if (data.conversationId !== conversationId) return;
-          
-          setMessages((prev) => {
-            let hasChanges = false;
-            const updated = prev.map((msg) => {
-              const currentUserId = user?.id || user?.userId;
-              const msgSenderId = msg.sender_id || msg.senderId;
-              if (msgSenderId === currentUserId && (msg.status === 'delivered' || msg.status === 'sent')) {
-                if (msg.status !== 'read') {
-                  console.log('✅ Marking message as read:', msg.id);
-                  hasChanges = true;
-                  return { ...msg, status: 'read' };
-                }
-              }
-              return msg;
-            });
-            // Force re-render by creating new array reference if changes were made
-            return hasChanges ? [...updated] : prev;
-          });
+          // Task groups require all members to read before sender sees blue ticks.
+          // Backend emits per-message status to the sender only when everyone has read.
         };
 
         const handleMessageEdited = (editedMsg: any) => {
@@ -612,77 +636,17 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     return () => clearInterval(interval);
   }, [conversationId, user?.id, user?.userId]);
 
-  // Mark messages as read when conversation is opened (only once per conversation)
+  // Full-page chat only: mark read when user opens the conversation route
   useEffect(() => {
+    if (embedInTaskDashboard) return;
     if (conversationId && messages.length > 0 && !hasMarkedAsReadRef.current) {
-      const markAsRead = async () => {
-        try {
-          // Call API endpoint
-          await markAsReadMutation.mutateAsync();
-          
-          // Also emit socket event to ensure backend processes it correctly
-          const socket = await waitForSocketConnection();
-          socket.emit('message_read', {
-            conversationId,
-          });
-          
-          hasMarkedAsReadRef.current = true;
-        } catch (error) {
-          console.error('Error marking messages as read:', error);
-        }
-      };
-      
-      markAsRead();
+      hasMarkedAsReadRef.current = true;
+      void markConversationAsRead();
     }
-    
-    // Reset flag when conversation changes
     return () => {
       hasMarkedAsReadRef.current = false;
     };
-  }, [conversationId, messages.length]);
-
-  // CRITICAL FIX: Periodically mark messages as read while chat is open and user is viewing
-  // This ensures read receipts update in real-time for the sender
-  useEffect(() => {
-    if (!conversationId || messages.length === 0) return;
-
-    // Check for unread messages from other users
-    const checkAndMarkAsRead = async () => {
-      const currentUserId = user?.id || user?.userId;
-      const unreadMessages = messages.filter((msg: any) => {
-        const msgSenderId = msg.sender_id || msg.senderId;
-        return msgSenderId !== currentUserId && msg.status !== 'read' && !msg.deleted_at;
-      });
-
-      if (unreadMessages.length > 0) {
-        console.log('📖 Found unread messages while chat is open, marking as read:', unreadMessages.length);
-        try {
-          // Mark messages as read via API
-          await markAsReadMutation.mutateAsync();
-          
-          // Also emit socket event to ensure backend processes it and emits status updates
-          const socket = await waitForSocketConnection();
-          socket.emit('message_read', {
-            conversationId,
-          });
-          
-          console.log('✅ Marked messages as read and emitted socket event');
-        } catch (error) {
-          console.error('Error marking messages as read periodically:', error);
-        }
-      }
-    };
-
-    // Check immediately
-    checkAndMarkAsRead();
-
-    // Then check every 2 seconds while chat is open
-    const interval = setInterval(checkAndMarkAsRead, 2000);
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, [conversationId, messages, user?.id, user?.userId]);
+  }, [conversationId, messages.length, embedInTaskDashboard, markConversationAsRead]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -2351,18 +2315,32 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                 isMyMessage={isMyMessage}
               />
             ) : messageType === 'text' && msg.content && (
-              <div className={`relative px-4 py-3 rounded-2xl shadow-md border ${isMyMessage ? 'bg-[#EDE9FE] text-[#1F2937] rounded-br-none shadow-primary/30 border-[#A78BFA]' : 'bg-[#F9FAFB] dark:bg-gray-800 text-[#1F2937] dark:text-gray-100 rounded-bl-none border-[#E5E7EB] dark:border-gray-700 shadow-sm'}`}>
+              <div
+                className={`px-4 py-3 rounded-2xl shadow-md border ${
+                  isMyMessage
+                    ? 'bg-[#EDE9FE] text-[#1F2937] rounded-br-none shadow-primary/30 border-[#A78BFA]'
+                    : 'bg-[#F9FAFB] dark:bg-gray-800 text-[#1F2937] dark:text-gray-100 rounded-bl-none border-[#E5E7EB] dark:border-gray-700 shadow-sm'
+                }`}
+              >
                 {msg.edited_at && (
-                  <span className={`text-[10px] mr-2 italic ${isMyMessage ? 'text-[#6B7280]' : 'text-[#6B7280] dark:text-gray-400'}`}>Edited</span>
+                  <span className={`text-[10px] mr-2 italic ${isMyMessage ? 'text-[#6B7280]' : 'text-[#6B7280] dark:text-gray-400'}`}>
+                    Edited
+                  </span>
                 )}
-                <p className={`text-[15px] font-normal leading-relaxed break-words ${isMyMessage ? 'text-[#1F2937]' : 'text-[#1F2937] dark:text-gray-100'}`}>{msg.content}</p>
-                <div className={`flex items-center justify-end gap-1.5 mt-2 ${isMyMessage ? '' : 'absolute bottom-1 right-3'}`}>
+                <p
+                  className={`text-[15px] font-normal leading-relaxed break-words whitespace-pre-wrap ${
+                    isMyMessage ? 'text-[#1F2937]' : 'text-[#1F2937] dark:text-gray-100'
+                  }`}
+                >
+                  {msg.content}
+                </p>
+                <div className={`flex items-center gap-1.5 mt-2 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
                   <span className={`text-[11px] ${isMyMessage ? 'text-[#6B7280]' : 'text-[#6B7280] dark:text-gray-400'}`}>
-                    {msg.created_at ? formatTime(msg.created_at) : (msg.status === 'pending' || msg.status === 'failed' ? '...' : '')}
+                    {msg.created_at ? formatTime(msg.created_at) : msg.status === 'pending' || msg.status === 'failed' ? '...' : ''}
                   </span>
                   {isMyMessage && statusIcon && (
-                    <span 
-                      className="material-icons-round text-[16px] font-semibold leading-none" 
+                    <span
+                      className="material-icons-round text-[16px] font-semibold leading-none"
                       style={{ color: statusColor }}
                       title={messageStatus === 'pending' ? 'Sending...' : messageStatus === 'failed' ? 'Failed to send' : undefined}
                     >
@@ -2896,9 +2874,13 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       )}
 
       {/* Messages */}
-      <main className={`flex-1 min-h-0 overflow-y-auto bg-[#F9FAFB] dark:bg-[#18181b] ${
-        embedInTaskDashboard ? 'p-3 space-y-3' : 'p-6 space-y-6'
-      }`}>
+      <main
+        className={`flex-1 min-h-0 overflow-y-auto bg-[#F9FAFB] dark:bg-[#18181b] ${
+          embedInTaskDashboard ? 'p-3 space-y-3' : 'p-6 space-y-6'
+        }`}
+        onScroll={embedInTaskDashboard ? handleChatEngage : undefined}
+        onMouseDown={embedInTaskDashboard ? handleChatEngage : undefined}
+      >
         {hasMoreMessages && (
           <div className="flex justify-center py-2">
             <button
@@ -3222,6 +3204,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             placeholder={editingMessage ? 'Edit message...' : pendingAttachments.length > 0 ? 'Add a caption...' : 'Type a message...'}
             rows={1}
             value={message}
+            onFocus={embedInTaskDashboard ? handleChatEngage : undefined}
             onChange={(e) => handleTyping(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {

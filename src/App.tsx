@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'r
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
+import { NotificationProvider } from './context/NotificationContext';
 import { NotificationSocketBridge } from './components/NotificationSocketBridge';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ChangePasswordPopup } from './components/auth/ChangePasswordPopup';
@@ -166,9 +167,10 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <ToastProvider>
-          <NotificationSocketBridge />
-        <Router>
+        <NotificationProvider>
+          <ToastProvider>
+            <NotificationSocketBridge />
+            <Router>
           <ChangePasswordPopup />
           <Routes>
             <Route path="/login" element={<Suspense fallback={<RouteFallback />}><Login /></Suspense>} />
@@ -774,8 +776,9 @@ function App() {
             />
             <Route path="/" element={<Navigate to="/login" replace />} />
           </Routes>
-        </Router>
-        </ToastProvider>
+            </Router>
+          </ToastProvider>
+        </NotificationProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

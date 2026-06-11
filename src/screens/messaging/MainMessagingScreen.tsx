@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from 'react-query';
 import { conversationService } from '../../services/conversationService';
 import { waitForSocketConnection } from '../../services/socketService';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { conversationListMatchesMessage } from '../../utils/conversationId';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
@@ -12,6 +13,7 @@ import { NewChatModal } from '../../components/messaging/NewChatModal';
 
 export const MainMessagingScreen: React.FC = () => {
   const { user } = useAuth();
+  const { updateChatCount, reduceChatUnread } = useNotifications();
   const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -147,11 +149,6 @@ export const MainMessagingScreen: React.FC = () => {
         
         console.log('✅ Socket connected in MainMessagingScreen');
         
-        // Remove existing listeners to avoid duplicates
-        socket.off('new_message');
-        socket.off('message_status_update');
-        socket.off('conversation_messages_read');
-
         console.log('Setting up socket listeners in MainMessagingScreen');
 
         // CRITICAL FIX: Listen for new messages (listen globally, not just in conversation rooms)
@@ -173,12 +170,16 @@ export const MainMessagingScreen: React.FC = () => {
           
           // CRITICAL FIX: Update conversation immediately for real-time updates
           updateConversationWithNewMessage(message);
+          updateChatCount();
         };
 
         // Listen for message status updates (when messages are read)
         const handleMessageStatusUpdate = (update: any) => {
           console.log('📊 Message status update in MainMessagingScreen:', update);
-          
+          if (update.status === 'read') {
+            updateChatCount();
+          }
+
           if (update.conversationId && update.messageId) {
             queryClient.setQueryData(['conversations', 'chat'], (oldData: any[] = []) => {
               const updated = oldData.map((conv: any) => {
@@ -220,8 +221,12 @@ export const MainMessagingScreen: React.FC = () => {
         const handleConversationMessagesRead = (data: any) => {
           console.log('Conversation messages read:', data);
           if (data.conversationId) {
-            // Clear unread count for this conversation
             queryClient.setQueryData(['conversations', 'chat'], (oldData: any[] = []) => {
+              const match = (oldData || []).find(
+                (c) => String(c.id || c.conversationId) === String(data.conversationId)
+              );
+              const prevUnread = Number(match?.unreadCount ?? match?.unread_count ?? 0) || 0;
+              if (prevUnread > 0) reduceChatUnread(prevUnread);
               const updated = oldData.map((conv: any) => {
                 if ((conv.id || conv.conversationId) === data.conversationId) {
                   return {
@@ -269,7 +274,7 @@ export const MainMessagingScreen: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [queryClient, user]);
+  }, [queryClient, user, updateChatCount, reduceChatUnread]);
 
   const conversationListContent = (
     <ConversationList

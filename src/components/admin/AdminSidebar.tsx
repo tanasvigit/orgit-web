@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { useToast } from '../../context/ToastContext';
 import { showLogoutConfirm } from '../../utils/logoutConfirm';
 import { AppIcon } from '../shared/AppIcon';
+import { NavBadge } from '../shared/NavBadge';
 import type { AppIconName } from '../../constants/appIcons';
 
 interface NavItem {
@@ -87,7 +89,14 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuth();
+  const { counts } = useNotifications();
   const { toast } = useToast();
+
+  const badgeByPath: Record<string, number> = {
+    '/admin/messages': counts.chat,
+    '/admin/tasks': counts.tasks,
+    '/admin/documents': counts.documents,
+  };
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
@@ -379,11 +388,14 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
               }`}
               title={isCollapsed ? item.label : item.label}
             >
-              <AppIcon
-                name={item.icon}
-                variant="nav"
-                className={isActive ? '' : 'opacity-70 group-hover:opacity-100 transition-opacity'}
-              />
+              <div className="relative shrink-0">
+                <AppIcon
+                  name={item.icon}
+                  variant="nav"
+                  className={isActive ? '' : 'opacity-70 group-hover:opacity-100 transition-opacity'}
+                />
+                <NavBadge count={badgeByPath[item.path] ?? 0} />
+              </div>
               {isCollapsed ? (
                 <span className="text-[9px] leading-tight text-center whitespace-nowrap max-[1366px]:text-[8px]">
                   {collapsedLabelMap[item.label] || item.label}

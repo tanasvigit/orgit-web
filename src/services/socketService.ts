@@ -80,6 +80,7 @@ export const initSocket = async (token: string): Promise<Socket> => {
   socket.on('connect', () => {
     console.log('[socket] connected');
     connectionState = 'connected';
+    attachSocketMultiplexer(socket);
   });
 
   socket.on('connect_error', (error: any) => {
@@ -379,34 +380,62 @@ export const disconnectSocket = (): void => {
     socket = null;
     connectionPromise = null;
     connectionState = 'disconnected';
+    multiplexAttached = false;
   }
 };
 
+const socketEventHandlers = new Map<string, Set<SocketEventHandler>>();
+let multiplexAttached = false;
+
+function dispatchSocketEvent(event: string, payload: unknown) {
+  const handlers = socketEventHandlers.get(event);
+  if (!handlers) return;
+  handlers.forEach((handler) => {
+    try {
+      handler(payload);
+    } catch (err) {
+      console.warn(`[socket] handler error for ${event}:`, err);
+    }
+  });
+}
+
+function attachSocketMultiplexer(sock: Socket) {
+  if (multiplexAttached) return;
+  multiplexAttached = true;
+  for (const event of socketEventHandlers.keys()) {
+    sock.on(event, (payload: unknown) => dispatchSocketEvent(event, payload));
+  }
+}
+
 /**
- * Add typed event listener
+ * Subscribe to a socket event without clobbering other listeners.
+ * Returns an unsubscribe function.
  */
 export const onSocketEvent = (
   event: string,
   handler: SocketEventHandler
-): void => {
-  if (socket) {
-    socket.on(event, handler);
+): (() => void) => {
+  if (!socketEventHandlers.has(event)) {
+    socketEventHandlers.set(event, new Set());
+    if (socket && multiplexAttached) {
+      socket.on(event, (payload: unknown) => dispatchSocketEvent(event, payload));
+    }
   }
+  socketEventHandlers.get(event)!.add(handler);
+  if (socket) {
+    attachSocketMultiplexer(socket);
+  }
+  return () => offSocketEvent(event, handler);
 };
 
 /**
- * Remove event listener
+ * Remove a single event listener (never removes all handlers for an event).
  */
 export const offSocketEvent = (
   event: string,
   handler?: SocketEventHandler
 ): void => {
-  if (socket) {
-    if (handler) {
-      socket.off(event, handler);
-    } else {
-      socket.off(event);
-    }
-  }
+  if (!handler) return;
+  socketEventHandlers.get(event)?.delete(handler);
 };
 

@@ -6,6 +6,7 @@ import { messageService } from '../../services/messageService';
 import { conversationService } from '../../services/conversationService';
 import { waitForSocketConnection, joinConversationRoom, leaveConversationRoom, onSocketEvent, offSocketEvent, sendMessageViaSocket, getSocket } from '../../services/socketService';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { useToast } from '../../context/ToastContext';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { AdminLayout } from '../../components/admin/AdminLayout';
@@ -32,6 +33,7 @@ export const DirectChatConversation: React.FC = () => {
   const { conversationId } = useParams<{ conversationId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { updateChatCount, clearConversationUnread, reduceChatUnread } = useNotifications();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin';
@@ -238,11 +240,11 @@ export const DirectChatConversation: React.FC = () => {
         setTimeout(async () => {
           try {
             const readConvId = resolvedConversationId || conversationId;
+            if (unread > 0) reduceChatUnread(unread);
             await messageService.markMessagesAsReadByConversationId(readConvId);
             const socket = await waitForSocketConnection();
-            socket.emit('message_read', {
-              conversationId: readConvId,
-            });
+            socket.emit('message_read', { conversationId: readConvId });
+            await updateChatCount();
           } catch (error) {
             console.error('Error marking messages as read after load:', error);
           }
@@ -328,6 +330,7 @@ export const DirectChatConversation: React.FC = () => {
       onSuccess: () => {
         queryClient.invalidateQueries(['conversations', 'chat']);
         setUnreadCount(0);
+        void updateChatCount();
       }
     }
   );
@@ -610,10 +613,10 @@ export const DirectChatConversation: React.FC = () => {
             setTimeout(async () => {
               try {
                 // Mark all unread messages in conversation as read
+                reduceChatUnread(1);
                 await messageService.markMessagesAsReadByConversationId(activeConversationId);
-                socket.emit('message_read', {
-                  conversationId: activeConversationId,
-                });
+                socket.emit('message_read', { conversationId: activeConversationId });
+                await updateChatCount();
                 console.log('✅ Marked messages as read when new message arrived');
               } catch (err) {
                 console.error('Mark as read error:', err);
@@ -981,9 +984,9 @@ export const DirectChatConversation: React.FC = () => {
             }
             socket.off('conversation_resolved', handleConversationResolved);
             socket.off('new_message', handleNewMessage);
-            socket.off('typing');
-            socket.off('message_status_update');
-            socket.off('conversation_messages_read');
+            socket.off('typing', handleTyping);
+            socket.off('message_status_update', handleMessageStatusUpdate);
+            socket.off('conversation_messages_read', handleConversationMessagesRead);
             socket.off('message_edited');
             socket.off('message_deleted');
             socket.off('message_reaction_added');
@@ -1053,14 +1056,12 @@ export const DirectChatConversation: React.FC = () => {
       if (unreadMessages.length > 0) {
         console.log('📖 Found unread messages while chat is open, marking as read:', unreadMessages.length);
         try {
-          // Mark messages as read via API
           const readConvId = resolvedConversationId || conversationId;
+          reduceChatUnread(unreadMessages.length);
           await messageService.markMessagesAsReadByConversationId(readConvId);
-
           const socket = await waitForSocketConnection();
-          socket.emit('message_read', {
-            conversationId: readConvId,
-          });
+          socket.emit('message_read', { conversationId: readConvId });
+          await updateChatCount();
           
           console.log('✅ Marked messages as read and emitted socket event');
         } catch (error) {
@@ -1078,7 +1079,7 @@ export const DirectChatConversation: React.FC = () => {
     return () => {
       clearInterval(interval);
     };
-  }, [conversationId, resolvedConversationId, messages, user?.id]);
+  }, [conversationId, resolvedConversationId, messages, user?.id, updateChatCount, reduceChatUnread]);
 
   // Recalculate unread count
   useEffect(() => {

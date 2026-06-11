@@ -8,6 +8,7 @@ import { masterDataService, TaskServiceItem } from '../../services/masterDataSer
 import { entityListService } from '../../services/entityListService';
 import { waitForSocketConnection } from '../../services/socketService';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { useToast } from '../../context/ToastContext';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
@@ -15,7 +16,6 @@ import { TaskGroupChatConversation } from '../messaging/TaskGroupChatConversatio
 import { BulkAssignUsersModal } from '../../components/tasks/BulkAssignUsersModal';
 import { taskBulkService } from '../../services/taskBulkService';
 import { isTaskDeleted } from '../../utils/taskUtils';
-import { formatChatListTimestamp, timestampToMs } from '../../utils/chatTime';
 import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
 import { formatFrequencyLabel } from '../../utils/taskPeriod';
 import { parseDueSoonDays } from '../../utils/dueSoonDays';
@@ -33,6 +33,12 @@ import {
 import { taskStatusToAppIcon } from '../../constants/appIcons';
 import { useTaskCardDisplayConfig } from '../../hooks/useTaskCardDisplayConfig';
 import type { TaskCardDisplayConfig } from '../../utils/taskCardDisplayConfig';
+import {
+  sortConversationsByRecentActivity,
+  sortTaskDashboardCards,
+  type TaskDashboardCardEntry,
+} from '../../utils/taskDashboardSort';
+import { normalizeConvId } from '../../utils/notificationConvId';
 
 type TaskDashboardStatus = TaskStatusCategory;
 
@@ -65,7 +71,8 @@ function TaskDashboardCardBody({
   const showThirdRow = showFreq || showUnit;
 
   return (
-    <div className="grid w-full grid-cols-[minmax(0,2fr)_auto] gap-x-2 gap-y-1">
+    <div className="w-full">
+      <div className="grid w-full grid-cols-[minmax(0,2fr)_auto] gap-x-2 gap-y-1">
       {showHeaderRow ? (
         <>
           {display.title ? (
@@ -117,7 +124,20 @@ function TaskDashboardCardBody({
           )}
         </>
       ) : null}
+      </div>
     </div>
+  );
+}
+
+function TaskDashboardUnreadBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      className="absolute -top-2 right-2 z-[5] flex h-5 min-w-[20px] items-center justify-center rounded-full border-2 border-white bg-red-500 px-1.5 text-[11px] font-bold text-white dark:border-gray-900"
+      aria-label={`${count} unread messages in task chat`}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
   );
 }
 
@@ -182,6 +202,7 @@ export const TaskDashboardScreen: React.FC = () => {
   const { conversationId: selectedConversationId } = useParams<{ conversationId?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
+  const { taskChatUnreadByConvId, clearConversationUnread } = useNotifications();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'admin';
@@ -712,12 +733,7 @@ export const TaskDashboardScreen: React.FC = () => {
       filtered = filtered.filter((task: any) => task?.id && dashboardTaskIdsForView.has(String(task.id)));
     }
 
-    // Sort by created date (newest first)
-    return filtered.sort((a: any, b: any) => {
-      const aTime = timestampToMs(a.created_at || a.createdAt || 0);
-      const bTime = timestampToMs(b.created_at || b.createdAt || 0);
-      return bTime - aTime;
-    });
+    return filtered;
   }, [
     directTasks,
     tasksWithConversations,
@@ -844,6 +860,45 @@ export const TaskDashboardScreen: React.FC = () => {
     selectedTeamMemberIds,
   ]);
 
+  const unreadCountByConversationId = useMemo(() => {
+    const map: Record<string, number> = {};
+    (conversations || []).forEach((conv: any) => {
+      const convId = normalizeConvId(conv?.id ?? conv?.conversationId);
+      if (!convId) return;
+      map[convId] = Number(conv?.unreadCount ?? conv?.unread_count ?? 0) || 0;
+    });
+    return map;
+  }, [conversations]);
+
+  const getTaskCardUnreadCount = useCallback(
+    (convId: string | number | null | undefined) => {
+      const key = normalizeConvId(convId);
+      if (!key) return 0;
+      return taskChatUnreadByConvId[key] ?? unreadCountByConversationId[key] ?? 0;
+    },
+    [taskChatUnreadByConvId, unreadCountByConversationId]
+  );
+
+  const sortedTaskCardEntries = useMemo(() => {
+    const entries: TaskDashboardCardEntry[] = [];
+
+    filteredTaskGroups.forEach((conv: any) => {
+      const convId = conv.id ?? conv.conversationId ?? '';
+      const key = convId != null ? String(convId) : '';
+      entries.push({
+        kind: 'group',
+        conv,
+        task: key ? taskByConvId[key] : undefined,
+      });
+    });
+
+    tasksWithoutConversations.forEach((task: any) => {
+      entries.push({ kind: 'direct', task });
+    });
+
+    return sortTaskDashboardCards(entries);
+  }, [filteredTaskGroups, tasksWithoutConversations, taskByConvId]);
+
   const currentUserId = user?.id || (user as any)?.userId;
 
   const canBulkSelectTask = useCallback(
@@ -914,7 +969,8 @@ export const TaskDashboardScreen: React.FC = () => {
     queryClient.setQueryData(['conversations', 'task'], (oldData: any[] = []) => {
       const conversationId = message.conversation_id;
       const conversationIndex = oldData.findIndex(
-        (conv: any) => (conv.id || conv.conversationId) === conversationId
+        (conv: any) =>
+          String(conv.id || conv.conversationId) === String(conversationId)
       );
 
       if (conversationIndex === -1) {
@@ -950,17 +1006,7 @@ export const TaskDashboardScreen: React.FC = () => {
 
       updated[conversationIndex] = conversation;
 
-      // Sort: pinned first, then by last message time
-      return updated.sort((a, b) => {
-        const aPinned = a.isPinned || a.is_pinned || false;
-        const bPinned = b.isPinned || b.is_pinned || false;
-        if (aPinned && !bPinned) return -1;
-        if (!aPinned && bPinned) return 1;
-        
-        const aTime = new Date(a.lastMessageTime || a.last_message_time || 0).getTime();
-        const bTime = new Date(b.lastMessageTime || b.last_message_time || 0).getTime();
-        return bTime - aTime;
-      });
+      return sortConversationsByRecentActivity(updated);
     });
   };
 
@@ -975,11 +1021,6 @@ export const TaskDashboardScreen: React.FC = () => {
         
         console.log('✅ Socket connected in TaskDashboardScreen');
         
-        // Remove existing listeners to avoid duplicates
-        socket.off('new_message');
-        socket.off('message_status_update');
-        socket.off('conversation_messages_read');
-
         const handleNewMessage = (message: any) => {
           console.log('📨 New message received in TaskDashboardScreen:', {
             conversationId: message.conversation_id,
@@ -1020,26 +1061,21 @@ export const TaskDashboardScreen: React.FC = () => {
                 return conv;
               });
               
-              return updated.sort((a, b) => {
-                const aPinned = a.isPinned || a.is_pinned || false;
-                const bPinned = b.isPinned || b.is_pinned || false;
-                if (aPinned && !bPinned) return -1;
-                if (!aPinned && bPinned) return 1;
-                
-                const aTime = new Date(a.lastMessageTime || a.last_message_time || 0).getTime();
-                const bTime = new Date(b.lastMessageTime || b.last_message_time || 0).getTime();
-                return bTime - aTime;
-              });
+              return sortConversationsByRecentActivity(updated);
             });
           }
         };
 
         const handleConversationMessagesRead = (data: any) => {
           console.log('Conversation messages read:', data);
+          const readerId = data?.userId ?? data?.readByUserId;
+          const currentUserId = user?.id ?? user?.userId;
+          if (!readerId || String(readerId) !== String(currentUserId)) return;
           if (data.conversationId) {
+            clearConversationUnread(String(data.conversationId));
             queryClient.setQueryData(['conversations', 'task'], (oldData: any[] = []) => {
               const updated = oldData.map((conv: any) => {
-                if ((conv.id || conv.conversationId) === data.conversationId) {
+                if (String(conv.id || conv.conversationId) === String(data.conversationId)) {
                   return {
                     ...conv,
                     unreadCount: 0,
@@ -1048,22 +1084,14 @@ export const TaskDashboardScreen: React.FC = () => {
                 }
                 return conv;
               });
-              
-              return updated.sort((a, b) => {
-                const aPinned = a.isPinned || a.is_pinned || false;
-                const bPinned = b.isPinned || b.is_pinned || false;
-                if (aPinned && !bPinned) return -1;
-                if (!aPinned && bPinned) return 1;
-                
-                const aTime = new Date(a.lastMessageTime || a.last_message_time || 0).getTime();
-                const bTime = new Date(b.lastMessageTime || b.last_message_time || 0).getTime();
-                return bTime - aTime;
-              });
+
+              return sortConversationsByRecentActivity(updated);
             });
           }
         };
         const handleTaskStatusChanged = () => {
           queryClient.invalidateQueries('tasks');
+          queryClient.invalidateQueries(['task']);
           queryClient.invalidateQueries('dashboard-data');
         };
 
@@ -1092,7 +1120,7 @@ export const TaskDashboardScreen: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [queryClient, user]);
+  }, [queryClient, user, clearConversationUnread]);
 
   const setStatusFilterAndUrl = (filter: StatusFilter) => {
     setStatusFilter(filter);
@@ -1573,46 +1601,114 @@ export const TaskDashboardScreen: React.FC = () => {
           </div>
         )}
 
-        {!isTaskGroupsLoading && filteredTaskGroups.length > 0 ? (
+        {!isTaskGroupsLoading && !isPendingTasksLoading && sortedTaskCardEntries.length > 0 ? (
           <div>
             <h3 className="flex items-center text-[11px] font-bold text-primary uppercase tracking-wider mb-2 px-1">
               <span className="material-icons-round text-sm mr-1">groups</span>
-              Tasks ({filteredTaskGroups.length})
+              Tasks ({sortedTaskCardEntries.length})
             </h3>
             <div className="space-y-1">
-              {filteredTaskGroups.map((conv) => {
-                const convId = conv.id ?? conv.conversationId ?? '';
-                const convName = conv.name || 'Task Group';
-                const task = convId ? taskByConvId[String(convId)] : undefined;
+              {sortedTaskCardEntries.map((entry) => {
+                if (entry.kind === 'group') {
+                  const conv = entry.conv;
+                  const convId = conv.id ?? conv.conversationId ?? '';
+                  const convName = conv.name || 'Task Group';
+                  const task = entry.task ?? (convId ? taskByConvId[String(convId)] : undefined);
+                  const taskStatusCategory = getTaskStatusForFilter(task);
+                  const displayTaskTitle = resolveTaskTitleWithPeriod(task, convName);
+                  const taskTagOrClient = resolveTaskTagOrClient(task);
+                  const taskDueLabel = resolveTaskDueDateLabel(task);
+                  const taskFrequencyLabel = resolveTaskFrequencyLabel(task);
+                  const taskUnitLabel = resolveTaskUnitDisplay(task);
+                  const isSelected = selectedConversationId === convId;
+                  const taskIdStr = task?.id ? String(task.id) : '';
+                  const bulkEligible = taskIdStr && canBulkSelectTask(task);
+                  const taskChecked = bulkSelectMode && taskIdStr && selectedTaskIds.has(taskIdStr);
+                  const taskUnreadCount = getTaskCardUnreadCount(convId);
+
+                  return (
+                    <div
+                      key={`group-${convId}`}
+                      className={`group relative h-fit rounded-xl border p-2.5 transition-colors duration-200 cursor-pointer hover:bg-white dark:hover:bg-surface-dark hover:shadow-sm ${
+                        taskChecked
+                          ? 'bg-primary/5 border-primary ring-1 ring-primary/30'
+                          : isSelected
+                          ? 'bg-primary/10 dark:bg-primary/20 border-primary shadow-md'
+                          : 'border-gray-200 dark:border-gray-700'
+                      }`}
+                      onClick={() => {
+                        if (bulkSelectMode && bulkEligible && taskIdStr) {
+                          toggleTaskSelection(taskIdStr);
+                          return;
+                        }
+                        navigate(isAdmin ? `/admin/tasks/task-group/${convId}` : `/tasks/task-group/${convId}`);
+                      }}
+                    >
+                      {taskCardDisplay.unreadBadge ? <TaskDashboardUnreadBadge count={taskUnreadCount} /> : null}
+                      <div className="flex items-start gap-3">
+                        {bulkSelectMode && bulkEligible ? (
+                          <input
+                            type="checkbox"
+                            checked={!!taskChecked}
+                            readOnly
+                            className="mt-4 shrink-0 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary pointer-events-none"
+                          />
+                        ) : null}
+                        <div className="flex-1 min-w-0">
+                          <TaskDashboardCardBody
+                            display={taskCardDisplay}
+                            displayTitle={displayTaskTitle}
+                            taskStatusCategory={taskStatusCategory}
+                            taskTagOrClient={taskTagOrClient}
+                            taskDueLabel={taskDueLabel}
+                            taskFrequencyLabel={taskFrequencyLabel}
+                            taskUnitLabel={taskUnitLabel}
+                            titleClassName="min-w-0 text-xs font-bold text-gray-900 dark:text-white truncate group-hover:text-primary dark:group-hover:text-primary/80 transition-colors"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                const task = entry.task;
+                const taskId = task.id;
+                const taskTitle = resolveTaskTitleWithPeriod(task, 'Untitled Task');
                 const taskStatusCategory = getTaskStatusForFilter(task);
-                const displayTaskTitle = resolveTaskTitleWithPeriod(task, convName);
+                const taskConversationId = task.conversation_id || task.conversationId;
                 const taskTagOrClient = resolveTaskTagOrClient(task);
                 const taskDueLabel = resolveTaskDueDateLabel(task);
                 const taskFrequencyLabel = resolveTaskFrequencyLabel(task);
                 const taskUnitLabel = resolveTaskUnitDisplay(task);
-                const isSelected = selectedConversationId === convId;
-                const taskIdStr = task?.id ? String(task.id) : '';
-                const bulkEligible = taskIdStr && canBulkSelectTask(task);
-                const taskChecked = bulkSelectMode && taskIdStr && selectedTaskIds.has(taskIdStr);
+                const bulkEligible = canBulkSelectTask(task);
+                const taskChecked = bulkSelectMode && selectedTaskIds.has(String(taskId));
+                const taskUnreadCount = getTaskCardUnreadCount(taskConversationId);
 
                 return (
                   <div
-                    key={convId}
-                    className={`group h-fit rounded-xl border p-2.5 transition-colors duration-200 cursor-pointer hover:bg-white dark:hover:bg-surface-dark hover:shadow-sm ${
+                    key={`direct-${taskId}`}
+                    className={`group relative h-fit rounded-xl border p-2.5 transition-colors duration-200 hover:bg-white dark:hover:bg-surface-dark hover:shadow-sm cursor-pointer ${
                       taskChecked
                         ? 'bg-primary/5 border-primary ring-1 ring-primary/30'
-                        : isSelected
-                        ? 'bg-primary/10 dark:bg-primary/20 border-primary shadow-md'
                         : 'border-gray-200 dark:border-gray-700'
                     }`}
                     onClick={() => {
-                      if (bulkSelectMode && bulkEligible && taskIdStr) {
-                        toggleTaskSelection(taskIdStr);
+                      if (bulkSelectMode && bulkEligible) {
+                        toggleTaskSelection(String(taskId));
                         return;
                       }
-                      navigate(isAdmin ? `/admin/tasks/task-group/${convId}` : `/tasks/task-group/${convId}`);
+                      if (taskConversationId) {
+                        navigate(
+                          isAdmin
+                            ? `/admin/tasks/task-group/${taskConversationId}`
+                            : `/tasks/task-group/${taskConversationId}`
+                        );
+                      } else {
+                        navigate(isAdmin ? `/admin/tasks/${taskId}` : `/tasks/${taskId}`);
+                      }
                     }}
                   >
+                    {taskCardDisplay.unreadBadge ? <TaskDashboardUnreadBadge count={taskUnreadCount} /> : null}
                     <div className="flex items-start gap-3">
                       {bulkSelectMode && bulkEligible ? (
                         <input
@@ -1625,13 +1721,12 @@ export const TaskDashboardScreen: React.FC = () => {
                       <div className="flex-1 min-w-0">
                         <TaskDashboardCardBody
                           display={taskCardDisplay}
-                          displayTitle={displayTaskTitle}
+                          displayTitle={taskTitle}
                           taskStatusCategory={taskStatusCategory}
                           taskTagOrClient={taskTagOrClient}
                           taskDueLabel={taskDueLabel}
                           taskFrequencyLabel={taskFrequencyLabel}
                           taskUnitLabel={taskUnitLabel}
-                          titleClassName="min-w-0 text-xs font-bold text-gray-900 dark:text-white truncate group-hover:text-primary dark:group-hover:text-primary/80 transition-colors"
                         />
                       </div>
                     </div>
@@ -1642,74 +1737,7 @@ export const TaskDashboardScreen: React.FC = () => {
           </div>
         ) : null}
 
-        {/* Tasks that the current user is assigned to but which are not yet visible as task groups.
-            These are already filtered by status/search/dashboardTaskIdsForView above,
-            so they stay in sync with dashboard counts. Accept / Reject is handled from chat. */}
-        {!isPendingTasksLoading && tasksWithoutConversations.length > 0 && (
-          <div className="space-y-1">
-            {tasksWithoutConversations.map((task: any) => {
-              const taskId = task.id;
-              const taskTitle = resolveTaskTitleWithPeriod(task, 'Untitled Task');
-              const taskStatusCategory = getTaskStatusForFilter(task);
-              const taskConversationId = task.conversation_id || task.conversationId;
-              const taskTagOrClient = resolveTaskTagOrClient(task);
-              const taskDueLabel = resolveTaskDueDateLabel(task);
-              const taskFrequencyLabel = resolveTaskFrequencyLabel(task);
-              const taskUnitLabel = resolveTaskUnitDisplay(task);
-              const bulkEligible = canBulkSelectTask(task);
-              const taskChecked = bulkSelectMode && selectedTaskIds.has(String(taskId));
-              return (
-                <div
-                  key={taskId}
-                  className={`group h-fit rounded-xl border p-2.5 transition-colors duration-200 hover:bg-white dark:hover:bg-surface-dark hover:shadow-sm cursor-pointer ${
-                    taskChecked
-                      ? 'bg-primary/5 border-primary ring-1 ring-primary/30'
-                      : 'border-gray-200 dark:border-gray-700'
-                  }`}
-                  onClick={() => {
-                    if (bulkSelectMode && bulkEligible) {
-                      toggleTaskSelection(String(taskId));
-                      return;
-                    }
-                    if (taskConversationId) {
-                      navigate(
-                        isAdmin
-                          ? `/admin/tasks/task-group/${taskConversationId}`
-                          : `/tasks/task-group/${taskConversationId}`
-                      );
-                    } else {
-                      navigate(isAdmin ? `/admin/tasks/${taskId}` : `/tasks/${taskId}`);
-                    }
-                  }}
-                >
-                  <div className="flex items-start gap-3">
-                    {bulkSelectMode && bulkEligible ? (
-                      <input
-                        type="checkbox"
-                        checked={!!taskChecked}
-                        readOnly
-                        className="mt-4 shrink-0 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary pointer-events-none"
-                      />
-                    ) : null}
-                    <div className="flex-1 min-w-0">
-                      <TaskDashboardCardBody
-                        display={taskCardDisplay}
-                        displayTitle={taskTitle}
-                        taskStatusCategory={taskStatusCategory}
-                        taskTagOrClient={taskTagOrClient}
-                        taskDueLabel={taskDueLabel}
-                        taskFrequencyLabel={taskFrequencyLabel}
-                        taskUnitLabel={taskUnitLabel}
-                      />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {!isTaskGroupsLoading && !isPendingTasksLoading && filteredTaskGroups.length === 0 && tasksWithoutConversations.length === 0 && (
+        {!isTaskGroupsLoading && !isPendingTasksLoading && sortedTaskCardEntries.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 px-4">
             <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-4">
               <span className="material-icons-outlined text-4xl text-gray-400 dark:text-gray-600">

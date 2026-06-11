@@ -1,10 +1,13 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useNotifications } from '../../context/NotificationContext';
 import { AppIcon } from './AppIcon';
+import { NavBadge } from './NavBadge';
 import type { AppIconName } from '../../constants/appIcons';
 
 export const BottomNav: React.FC = () => {
   const location = useLocation();
+  const { counts } = useNotifications();
 
   // Helper to determine active state
   const isActive = (path: string) => {
@@ -13,9 +16,15 @@ export const BottomNav: React.FC = () => {
     return false;
   };
 
-  const navItems: { path: string; icon: AppIconName; label: string; badge?: number }[] = [
+  const badgeByPath: Record<string, number> = {
+    '/messages': counts.chat,
+    '/tasks': counts.tasks,
+    '/documents': counts.documents,
+  };
+
+  const navItems: { path: string; icon: AppIconName; label: string }[] = [
     { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-    { path: '/messages', icon: 'chat', label: 'Chat', badge: 4 },
+    { path: '/messages', icon: 'chat', label: 'Chat' },
     { path: '/tasks', icon: 'task', label: 'Task' },
     { path: '/documents', icon: 'document', label: 'Document' },
     { path: '/settings', icon: 'settings', label: 'Settings' },
@@ -38,11 +47,7 @@ export const BottomNav: React.FC = () => {
                   variant="nav"
                   className={active ? '' : 'opacity-60 group-hover:opacity-100 transition-opacity'}
                 />
-                {item.badge && (
-                  <span className="absolute -top-1 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-                    {item.badge}
-                  </span>
-                )}
+                <NavBadge count={badgeByPath[item.path] ?? 0} />
               </div>
               <span className={`text-[10px] transition-colors ${active ? 'font-bold text-primary' : 'font-medium text-gray-400 dark:text-gray-500 group-hover:text-primary'}`}>
                 {item.label}

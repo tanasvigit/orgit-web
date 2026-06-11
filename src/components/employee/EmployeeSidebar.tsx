@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { useToast } from '../../context/ToastContext';
 import { showLogoutConfirm } from '../../utils/logoutConfirm';
 import { AppIcon } from '../shared/AppIcon';
+import { NavBadge } from '../shared/NavBadge';
 import type { AppIconName } from '../../constants/appIcons';
 import { useEmployeePermissions } from '../../hooks/useEmployeePermissions';
 import type { AppModule } from '../../utils/employeePermissionUtils';
@@ -43,8 +45,15 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { counts } = useNotifications();
   const { toast } = useToast();
   const { canAccessModule } = useEmployeePermissions();
+
+  const badgeByPath: Record<string, number> = {
+    '/messages': counts.chat,
+    '/tasks': counts.tasks,
+    '/documents': counts.documents,
+  };
   const visibleNavItems = navItems.filter((item) => canAccessModule(item.module));
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -338,11 +347,14 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
               }`}
               title={isCollapsed ? item.label : ''}
             >
-              <AppIcon
-                name={item.icon}
-                variant="nav"
-                className={active ? '' : 'opacity-70 group-hover:opacity-100 transition-opacity'}
-              />
+              <div className="relative shrink-0">
+                <AppIcon
+                  name={item.icon}
+                  variant="nav"
+                  className={active ? '' : 'opacity-70 group-hover:opacity-100 transition-opacity'}
+                />
+                <NavBadge count={badgeByPath[item.path] ?? 0} />
+              </div>
               {isCollapsed ? (
                 <span className="text-[9px] leading-tight text-center whitespace-nowrap max-[1366px]:text-[8px]">
                   {collapsedLabelMap[item.label] || item.label}

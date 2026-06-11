@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationContext';
 import { useToast } from '../context/ToastContext';
 import { waitForSocketConnection, onSocketEvent, offSocketEvent } from '../services/socketService';
 
@@ -8,6 +9,7 @@ import { waitForSocketConnection, onSocketEvent, offSocketEvent } from '../servi
  */
 export const NotificationSocketBridge: React.FC = () => {
   const { isAuthenticated } = useAuth();
+  const { updateCounts } = useNotifications();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -23,10 +25,20 @@ export const NotificationSocketBridge: React.FC = () => {
 
         handler = (payload: any) => {
           if (!mounted) return;
-          const title = payload?.title || 'Notification';
-          const body = payload?.description || payload?.body || '';
-          const message = body ? `${title}: ${body}` : title;
-          toast.info(message, 5000);
+          const type = String(payload?.type || '').toLowerCase();
+          const isTaskNotification =
+            type.includes('task') ||
+            payload?.related_entity_type === 'task' ||
+            payload?.refType === 'task';
+          const isMessageNotification =
+            type.includes('message') || type === 'message_received';
+          if (!isTaskNotification && !isMessageNotification) {
+            const title = payload?.title || 'Notification';
+            const body = payload?.description || payload?.body || '';
+            const message = body ? `${title}: ${body}` : title;
+            toast.info(message, 5000);
+            updateCounts();
+          }
         };
 
         onSocketEvent('notification:new', handler);
@@ -43,7 +55,7 @@ export const NotificationSocketBridge: React.FC = () => {
         offSocketEvent('notification:new', handler);
       }
     };
-  }, [isAuthenticated, toast]);
+  }, [isAuthenticated, toast, updateCounts]);
 
   return null;
 };
