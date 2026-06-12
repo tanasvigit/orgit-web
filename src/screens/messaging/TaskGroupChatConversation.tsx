@@ -1521,18 +1521,6 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           queryClient.invalidateQueries(['admin-dashboard']);
           queryClient.invalidateQueries(['admin-dashboard-statistics']);
         }
-        // Send chat message (mirror mobile)
-        try {
-          const socket = await waitForSocketConnection();
-          const text = 'I have completed my part of the task. Please verify.';
-          socket.emit('send_message', {
-            conversationId,
-            text,
-            messageType: 'text',
-          });
-        } catch (e) {
-          console.warn('Socket send after mark complete:', e);
-        }
         const message = 'Your completion has been marked and sent for approval.';
         toast.success(message);
 
@@ -1569,18 +1557,6 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
       if (user?.role === 'admin') {
         queryClient.invalidateQueries(['admin-dashboard']);
         queryClient.invalidateQueries(['admin-dashboard-statistics']);
-      }
-      if (!data?.already_completed) {
-        try {
-          const socket = await waitForSocketConnection();
-          socket.emit('send_message', {
-            conversationId,
-            text: '✓ I have completed my part. Task is now completed!',
-            messageType: 'text',
-          });
-        } catch (e) {
-          console.warn('Socket send after owner complete:', e);
-        }
       }
       const message = data?.already_completed
         ? 'This task is already marked completed.'
@@ -1881,12 +1857,6 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         try {
           setVerifyingUserId(memberUserId);
           await verifyCompletionMutation.mutateAsync(memberUserId);
-          const socket = await waitForSocketConnection();
-          socket.emit('send_message', {
-            conversationId,
-            text: `✓ Verified ${memberName}'s completion.`,
-            messageType: 'text',
-          });
         } finally {
           setVerifyingUserId(null);
         }
@@ -2125,7 +2095,8 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         !!taskOwnerId && !!currentUserId && String(taskOwnerId) === String(currentUserId);
       const isTaskExitRequest = parsedMetadata?.requestType === 'task_exit';
       const isTaskDeleteRequest = parsedMetadata?.requestType === 'task_delete';
-      const isCenteredRequestMessage = isTaskExitRequest || isTaskDeleteRequest;
+      // Task group system messages are always centered (not sender/receiver aligned).
+      const isCenteredSystemMessage = true;
       const senderDisplayName = msg.sender_name || msg.senderName || senderName;
       const normalizedSystemContent = (() => {
         if (isTaskExitRequest) {
@@ -2157,15 +2128,19 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
             </div>
           )}
           <div className={`flex w-full ${
-            isCenteredRequestMessage ? 'justify-center' : isMyMessage ? 'justify-end' : 'justify-start'
+            isCenteredSystemMessage ? 'justify-center' : isMyMessage ? 'justify-end' : 'justify-start'
           }`}>
             <div className={`rounded-2xl px-4 py-2 flex flex-col gap-2 min-w-[260px] max-w-[88%] ${
-              !isCenteredRequestMessage && isMyMessage
-                ? 'bg-[#EDE9FE] text-[#1F2937] border border-[#A78BFA]'
-                : 'bg-gray-200 dark:bg-gray-800'
+              isCenteredSystemMessage
+                ? 'bg-gray-200 dark:bg-gray-800 items-center'
+                : isMyMessage
+                  ? 'bg-[#EDE9FE] text-[#1F2937] border border-[#A78BFA]'
+                  : 'bg-gray-200 dark:bg-gray-800'
             }`}>
               <span className="material-symbols-outlined text-gray-500 text-base">smart_toy</span>
-              <p className="text-gray-600 dark:text-gray-400 text-xs font-medium">{normalizedSystemContent}</p>
+              <p className={`text-gray-600 dark:text-gray-400 text-xs font-medium ${
+                isCenteredSystemMessage ? 'text-center' : ''
+              }`}>{normalizedSystemContent}</p>
               {showActions && (
                 <div className="w-full grid grid-cols-2 gap-2 mt-1">
                   {actionChips.includes('approve') && (

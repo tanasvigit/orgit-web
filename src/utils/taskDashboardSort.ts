@@ -1,6 +1,14 @@
 import { timestampToMs } from './chatTime';
+import {
+  getTaskDashboardBumpMs,
+  type TaskActivityBumpMap,
+} from './taskDashboardActivity';
 
-export function getConversationRecentActivityMs(conv: any, task?: any): number {
+export function getConversationRecentActivityMs(
+  conv: any,
+  task?: any,
+  activityBumpMap?: TaskActivityBumpMap
+): number {
   const fromConv =
     conv?.lastMessageTime ??
     conv?.last_message_time ??
@@ -13,24 +21,39 @@ export function getConversationRecentActivityMs(conv: any, task?: any): number {
     task?.lastMessageTime ??
     task?.updated_at ??
     task?.updatedAt;
+  const convId = conv?.id ?? conv?.conversationId;
+  const taskId = task?.id;
+  const bumpMs = getTaskDashboardBumpMs(activityBumpMap, {
+    taskId,
+    conversationId: convId,
+  });
   return Math.max(
     timestampToMs(fromConv, 0),
     timestampToMs(fromTask, 0),
-    timestampToMs(task?.created_at ?? task?.createdAt, 0)
+    timestampToMs(task?.created_at ?? task?.createdAt, 0),
+    bumpMs
   );
 }
 
-export function getTaskRecentActivityMs(task: any): number {
+export function getTaskRecentActivityMs(
+  task: any,
+  activityBumpMap?: TaskActivityBumpMap
+): number {
   const fromMsg =
     task?.last_message_time ??
     task?.lastMessageTime ??
     task?.lastMessage?.created_at ??
     task?.lastMessage?.createdAt;
   const fromUpdate = task?.updated_at ?? task?.updatedAt;
+  const bumpMs = getTaskDashboardBumpMs(activityBumpMap, {
+    taskId: task?.id,
+    conversationId: task?.conversation_id ?? task?.conversationId,
+  });
   return Math.max(
     timestampToMs(fromMsg, 0),
     timestampToMs(fromUpdate, 0),
-    timestampToMs(task?.created_at ?? task?.createdAt, 0)
+    timestampToMs(task?.created_at ?? task?.createdAt, 0),
+    bumpMs
   );
 }
 
@@ -51,7 +74,8 @@ export function compareByPinnedThenRecentActivity(
 
 export function sortConversationsByRecentActivity(
   conversations: any[],
-  taskByConvId?: Record<string, any>
+  taskByConvId?: Record<string, any>,
+  activityBumpMap?: TaskActivityBumpMap
 ): any[] {
   return [...conversations].sort((a, b) => {
     const aKey = String(a?.id ?? a?.conversationId ?? '');
@@ -59,11 +83,11 @@ export function sortConversationsByRecentActivity(
     return compareByPinnedThenRecentActivity(
       {
         pinned: isConversationPinned(a),
-        activityMs: getConversationRecentActivityMs(a, taskByConvId?.[aKey]),
+        activityMs: getConversationRecentActivityMs(a, taskByConvId?.[aKey], activityBumpMap),
       },
       {
         pinned: isConversationPinned(b),
-        activityMs: getConversationRecentActivityMs(b, taskByConvId?.[bKey]),
+        activityMs: getConversationRecentActivityMs(b, taskByConvId?.[bKey], activityBumpMap),
       }
     );
   });
@@ -73,27 +97,33 @@ export type TaskDashboardCardEntry =
   | { kind: 'group'; conv: any; task?: any }
   | { kind: 'direct'; task: any };
 
-export function getTaskDashboardCardActivityMs(entry: TaskDashboardCardEntry): number {
+export function getTaskDashboardCardActivityMs(
+  entry: TaskDashboardCardEntry,
+  activityBumpMap?: TaskActivityBumpMap
+): number {
   if (entry.kind === 'group') {
-    return getConversationRecentActivityMs(entry.conv, entry.task);
+    return getConversationRecentActivityMs(entry.conv, entry.task, activityBumpMap);
   }
-  return getTaskRecentActivityMs(entry.task);
+  return getTaskRecentActivityMs(entry.task, activityBumpMap);
 }
 
 export function isTaskDashboardCardPinned(entry: TaskDashboardCardEntry): boolean {
   return entry.kind === 'group' && isConversationPinned(entry.conv);
 }
 
-export function sortTaskDashboardCards(entries: TaskDashboardCardEntry[]): TaskDashboardCardEntry[] {
+export function sortTaskDashboardCards(
+  entries: TaskDashboardCardEntry[],
+  activityBumpMap?: TaskActivityBumpMap
+): TaskDashboardCardEntry[] {
   return [...entries].sort((a, b) =>
     compareByPinnedThenRecentActivity(
       {
         pinned: isTaskDashboardCardPinned(a),
-        activityMs: getTaskDashboardCardActivityMs(a),
+        activityMs: getTaskDashboardCardActivityMs(a, activityBumpMap),
       },
       {
         pinned: isTaskDashboardCardPinned(b),
-        activityMs: getTaskDashboardCardActivityMs(b),
+        activityMs: getTaskDashboardCardActivityMs(b, activityBumpMap),
       }
     )
   );

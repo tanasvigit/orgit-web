@@ -38,7 +38,13 @@ import {
   sortTaskDashboardCards,
   type TaskDashboardCardEntry,
 } from '../../utils/taskDashboardSort';
+import {
+  bumpTaskDashboardActivity,
+  isTaskRecentlyActiveForFilter,
+  type TaskActivityBumpMap,
+} from '../../utils/taskDashboardActivity';
 import { normalizeConvId } from '../../utils/notificationConvId';
+import { timestampToMs } from '../../utils/chatTime';
 
 type TaskDashboardStatus = TaskStatusCategory;
 
@@ -230,6 +236,18 @@ export const TaskDashboardScreen: React.FC = () => {
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
   const socketRef = React.useRef<any>(null);
+  const activityBumpRef = useRef<TaskActivityBumpMap>(new Map());
+  const [activityBumpTick, setActivityBumpTick] = useState(0);
+  const taskIdByConvIdRef = useRef<Record<string, string>>({});
+  const taskByConvIdRef = useRef<Record<string, any>>({});
+
+  const recordTaskActivity = useCallback(
+    (ids: { taskId?: string | null; conversationId?: string | null; atMs?: number }) => {
+      bumpTaskDashboardActivity(activityBumpRef.current, ids);
+      setActivityBumpTick((n) => n + 1);
+    },
+    []
+  );
 
   // Track first successful fetch instead of fetch transition (prevents showing stale cache on first paint).
   const [hasConversationsFetchedSinceMount, setHasConversationsFetchedSinceMount] = useState(false);
@@ -607,6 +625,14 @@ export const TaskDashboardScreen: React.FC = () => {
     return map;
   }, [taskIdByConvId, taskDetailIds, taskDetailsQueries]);
 
+  useEffect(() => {
+    taskIdByConvIdRef.current = taskIdByConvId;
+  }, [taskIdByConvId]);
+
+  useEffect(() => {
+    taskByConvIdRef.current = taskByConvId;
+  }, [taskByConvId]);
+
   const taskDetailsById = useMemo(() => {
     const map: Record<string, any> = {};
     taskDetailIds.forEach((taskId, i) => {
@@ -718,19 +744,27 @@ export const TaskDashboardScreen: React.FC = () => {
       filtered = filtered.filter((task: any) => taskMatchesSelectedMembers(task));
     }
 
+    const activityBumpMap = activityBumpRef.current;
+
     // Status filter: always use per-user lifecycle categorization (same as Task Details).
-    // If view filter is present (self/assigned), constrain by the selected section's task IDs.
+    // Recently active tasks stay visible briefly when status changes (e.g. todo → in progress).
     if (statusFilter !== 'all') {
       filtered = filtered.filter((task: any) => {
         const category = getTaskStatusForFilter(task);
-        if (category !== statusFilter) return false;
+        if (category !== statusFilter && !isTaskRecentlyActiveForFilter(activityBumpMap, task?.id)) {
+          return false;
+        }
         if (dashboardTaskIdsForView && dashboardTaskIdsForView.size > 0) {
-          return !!(task?.id && dashboardTaskIdsForView.has(String(task.id)));
+          if (task?.id && dashboardTaskIdsForView.has(String(task.id))) return true;
+          return isTaskRecentlyActiveForFilter(activityBumpMap, task?.id);
         }
         return true;
       });
     } else if (dashboardTaskIdsForView && dashboardTaskIdsForView.size > 0) {
-      filtered = filtered.filter((task: any) => task?.id && dashboardTaskIdsForView.has(String(task.id)));
+      filtered = filtered.filter((task: any) => {
+        if (task?.id && dashboardTaskIdsForView.has(String(task.id))) return true;
+        return isTaskRecentlyActiveForFilter(activityBumpMap, task?.id);
+      });
     }
 
     return filtered;
@@ -743,6 +777,8 @@ export const TaskDashboardScreen: React.FC = () => {
     hasTasksFetchedSinceMount,
     viewFilter,
     selectedTeamMemberIds,
+    activityBumpTick,
+    dashboardTaskIdsForView,
   ]);
 
   // Task IDs that failed to load (e.g. 404 = deleted) — exclude those convs from list
@@ -775,13 +811,21 @@ export const TaskDashboardScreen: React.FC = () => {
       const task = key ? taskByConvId[key] : undefined;
       if (task && isTaskDeleted(task)) return false;
 
+      const activityBumpMap = activityBumpRef.current;
+
       // Align with dashboard metric selection (Self / Assigned + status),
-      // but always respect per-user lifecycle status (same logic as for direct tasks).
+      // but keep recently active tasks visible when filters would hide them.
       if (dashboardTaskIdsForView && dashboardTaskIdsForView.size > 0) {
-        if (!(task?.id && dashboardTaskIdsForView.has(String(task.id)))) return false;
+        const inView =
+          !!(task?.id && dashboardTaskIdsForView.has(String(task.id))) ||
+          isTaskRecentlyActiveForFilter(activityBumpMap, task?.id);
+        if (!inView) return false;
         if (statusFilter !== 'all') {
           const category = getTaskStatusForFilter(task);
-          return category === statusFilter;
+          return (
+            category === statusFilter ||
+            isTaskRecentlyActiveForFilter(activityBumpMap, task?.id)
+          );
         }
         return true;
       }
@@ -818,6 +862,7 @@ export const TaskDashboardScreen: React.FC = () => {
     }
 
     // When not driven by a dashboard metric, apply local status categorization
+    const activityBumpMap = activityBumpRef.current;
     if (!dashboardTaskIdsForView || dashboardTaskIdsForView.size === 0) {
       if (statusFilter !== 'all') {
         filtered = filtered.filter(conv => {
@@ -825,22 +870,15 @@ export const TaskDashboardScreen: React.FC = () => {
           const key = convId != null ? String(convId) : '';
           const task = key ? taskByConvId[key] : undefined;
           const category = getTaskStatusForFilter(task);
-          return category === statusFilter;
+          return (
+            category === statusFilter ||
+            isTaskRecentlyActiveForFilter(activityBumpMap, task?.id)
+          );
         });
       }
     }
 
-    // Sort: pinned first, then by last message time
-    return filtered.sort((a, b) => {
-      const aPinned = a.isPinned || a.is_pinned || false;
-      const bPinned = b.isPinned || b.is_pinned || false;
-      if (aPinned && !bPinned) return -1;
-      if (!aPinned && bPinned) return 1;
-
-      const aTime = new Date(a.lastMessageTime || a.last_message_time || 0).getTime();
-      const bTime = new Date(b.lastMessageTime || b.last_message_time || 0).getTime();
-      return bTime - aTime;
-    });
+    return sortConversationsByRecentActivity(filtered, taskByConvId, activityBumpMap);
   }, [
     taskGroups,
     searchQuery,
@@ -858,6 +896,7 @@ export const TaskDashboardScreen: React.FC = () => {
     isTaskDetailsFetching,
     viewFilter,
     selectedTeamMemberIds,
+    activityBumpTick,
   ]);
 
   const unreadCountByConversationId = useMemo(() => {
@@ -896,8 +935,8 @@ export const TaskDashboardScreen: React.FC = () => {
       entries.push({ kind: 'direct', task });
     });
 
-    return sortTaskDashboardCards(entries);
-  }, [filteredTaskGroups, tasksWithoutConversations, taskByConvId]);
+    return sortTaskDashboardCards(entries, activityBumpRef.current);
+  }, [filteredTaskGroups, tasksWithoutConversations, taskByConvId, activityBumpTick]);
 
   const currentUserId = user?.id || (user as any)?.userId;
 
@@ -1006,7 +1045,27 @@ export const TaskDashboardScreen: React.FC = () => {
 
       updated[conversationIndex] = conversation;
 
-      return sortConversationsByRecentActivity(updated);
+      const messageTime = message.created_at || message.createdAt;
+      const atMs = timestampToMs(messageTime, Date.now());
+      let linkedTaskId: string | undefined;
+      for (const [cid, tid] of Object.entries(taskIdByConvIdRef.current)) {
+        if (String(cid) === String(conversationId)) {
+          linkedTaskId = tid;
+          break;
+        }
+      }
+      bumpTaskDashboardActivity(activityBumpRef.current, {
+        conversationId: String(conversationId),
+        taskId: linkedTaskId,
+        atMs,
+      });
+      setActivityBumpTick((n) => n + 1);
+
+      return sortConversationsByRecentActivity(
+        updated,
+        taskByConvIdRef.current,
+        activityBumpRef.current
+      );
     });
   };
 
@@ -1061,7 +1120,11 @@ export const TaskDashboardScreen: React.FC = () => {
                 return conv;
               });
               
-              return sortConversationsByRecentActivity(updated);
+              return sortConversationsByRecentActivity(
+                updated,
+                taskByConvIdRef.current,
+                activityBumpRef.current
+              );
             });
           }
         };
@@ -1085,11 +1148,49 @@ export const TaskDashboardScreen: React.FC = () => {
                 return conv;
               });
 
-              return sortConversationsByRecentActivity(updated);
+              return sortConversationsByRecentActivity(
+                updated,
+                taskByConvIdRef.current,
+                activityBumpRef.current
+              );
             });
           }
         };
-        const handleTaskStatusChanged = () => {
+        const handleTaskStatusChanged = (data: any) => {
+          const taskId = data?.taskId;
+          const atMs = timestampToMs(data?.computedAt, Date.now());
+          if (taskId) {
+            let linkedConvId: string | undefined;
+            for (const [cid, tid] of Object.entries(taskIdByConvIdRef.current)) {
+              if (String(tid) === String(taskId)) {
+                linkedConvId = cid;
+                break;
+              }
+            }
+            recordTaskActivity({ taskId: String(taskId), conversationId: linkedConvId, atMs });
+            const iso = new Date(atMs).toISOString();
+            queryClient.setQueryData(['task', String(taskId)], (old: any) =>
+              old ? { ...old, updated_at: iso, updatedAt: iso } : old
+            );
+            queryClient.setQueryData(['conversations', 'task'], (oldData: any[] = []) => {
+              const updated = oldData.map((conv: any) => {
+                const convId = String(conv.id || conv.conversationId || '');
+                if (linkedConvId && convId === String(linkedConvId)) {
+                  return {
+                    ...conv,
+                    lastMessageTime: iso,
+                    last_message_time: iso,
+                  };
+                }
+                return conv;
+              });
+              return sortConversationsByRecentActivity(
+                updated,
+                taskByConvIdRef.current,
+                activityBumpRef.current
+              );
+            });
+          }
           queryClient.invalidateQueries('tasks');
           queryClient.invalidateQueries(['task']);
           queryClient.invalidateQueries('dashboard-data');
@@ -1098,7 +1199,11 @@ export const TaskDashboardScreen: React.FC = () => {
         socket.on('new_message', handleNewMessage);
         socket.on('message_status_update', handleMessageStatusUpdate);
         socket.on('conversation_messages_read', handleConversationMessagesRead);
-        const handleAssigneesAdded = () => {
+        const handleAssigneesAdded = (data: any) => {
+          recordTaskActivity({
+            taskId: data?.taskId,
+            conversationId: data?.conversationId,
+          });
           queryClient.invalidateQueries(['conversations', 'task']);
           queryClient.invalidateQueries('tasks');
         };
@@ -1127,7 +1232,7 @@ export const TaskDashboardScreen: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [queryClient, user, clearConversationUnread]);
+  }, [queryClient, user, clearConversationUnread, recordTaskActivity]);
 
   const setStatusFilterAndUrl = (filter: StatusFilter) => {
     setStatusFilter(filter);
@@ -1830,6 +1935,7 @@ export const TaskDashboardScreen: React.FC = () => {
           taskIds={Array.from(selectedTaskIds)}
           onClose={() => setShowBulkAssignModal(false)}
           onSuccess={() => {
+            Array.from(selectedTaskIds).forEach((taskId) => recordTaskActivity({ taskId }));
             exitBulkSelectMode();
             queryClient.invalidateQueries(['conversations', 'task']);
             queryClient.invalidateQueries('tasks');
@@ -1915,6 +2021,7 @@ export const TaskDashboardScreen: React.FC = () => {
         taskIds={Array.from(selectedTaskIds)}
         onClose={() => setShowBulkAssignModal(false)}
         onSuccess={() => {
+          Array.from(selectedTaskIds).forEach((taskId) => recordTaskActivity({ taskId }));
           exitBulkSelectMode();
           queryClient.invalidateQueries(['conversations', 'task']);
           queryClient.invalidateQueries('tasks');
