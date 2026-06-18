@@ -669,7 +669,7 @@ export const AdminDashboard: React.FC = () => {
       <div className="flex h-full min-h-0 w-full min-w-0 flex-col space-y-2">
         <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1.5">
           <div className="h-5 w-1 shrink-0 rounded-full bg-primary"></div>
-          <h2 className="shrink-0 text-sm font-semibold text-gray-900 dark:text-white md:text-base">{title}</h2>
+          <h2 className="shrink-0 text-xs font-semibold text-gray-900 dark:text-white sm:text-sm">{title}</h2>
           <div className="h-px min-w-[2rem] flex-1 bg-gray-200 dark:bg-gray-700"></div>
           {viewType === 'assigned' ? (
             <div className="relative w-full min-w-0 shrink-0 sm:w-[200px]" ref={assignedMemberFilterRef}>
@@ -886,7 +886,7 @@ export const AdminDashboard: React.FC = () => {
       <div className="flex h-full min-h-0 flex-col rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800/95 p-2.5 sm:p-3">
         <div className="mb-2 flex shrink-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <h3 className="text-xs font-semibold text-gray-900 dark:text-white sm:text-sm">{title}</h3>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white md:text-base">{title}</h3>
           </div>
           <div className="flex shrink-0 items-center gap-0.5 self-start sm:self-center">
             <button type="button" onClick={() => onShiftMonth(-1)} className="rounded p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -920,7 +920,7 @@ export const AdminDashboard: React.FC = () => {
               >
                 {day ? (
                   <>
-                    <div className="text-[9px] font-bold leading-none text-gray-700 dark:text-gray-200 sm:text-[10px]">{new Date(day.date + 'T12:00:00').getDate()}</div>
+                    <div className="text-sm font-semibold leading-none text-gray-700 dark:text-gray-200">{new Date(day.date + 'T12:00:00').getDate()}</div>
                     {dueDayBox(day)}
                   </>
                 ) : null}
@@ -998,7 +998,7 @@ export const AdminDashboard: React.FC = () => {
           <div className="grid grid-cols-1 gap-3 md:gap-4 lg:grid-cols-2 lg:items-stretch">
             <section className="flex min-h-0 min-w-0 flex-col rounded-xl border border-gray-200 bg-white p-2.5 dark:border-gray-700 dark:bg-slate-800/95 sm:p-3 lg:h-full">
               <div className="mb-2 shrink-0">
-                <h3 className="text-xs font-semibold text-gray-900 dark:text-white sm:text-sm">Dashboard</h3>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white md:text-base">Dashboard</h3>
               </div>
               <div className="flex min-h-0 flex-1 flex-col gap-3 lg:grid lg:grid-rows-2 lg:gap-0">
                 <div className="flex min-h-0 flex-1 flex-col lg:pb-3">

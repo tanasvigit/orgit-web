@@ -1,9 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  buildTaskAnalyticsTableRows,
-  downloadTaskAnalyticsReportCsv,
+  buildTaskAnalyticsReport,
   EMPTY_TASK_ANALYTICS_FILTERS,
-  getCascadingFilterOptions,
+  downloadTaskAnalyticsReportCsv,
+  getDimensionOptionsForSlot,
+  hasTaskAnalyticsData,
+  TASK_ANALYTICS_FILTER_PLACEHOLDER,
+  TASK_ANALYTICS_FILTER_SLOTS,
   TASK_ANALYTICS_REPORT_TITLE,
   TASK_ANALYTICS_STATUS_COLUMNS,
   type TaskAnalyticsFilters,
@@ -13,6 +16,7 @@ interface TaskAnalyticsReportProps {
   tasks: any[];
   dueSoonDays?: number;
   hideTitle?: boolean;
+  excludeUserId?: string | null;
 }
 
 const selectClassName =
@@ -30,10 +34,10 @@ function FilterSelect({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="flex min-w-[160px] flex-1 flex-col gap-1">
+    <label className="flex min-w-[140px] flex-1 flex-col gap-1">
       <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{label}</span>
       <select className={selectClassName} value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">All</option>
+        <option value="">{TASK_ANALYTICS_FILTER_PLACEHOLDER}</option>
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {opt.label}
@@ -44,58 +48,29 @@ function FilterSelect({
   );
 }
 
-export function TaskAnalyticsReport({ tasks, dueSoonDays = 3, hideTitle = false }: TaskAnalyticsReportProps) {
+export function TaskAnalyticsReport({
+  tasks,
+  dueSoonDays = 3,
+  hideTitle = false,
+  excludeUserId,
+}: TaskAnalyticsReportProps) {
   const [filters, setFilters] = useState<TaskAnalyticsFilters>(EMPTY_TASK_ANALYTICS_FILTERS);
 
-  const options = useMemo(() => getCascadingFilterOptions(tasks, filters), [tasks, filters]);
-  const { rows, groupLabel } = useMemo(
-    () => buildTaskAnalyticsTableRows(tasks, filters, dueSoonDays),
-    [tasks, filters, dueSoonDays]
+  const reportData = useMemo(
+    () => buildTaskAnalyticsReport(tasks, filters, dueSoonDays, excludeUserId),
+    [tasks, filters, dueSoonDays, excludeUserId]
   );
-
-  useEffect(() => {
-    if (filters.employeeId && !options.employees.some((o) => o.value === filters.employeeId)) {
-      setFilters((prev) => ({ ...prev, employeeId: '', client: '', serviceCategory: '', taskPeriod: '' }));
-      return;
-    }
-    if (filters.client && !options.clients.some((o) => o.value === filters.client)) {
-      setFilters((prev) => ({ ...prev, client: '', serviceCategory: '', taskPeriod: '' }));
-      return;
-    }
-    if (
-      filters.serviceCategory &&
-      !options.serviceCategories.some((o) => o.value === filters.serviceCategory)
-    ) {
-      setFilters((prev) => ({ ...prev, serviceCategory: '', taskPeriod: '' }));
-      return;
-    }
-    if (filters.taskPeriod && !options.taskPeriods.some((o) => o.value === filters.taskPeriod)) {
-      setFilters((prev) => ({ ...prev, taskPeriod: '' }));
-    }
-  }, [filters, options]);
+  const { rows } = reportData;
 
   const updateFilter = (key: keyof TaskAnalyticsFilters, value: string) => {
-    setFilters((prev) => {
-      const next = { ...prev, [key]: value };
-      if (key === 'employeeId') {
-        next.client = '';
-        next.serviceCategory = '';
-        next.taskPeriod = '';
-      } else if (key === 'client') {
-        next.serviceCategory = '';
-        next.taskPeriod = '';
-      } else if (key === 'serviceCategory') {
-        next.taskPeriod = '';
-      }
-      return next;
-    });
+    setFilters((prev) => ({ ...prev, [key]: value as TaskAnalyticsFilters[typeof key] }));
   };
 
   const handleDownload = () => {
-    downloadTaskAnalyticsReportCsv(rows, groupLabel, filters, options);
+    downloadTaskAnalyticsReportCsv(reportData, filters);
   };
 
-  if (!rows.length) return null;
+  if (!hasTaskAnalyticsData(tasks, excludeUserId)) return null;
 
   return (
     <div className="space-y-4">
@@ -110,35 +85,21 @@ export function TaskAnalyticsReport({ tasks, dueSoonDays = 3, hideTitle = false 
 
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
         <div className="flex flex-1 flex-wrap gap-3">
-          <FilterSelect
-            label="Employee"
-            value={filters.employeeId}
-            options={options.employees}
-            onChange={(v) => updateFilter('employeeId', v)}
-          />
-          <FilterSelect
-            label="Client"
-            value={filters.client}
-            options={options.clients}
-            onChange={(v) => updateFilter('client', v)}
-          />
-          <FilterSelect
-            label="Service Category"
-            value={filters.serviceCategory}
-            options={options.serviceCategories}
-            onChange={(v) => updateFilter('serviceCategory', v)}
-          />
-          <FilterSelect
-            label="Task Period"
-            value={filters.taskPeriod}
-            options={options.taskPeriods}
-            onChange={(v) => updateFilter('taskPeriod', v)}
-          />
+          {TASK_ANALYTICS_FILTER_SLOTS.map((slot) => (
+            <FilterSelect
+              key={slot.key}
+              label={slot.label}
+              value={filters[slot.key]}
+              options={getDimensionOptionsForSlot(filters, slot.key)}
+              onChange={(v) => updateFilter(slot.key, v)}
+            />
+          ))}
         </div>
         <button
           type="button"
           onClick={handleDownload}
-          className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-violet-500/40 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-950/60 sm:w-auto sm:text-sm"
+          disabled={!rows.length}
+          className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-violet-500/40 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-950/60 sm:w-auto sm:text-sm"
         >
           <span className="material-symbols-outlined text-base">download</span>
           Download report
@@ -146,37 +107,58 @@ export function TaskAnalyticsReport({ tasks, dueSoonDays = 3, hideTitle = false 
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 border-l-[4px] border-l-violet-500 bg-white shadow-sm dark:border-gray-700 dark:bg-slate-800/95">
-        <table className="min-w-[720px] w-full text-sm">
+        <table className="min-w-[900px] w-full text-sm">
           <thead className="bg-gray-50 dark:bg-slate-900/50">
             <tr>
-              <th className="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-300">
-                {groupLabel}
+              <th className="w-14 px-3 py-3 text-center font-semibold text-gray-600 dark:text-gray-300">
+                S No
+              </th>
+              <th className="min-w-[200px] px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-300">
+                Particulars
               </th>
               {TASK_ANALYTICS_STATUS_COLUMNS.map((col) => (
                 <th
                   key={col.key}
-                  className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300"
+                  className="min-w-[120px] px-3 py-3 text-center font-semibold text-gray-600 dark:text-gray-300"
                 >
                   {col.label}
                 </th>
               ))}
-              <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">Total</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td className="px-4 py-3 text-gray-900 dark:text-white">{row.label}</td>
-                {TASK_ANALYTICS_STATUS_COLUMNS.map((col) => (
-                  <td key={col.key} className="px-4 py-3 text-right text-gray-700 dark:text-gray-200">
-                    {row.counts[col.key]}
-                  </td>
-                ))}
-                <td className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">
-                  {row.total}
+            {rows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={2 + TASK_ANALYTICS_STATUS_COLUMNS.length}
+                  className="px-4 py-6 text-center text-gray-500 dark:text-gray-400"
+                >
+                  No tasks match the selected filters.
                 </td>
               </tr>
-            ))}
+            ) : (
+              rows.map((row) => (
+                <tr key={row.id}>
+                  <td className="px-3 py-2.5 align-top text-center text-gray-700 dark:text-gray-200">
+                    {row.sNo ?? ''}
+                  </td>
+                  <td
+                    className="px-4 py-2.5 align-top font-medium text-gray-900 dark:text-white"
+                    style={{ paddingLeft: `${16 + row.depth * 20}px` }}
+                  >
+                    {row.particulars}
+                  </td>
+                  {TASK_ANALYTICS_STATUS_COLUMNS.map((col) => (
+                    <td
+                      key={col.key}
+                      className="px-3 py-2.5 align-top text-center text-sm text-gray-700 dark:text-gray-200"
+                    >
+                      {row.countsByStatus[col.key] > 0 ? row.countsByStatus[col.key] : ''}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

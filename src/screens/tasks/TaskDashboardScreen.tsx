@@ -14,6 +14,7 @@ import { AdminLayout } from '../../components/admin/AdminLayout';
 import { EmployeeLayout } from '../../components/employee/EmployeeLayout';
 import { TaskGroupChatConversation } from '../messaging/TaskGroupChatConversation';
 import { BulkAssignUsersModal } from '../../components/tasks/BulkAssignUsersModal';
+import { BulkTaskActionsMenu } from '../../components/tasks/BulkTaskActionsMenu';
 import { taskBulkService } from '../../services/taskBulkService';
 import { isTaskDeleted } from '../../utils/taskUtils';
 import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
@@ -56,6 +57,7 @@ function TaskDashboardCardBody({
   taskDueLabel,
   taskFrequencyLabel,
   taskUnitLabel,
+  assignees,
   titleClassName,
 }: {
   display: TaskCardDisplayConfig;
@@ -65,6 +67,7 @@ function TaskDashboardCardBody({
   taskDueLabel: string;
   taskFrequencyLabel: string;
   taskUnitLabel: string | null;
+  assignees?: Array<{ id: string; name: string; photoUrl?: string | null }>;
   titleClassName?: string;
 }) {
   const showStatusIcon = display.statusIcon && !!taskStatusCategory;
@@ -72,6 +75,8 @@ function TaskDashboardCardBody({
   const showDue = display.dueDate && !!taskDueLabel;
   const showFreq = display.frequency && !!taskFrequencyLabel;
   const showUnit = display.taskUnit && !!taskUnitLabel;
+  const normalizedAssignees = Array.isArray(assignees) ? assignees.filter((a) => !!a?.id) : [];
+  const showAssigneeGroup = display.assigneeProfiles && normalizedAssignees.length > 0;
   const showHeaderRow = display.title || showStatusIcon;
   const showSecondRow = showTag || showDue;
   const showThirdRow = showFreq || showUnit;
@@ -130,6 +135,56 @@ function TaskDashboardCardBody({
           )}
         </>
       ) : null}
+      {showAssigneeGroup ? (
+        <>
+          <div />
+          <div className="flex justify-end pt-0.5">
+            <TaskCardAssigneeGroup assignees={normalizedAssignees} />
+          </div>
+        </>
+      ) : null}
+      </div>
+    </div>
+  );
+}
+
+function TaskCardAssigneeGroup({
+  assignees,
+}: {
+  assignees: Array<{ id: string; name: string; photoUrl?: string | null }>;
+}) {
+  const visible = assignees.slice(0, 2);
+  const extra = Math.max(0, assignees.length - visible.length);
+
+  const getInitial = (name?: string) => {
+    const n = String(name || '').trim();
+    return n ? n.charAt(0).toUpperCase() : 'U';
+  };
+
+  return (
+    <div className="flex items-center">
+      <div className="flex items-center -space-x-2">
+        {visible.map((a) => (
+          <span
+            key={a.id}
+            className="inline-flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-200 text-[11px] font-semibold text-gray-700 shadow-sm dark:border-slate-800 dark:bg-gray-700 dark:text-gray-200"
+            title={a.name}
+          >
+            {a.photoUrl ? (
+              <img src={a.photoUrl} alt={a.name} className="h-full w-full object-cover" />
+            ) : (
+              getInitial(a.name)
+            )}
+          </span>
+        ))}
+        {extra > 0 ? (
+          <span
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-gray-100 text-xs font-bold text-gray-600 shadow-sm dark:border-slate-800 dark:bg-gray-600 dark:text-gray-100"
+            title={`${extra} more assignees`}
+          >
+            +{extra}
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -416,15 +471,23 @@ export const TaskDashboardScreen: React.FC = () => {
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
     const v = (statusFromUrl || '').toLowerCase();
-    if (v === 'scheduled' || v === 'todo' || v === 'overdue' || v === 'duesoon' || v === 'inprogress' || v === 'completed') {
+    if (
+      v === 'all' ||
+      v === 'scheduled' ||
+      v === 'todo' ||
+      v === 'overdue' ||
+      v === 'duesoon' ||
+      v === 'inprogress' ||
+      v === 'completed'
+    ) {
       return v as StatusFilter;
     }
-    return 'todo';
+    return 'all';
   });
 
   const [viewFilter, setViewFilter] = useState<ViewFilter>(() => {
     const v = (viewFromUrl || '').toLowerCase();
-    if (v === 'self' || v === 'assigned') return v as ViewFilter;
+    if (v === 'all' || v === 'self' || v === 'assigned') return v as ViewFilter;
     return 'all';
   });
 
@@ -434,6 +497,7 @@ export const TaskDashboardScreen: React.FC = () => {
     const viewParam = (searchParams.get('view') || '').toLowerCase();
 
     if (
+      statusParam === 'all' ||
       statusParam === 'scheduled' ||
       statusParam === 'todo' ||
       statusParam === 'overdue' ||
@@ -444,7 +508,7 @@ export const TaskDashboardScreen: React.FC = () => {
       setStatusFilter(statusParam as StatusFilter);
     }
 
-    if (viewParam === 'self' || viewParam === 'assigned') {
+    if (viewParam === 'all' || viewParam === 'self' || viewParam === 'assigned') {
       setViewFilter(viewParam as ViewFilter);
     }
   }, [searchParams]);
@@ -979,6 +1043,25 @@ export const TaskDashboardScreen: React.FC = () => {
     return entries;
   }, [filteredTaskGroups, tasksWithoutConversations, taskByConvId, canBulkSelectTask]);
 
+  const allDashboardTasksById = useMemo(() => {
+    const map = new Map<string, any>();
+    Object.values(taskByConvId || {}).forEach((task: any) => {
+      if (task?.id) map.set(String(task.id), task);
+    });
+    tasksWithoutConversations.forEach((task: any) => {
+      if (task?.id) map.set(String(task.id), task);
+    });
+    return map;
+  }, [taskByConvId, tasksWithoutConversations]);
+
+  const selectedTasksForBulk = useMemo(
+    () =>
+      Array.from(selectedTaskIds)
+        .map((taskId) => allDashboardTasksById.get(String(taskId)))
+        .filter(Boolean),
+    [selectedTaskIds, allDashboardTasksById]
+  );
+
   const toggleTaskSelection = (taskId: string) => {
     setSelectedTaskIds((prev) => {
       const next = new Set(prev);
@@ -992,6 +1075,18 @@ export const TaskDashboardScreen: React.FC = () => {
     setBulkSelectMode(false);
     setSelectedTaskIds(new Set());
     setShowBulkAssignModal(false);
+  };
+
+  const invalidateAfterBulkAction = () => {
+    Array.from(selectedTaskIds).forEach((taskId) => recordTaskActivity({ taskId }));
+    exitBulkSelectMode();
+    queryClient.invalidateQueries(['conversations', 'task']);
+    queryClient.invalidateQueries('tasks');
+    queryClient.invalidateQueries(['task-dashboard-data']);
+    queryClient.invalidateQueries('dashboard');
+    queryClient.invalidateQueries(['admin-dashboard']);
+    queryClient.invalidateQueries(['dashboard-statistics']);
+    queryClient.invalidateQueries(['admin-dashboard-statistics']);
   };
 
   const selectAllVisibleTasks = () => {
@@ -1448,39 +1543,6 @@ export const TaskDashboardScreen: React.FC = () => {
           </div>
         </div>
 
-        {bulkSelectMode && (
-          <div className="mb-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-2.5">
-            <p className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">
-              {selectedTaskIds.size} of {selectableTaskEntries.length} selected
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={selectAllVisibleTasks}
-                disabled={selectableTaskEntries.length === 0}
-                className="min-h-[32px] px-3 py-1.5 rounded-md text-xs font-semibold bg-white dark:bg-slate-700 border border-gray-200 dark:border-gray-600 text-gray-800 dark:text-gray-100 disabled:opacity-50"
-              >
-                Select all
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedTaskIds(new Set())}
-                className="min-h-[32px] px-3 py-1.5 rounded-md text-xs font-semibold bg-white dark:bg-slate-700 border border-gray-200 dark:border-gray-600 text-gray-800 dark:text-gray-100"
-              >
-                Clear
-              </button>
-              <button
-                type="button"
-                disabled={selectedTaskIds.size === 0}
-                onClick={() => setShowBulkAssignModal(true)}
-                className="min-h-[32px] ml-auto px-4 py-1.5 rounded-md text-xs font-semibold bg-primary text-white disabled:opacity-50"
-              >
-                Add users
-              </button>
-            </div>
-          </div>
-        )}
-
         {viewFilter === 'assigned' && (
           <div className="mb-2.5 relative" ref={teamMemberFilterRef}>
             <button
@@ -1562,8 +1624,8 @@ export const TaskDashboardScreen: React.FC = () => {
           </div>
         )}
 
-        {/* Row 2: All | Self | Assigned + Select */}
-        <div className="flex items-center gap-1 mb-2">
+        {/* Row 2: All | Self | Assigned */}
+        <div className="flex items-center justify-center gap-1 mb-2">
           {([
             { key: 'all', label: 'All' },
             { key: 'self', label: 'Self Tasks' },
@@ -1587,24 +1649,6 @@ export const TaskDashboardScreen: React.FC = () => {
               </button>
             );
           })}
-          <button
-            type="button"
-            onClick={() => {
-              if (bulkSelectMode) exitBulkSelectMode();
-              else setBulkSelectMode(true);
-            }}
-            className={`ml-auto shrink-0 h-8 px-2.5 rounded-lg flex items-center gap-1 text-[10px] font-semibold border transition-colors ${
-              bulkSelectMode
-                ? 'bg-primary/10 border-primary text-primary'
-                : 'border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'
-            }`}
-            title={bulkSelectMode ? 'Cancel selection' : 'Select tasks to assign users'}
-          >
-            <span className="material-icons-outlined text-base">
-              {bulkSelectMode ? 'close' : 'checklist'}
-            </span>
-            {bulkSelectMode ? 'Cancel' : 'Select'}
-          </button>
         </div>
 
         {/* Row 3: Status filters with scroll arrows */}
@@ -1644,6 +1688,42 @@ export const TaskDashboardScreen: React.FC = () => {
                 );
               })}
         </FilterChipScrollRow>
+
+        {bulkSelectMode && (
+          <div className="mt-2.5 mb-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-2.5">
+            <p className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">
+              {selectedTaskIds.size} of {selectableTaskEntries.length} selected
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={selectAllVisibleTasks}
+                disabled={selectableTaskEntries.length === 0}
+                className="min-h-[32px] px-3 py-1.5 rounded-md text-xs font-semibold bg-white dark:bg-slate-700 border border-gray-200 dark:border-gray-600 text-gray-800 dark:text-gray-100 disabled:opacity-50"
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedTaskIds(new Set())}
+                className="min-h-[32px] px-3 py-1.5 rounded-md text-xs font-semibold bg-white dark:bg-slate-700 border border-gray-200 dark:border-gray-600 text-gray-800 dark:text-gray-100"
+              >
+                Clear
+              </button>
+              <div className="ml-auto">
+                <BulkTaskActionsMenu
+                  selectedTasks={selectedTasksForBulk}
+                  currentUserId={String(currentUserId || '')}
+                  userRole={user?.role}
+                  dueSoonDays={tasksDueSoonDays}
+                  disabled={selectedTaskIds.size === 0}
+                  onAddMembers={() => setShowBulkAssignModal(true)}
+                  onActionComplete={invalidateAfterBulkAction}
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Bulk Upload Tasks - Admin/Super Admin only */}
@@ -1688,7 +1768,7 @@ export const TaskDashboardScreen: React.FC = () => {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pb-2 space-y-2">
+      <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pt-2 pb-2 space-y-2">
         {/* Loading state to avoid flicker / incorrect default actions */}
         {isTaskGroupsLoading && (
           <div>
@@ -1715,10 +1795,30 @@ export const TaskDashboardScreen: React.FC = () => {
 
         {!isTaskGroupsLoading && !isPendingTasksLoading && sortedTaskCardEntries.length > 0 ? (
           <div>
-            <h3 className="flex items-center text-[11px] font-bold text-primary uppercase tracking-wider mb-2 px-1">
-              <span className="material-icons-round text-sm mr-1">groups</span>
-              Tasks ({sortedTaskCardEntries.length})
-            </h3>
+            <div className="flex items-center justify-between gap-2 mt-2 mb-2 px-1">
+              <h3 className="flex items-center min-w-0 text-[11px] font-bold text-primary uppercase tracking-wider">
+                <span className="material-icons-round text-sm mr-1">groups</span>
+                Tasks ({sortedTaskCardEntries.length})
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  if (bulkSelectMode) exitBulkSelectMode();
+                  else setBulkSelectMode(true);
+                }}
+                className={`shrink-0 h-7 px-2 rounded-lg flex items-center gap-1 text-[10px] font-semibold border transition-colors ${
+                  bulkSelectMode
+                    ? 'bg-primary/10 border-primary text-primary'
+                    : 'border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'
+                }`}
+                title={bulkSelectMode ? 'Cancel selection' : 'Select tasks to assign users'}
+              >
+                <span className="material-icons-outlined text-base">
+                  {bulkSelectMode ? 'close' : 'checklist'}
+                </span>
+                {bulkSelectMode ? 'Cancel' : 'Select'}
+              </button>
+            </div>
             <div className="space-y-1">
               {sortedTaskCardEntries.map((entry) => {
                 if (entry.kind === 'group') {
@@ -1732,6 +1832,19 @@ export const TaskDashboardScreen: React.FC = () => {
                   const taskDueLabel = resolveTaskDueDateLabel(task);
                   const taskFrequencyLabel = resolveTaskFrequencyLabel(task);
                   const taskUnitLabel = resolveTaskUnitDisplay(task);
+                  const taskAssignees = Array.isArray(task?.assignees)
+                    ? task.assignees
+                        .map((a: any) => {
+                          const id = a?.id || a?.user_id || a?.userId;
+                          if (!id) return null;
+                          return {
+                            id: String(id),
+                            name: String(a?.name || a?.full_name || 'User'),
+                            photoUrl: a?.photoUrl || a?.profile_photo_url || a?.profile_photo || null,
+                          };
+                        })
+                        .filter(Boolean)
+                    : [];
                   const isSelected = selectedConversationId === convId;
                   const taskIdStr = task?.id ? String(task.id) : '';
                   const bulkEligible = taskIdStr && canBulkSelectTask(task);
@@ -1775,6 +1888,7 @@ export const TaskDashboardScreen: React.FC = () => {
                             taskDueLabel={taskDueLabel}
                             taskFrequencyLabel={taskFrequencyLabel}
                             taskUnitLabel={taskUnitLabel}
+                            assignees={taskAssignees as Array<{ id: string; name: string; photoUrl?: string | null }>}
                             titleClassName="min-w-0 text-xs font-bold text-gray-900 dark:text-white truncate group-hover:text-primary dark:group-hover:text-primary/80 transition-colors"
                           />
                         </div>
@@ -1792,6 +1906,19 @@ export const TaskDashboardScreen: React.FC = () => {
                 const taskDueLabel = resolveTaskDueDateLabel(task);
                 const taskFrequencyLabel = resolveTaskFrequencyLabel(task);
                 const taskUnitLabel = resolveTaskUnitDisplay(task);
+                const taskAssignees = Array.isArray(task?.assignees)
+                  ? task.assignees
+                      .map((a: any) => {
+                        const id = a?.id || a?.user_id || a?.userId;
+                        if (!id) return null;
+                        return {
+                          id: String(id),
+                          name: String(a?.name || a?.full_name || 'User'),
+                          photoUrl: a?.photoUrl || a?.profile_photo_url || a?.profile_photo || null,
+                        };
+                      })
+                      .filter(Boolean)
+                  : [];
                 const bulkEligible = canBulkSelectTask(task);
                 const taskChecked = bulkSelectMode && selectedTaskIds.has(String(taskId));
                 const taskUnreadCount = getTaskCardUnreadCount(taskConversationId);
@@ -1839,6 +1966,7 @@ export const TaskDashboardScreen: React.FC = () => {
                           taskDueLabel={taskDueLabel}
                           taskFrequencyLabel={taskFrequencyLabel}
                           taskUnitLabel={taskUnitLabel}
+                          assignees={taskAssignees as Array<{ id: string; name: string; photoUrl?: string | null }>}
                         />
                       </div>
                     </div>
@@ -1935,13 +2063,7 @@ export const TaskDashboardScreen: React.FC = () => {
           taskIds={Array.from(selectedTaskIds)}
           onClose={() => setShowBulkAssignModal(false)}
           onSuccess={() => {
-            Array.from(selectedTaskIds).forEach((taskId) => recordTaskActivity({ taskId }));
-            exitBulkSelectMode();
-            queryClient.invalidateQueries(['conversations', 'task']);
-            queryClient.invalidateQueries('tasks');
-            queryClient.invalidateQueries(['task-dashboard-data']);
-            queryClient.invalidateQueries('dashboard');
-            queryClient.invalidateQueries(['admin-dashboard']);
+            invalidateAfterBulkAction();
           }}
         />
 
@@ -2021,12 +2143,7 @@ export const TaskDashboardScreen: React.FC = () => {
         taskIds={Array.from(selectedTaskIds)}
         onClose={() => setShowBulkAssignModal(false)}
         onSuccess={() => {
-          Array.from(selectedTaskIds).forEach((taskId) => recordTaskActivity({ taskId }));
-          exitBulkSelectMode();
-          queryClient.invalidateQueries(['conversations', 'task']);
-          queryClient.invalidateQueries('tasks');
-          queryClient.invalidateQueries(['task-dashboard-data']);
-          queryClient.invalidateQueries('dashboard');
+          invalidateAfterBulkAction();
         }}
       />
 

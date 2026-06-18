@@ -175,3 +175,18 @@ export function getTaskStatusCategoryFromTask(
     dueSoonDays: resolvedDueSoonDays,
   });
 }
+
+/** Assignees are auto-accepted unless they explicitly rejected the task. */
+export function getEffectiveHasAccepted(input: {
+  isCreator: boolean;
+  isAssigned: boolean;
+  currentUserStatus?: any;
+  currentUserAssignee?: any;
+}): boolean {
+  const { isCreator, isAssigned, currentUserStatus, currentUserAssignee } = input;
+  if (isCreator) return true;
+  if (!isAssigned) return false;
+  const hasRejected = !!(currentUserStatus?.has_rejected || currentUserAssignee?.has_rejected);
+  if (hasRejected) return false;
+  return true;
+}
