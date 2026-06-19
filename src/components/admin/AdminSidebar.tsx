@@ -370,11 +370,17 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
           } else {
             isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
           }
+          const taskBadgeCount = badgeByPath[item.path] ?? 0;
+          const isTaskManagement = item.path === '/admin/tasks';
           return (
             <Link
               key={item.path}
               to={item.path}
-              onClick={() => {
+              onClick={(e) => {
+                if (isTaskManagement && taskBadgeCount > 0) {
+                  e.preventDefault();
+                  navigate(item.path, { state: { resetTaskFilters: true } });
+                }
                 if (window.innerWidth < 768) {
                   setIsMobileOpen(false);
                 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useQuery, useQueries, useQueryClient, useMutation } from 'react-query';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
 import { conversationService } from '../../services/conversationService';
 import { taskService } from '../../services/taskService';
 import { dashboardService } from '../../services/dashboardService';
@@ -34,6 +34,7 @@ import {
 import { taskStatusToAppIcon } from '../../constants/appIcons';
 import { useTaskCardDisplayConfig } from '../../hooks/useTaskCardDisplayConfig';
 import type { TaskCardDisplayConfig } from '../../utils/taskCardDisplayConfig';
+import { resolveTaskCardMembers, type TaskCardMember, getProfileInitials } from '../../utils/taskCardMembers';
 import {
   sortConversationsByRecentActivity,
   sortTaskDashboardCards,
@@ -49,6 +50,23 @@ import { timestampToMs } from '../../utils/chatTime';
 
 type TaskDashboardStatus = TaskStatusCategory;
 
+function TaskCardProfileAvatar({ member }: { member: TaskCardMember }) {
+  const initial = getProfileInitials(member.name);
+
+  return (
+    <span
+      className="inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-primary bg-gray-200 text-[9px] font-semibold tracking-tight text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+      title={`Owner: ${member.name}`}
+    >
+      {member.photoUrl ? (
+        <img src={member.photoUrl} alt={member.name} className="h-full w-full object-cover" />
+      ) : (
+        initial
+      )}
+    </span>
+  );
+}
+
 function TaskDashboardCardBody({
   display,
   displayTitle,
@@ -57,6 +75,7 @@ function TaskDashboardCardBody({
   taskDueLabel,
   taskFrequencyLabel,
   taskUnitLabel,
+  owner,
   assignees,
   titleClassName,
 }: {
@@ -67,7 +86,8 @@ function TaskDashboardCardBody({
   taskDueLabel: string;
   taskFrequencyLabel: string;
   taskUnitLabel: string | null;
-  assignees?: Array<{ id: string; name: string; photoUrl?: string | null }>;
+  owner?: TaskCardMember | null;
+  assignees?: TaskCardMember[];
   titleClassName?: string;
 }) {
   const showStatusIcon = display.statusIcon && !!taskStatusCategory;
@@ -76,8 +96,10 @@ function TaskDashboardCardBody({
   const showFreq = display.frequency && !!taskFrequencyLabel;
   const showUnit = display.taskUnit && !!taskUnitLabel;
   const normalizedAssignees = Array.isArray(assignees) ? assignees.filter((a) => !!a?.id) : [];
+  const showOwner = display.assigneeProfiles && !!owner?.id;
   const showAssigneeGroup = display.assigneeProfiles && normalizedAssignees.length > 0;
-  const showHeaderRow = display.title || showStatusIcon;
+  const showHeaderRow = display.title || showStatusIcon || showOwner;
+  const showAssigneeRow = showAssigneeGroup;
   const showSecondRow = showTag || showDue;
   const showThirdRow = showFreq || showUnit;
 
@@ -86,15 +108,22 @@ function TaskDashboardCardBody({
       <div className="grid w-full grid-cols-[minmax(0,2fr)_auto] gap-x-2 gap-y-1">
       {showHeaderRow ? (
         <>
-          {display.title ? (
-            <h4
-              className={
-                titleClassName ||
-                'min-w-0 text-xs font-bold text-gray-900 dark:text-white truncate'
-              }
-            >
-              {displayTitle}
-            </h4>
+          {display.title || showOwner ? (
+            <div className="flex min-w-0 items-center gap-1.5">
+              {showOwner && owner ? <TaskCardProfileAvatar member={owner} /> : null}
+              {display.title ? (
+                <h4
+                  className={
+                    titleClassName ||
+                    'min-w-0 flex-1 text-xs font-bold text-gray-900 dark:text-white truncate'
+                  }
+                >
+                  {displayTitle}
+                </h4>
+              ) : (
+                <div className="flex-1" />
+              )}
+            </div>
           ) : (
             <div />
           )}
@@ -104,6 +133,12 @@ function TaskDashboardCardBody({
             ) : null}
           </div>
         </>
+      ) : null}
+
+      {showAssigneeRow ? (
+        <div className="col-span-2 pt-0.5">
+          <TaskCardAssigneeGroup assignees={normalizedAssignees} align="start" />
+        </div>
       ) : null}
 
       {showSecondRow ? (
@@ -135,14 +170,6 @@ function TaskDashboardCardBody({
           )}
         </>
       ) : null}
-      {showAssigneeGroup ? (
-        <>
-          <div />
-          <div className="flex justify-end pt-0.5">
-            <TaskCardAssigneeGroup assignees={normalizedAssignees} />
-          </div>
-        </>
-      ) : null}
       </div>
     </div>
   );
@@ -150,24 +177,23 @@ function TaskDashboardCardBody({
 
 function TaskCardAssigneeGroup({
   assignees,
+  align = 'end',
 }: {
   assignees: Array<{ id: string; name: string; photoUrl?: string | null }>;
+  align?: 'start' | 'end';
 }) {
   const visible = assignees.slice(0, 2);
   const extra = Math.max(0, assignees.length - visible.length);
 
-  const getInitial = (name?: string) => {
-    const n = String(name || '').trim();
-    return n ? n.charAt(0).toUpperCase() : 'U';
-  };
+  const getInitial = (name?: string) => getProfileInitials(name);
 
   return (
-    <div className="flex items-center">
+    <div className={`flex items-center ${align === 'start' ? 'justify-start' : 'justify-end'}`}>
       <div className="flex items-center -space-x-2">
         {visible.map((a) => (
           <span
             key={a.id}
-            className="inline-flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-200 text-[11px] font-semibold text-gray-700 shadow-sm dark:border-slate-800 dark:bg-gray-700 dark:text-gray-200"
+            className="inline-flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-200 text-[9px] font-semibold tracking-tight text-gray-700 shadow-sm dark:border-slate-800 dark:bg-gray-700 dark:text-gray-200"
             title={a.name}
           >
             {a.photoUrl ? (
@@ -179,7 +205,7 @@ function TaskCardAssigneeGroup({
         ))}
         {extra > 0 ? (
           <span
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-gray-100 text-xs font-bold text-gray-600 shadow-sm dark:border-slate-800 dark:bg-gray-600 dark:text-gray-100"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-gray-100 text-[10px] font-bold text-gray-600 shadow-sm dark:border-slate-800 dark:bg-gray-600 dark:text-gray-100"
             title={`${extra} more assignees`}
           >
             +{extra}
@@ -260,6 +286,7 @@ function TaskStatusIcon({ category }: { category: Exclude<StatusFilter, 'all'> }
 
 export const TaskDashboardScreen: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { conversationId: selectedConversationId } = useParams<{ conversationId?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
@@ -491,8 +518,18 @@ export const TaskDashboardScreen: React.FC = () => {
     return 'all';
   });
 
-  // Sync filters from URL when navigating from dashboard (e.g. /tasks?view=self&status=inprogress)
+  // Sync filters from URL (dashboard deep links) or reset when opened from sidebar notification badge
   useEffect(() => {
+    if ((location.state as { resetTaskFilters?: boolean } | null)?.resetTaskFilters) {
+      setStatusFilter('all');
+      setViewFilter('all');
+      setSearchQuery('');
+      setSelectedTeamMemberIds([]);
+      setSearchParams({});
+      navigate(location.pathname, { replace: true, state: null });
+      return;
+    }
+
     const statusParam = (searchParams.get('status') || '').toLowerCase();
     const viewParam = (searchParams.get('view') || '').toLowerCase();
 
@@ -506,12 +543,16 @@ export const TaskDashboardScreen: React.FC = () => {
       statusParam === 'completed'
     ) {
       setStatusFilter(statusParam as StatusFilter);
+    } else if (!statusParam) {
+      setStatusFilter('all');
     }
 
-    if (viewParam === 'all' || viewParam === 'self' || viewParam === 'assigned') {
+    if (viewParam === 'self' || viewParam === 'assigned') {
       setViewFilter(viewParam as ViewFilter);
+    } else {
+      setViewFilter('all');
     }
-  }, [searchParams]);
+  }, [searchParams, location.state, location.pathname, navigate, setSearchParams]);
 
   const closeSearchSuggestions = useCallback(() => {
     setShowSuggestions(false);
@@ -1832,19 +1873,7 @@ export const TaskDashboardScreen: React.FC = () => {
                   const taskDueLabel = resolveTaskDueDateLabel(task);
                   const taskFrequencyLabel = resolveTaskFrequencyLabel(task);
                   const taskUnitLabel = resolveTaskUnitDisplay(task);
-                  const taskAssignees = Array.isArray(task?.assignees)
-                    ? task.assignees
-                        .map((a: any) => {
-                          const id = a?.id || a?.user_id || a?.userId;
-                          if (!id) return null;
-                          return {
-                            id: String(id),
-                            name: String(a?.name || a?.full_name || 'User'),
-                            photoUrl: a?.photoUrl || a?.profile_photo_url || a?.profile_photo || null,
-                          };
-                        })
-                        .filter(Boolean)
-                    : [];
+                  const { owner: taskOwner, assignees: taskAssignees } = resolveTaskCardMembers(task);
                   const isSelected = selectedConversationId === convId;
                   const taskIdStr = task?.id ? String(task.id) : '';
                   const bulkEligible = taskIdStr && canBulkSelectTask(task);
@@ -1888,7 +1917,8 @@ export const TaskDashboardScreen: React.FC = () => {
                             taskDueLabel={taskDueLabel}
                             taskFrequencyLabel={taskFrequencyLabel}
                             taskUnitLabel={taskUnitLabel}
-                            assignees={taskAssignees as Array<{ id: string; name: string; photoUrl?: string | null }>}
+                            owner={taskOwner}
+                            assignees={taskAssignees}
                             titleClassName="min-w-0 text-xs font-bold text-gray-900 dark:text-white truncate group-hover:text-primary dark:group-hover:text-primary/80 transition-colors"
                           />
                         </div>
@@ -1906,19 +1936,7 @@ export const TaskDashboardScreen: React.FC = () => {
                 const taskDueLabel = resolveTaskDueDateLabel(task);
                 const taskFrequencyLabel = resolveTaskFrequencyLabel(task);
                 const taskUnitLabel = resolveTaskUnitDisplay(task);
-                const taskAssignees = Array.isArray(task?.assignees)
-                  ? task.assignees
-                      .map((a: any) => {
-                        const id = a?.id || a?.user_id || a?.userId;
-                        if (!id) return null;
-                        return {
-                          id: String(id),
-                          name: String(a?.name || a?.full_name || 'User'),
-                          photoUrl: a?.photoUrl || a?.profile_photo_url || a?.profile_photo || null,
-                        };
-                      })
-                      .filter(Boolean)
-                  : [];
+                const { owner: taskOwner, assignees: taskAssignees } = resolveTaskCardMembers(task);
                 const bulkEligible = canBulkSelectTask(task);
                 const taskChecked = bulkSelectMode && selectedTaskIds.has(String(taskId));
                 const taskUnreadCount = getTaskCardUnreadCount(taskConversationId);
@@ -1966,7 +1984,8 @@ export const TaskDashboardScreen: React.FC = () => {
                           taskDueLabel={taskDueLabel}
                           taskFrequencyLabel={taskFrequencyLabel}
                           taskUnitLabel={taskUnitLabel}
-                          assignees={taskAssignees as Array<{ id: string; name: string; photoUrl?: string | null }>}
+                          owner={taskOwner}
+                          assignees={taskAssignees}
                         />
                       </div>
                     </div>

@@ -328,11 +328,17 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
       <nav className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-1 max-[1366px]:py-2 max-[1366px]:gap-0">
         {visibleNavItems.map((item) => {
           const active = isActive(item.path);
+          const taskBadgeCount = badgeByPath[item.path] ?? 0;
+          const isTaskManagement = item.path === '/tasks';
           return (
             <Link
               key={item.path}
               to={item.path}
-              onClick={() => {
+              onClick={(e) => {
+                if (isTaskManagement && taskBadgeCount > 0) {
+                  e.preventDefault();
+                  navigate(item.path, { state: { resetTaskFilters: true } });
+                }
                 // Close mobile menu on navigation
                 if (window.innerWidth < 768) {
                   setIsMobileOpen(false);

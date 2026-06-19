@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useNotifications } from '../../context/NotificationContext';
 import { AppIcon } from './AppIcon';
 import { NavBadge } from './NavBadge';
@@ -7,6 +7,7 @@ import type { AppIconName } from '../../constants/appIcons';
 
 export const BottomNav: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { counts } = useNotifications();
 
   // Helper to determine active state
@@ -39,6 +40,12 @@ export const BottomNav: React.FC = () => {
             <Link
               key={item.label}
               to={item.path}
+              onClick={(e) => {
+                if (item.path === '/tasks' && (badgeByPath[item.path] ?? 0) > 0) {
+                  e.preventDefault();
+                  navigate(item.path, { state: { resetTaskFilters: true } });
+                }
+              }}
               className="flex flex-col items-center justify-center w-full h-full gap-1 pt-2 group"
             >
               <div className="relative">
