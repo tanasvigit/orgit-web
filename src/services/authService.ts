@@ -30,6 +30,8 @@ export interface RegisterRequest {
   name: string;
   phone: string;
   password: string;
+  captchaId: string;
+  captchaAnswer: string;
 }
 
 export interface ContactSyncRequest {
@@ -51,6 +53,11 @@ export const authService = {
       localStorage.setItem('token', response.data.token);
       localStorage.setItem('user', JSON.stringify(response.data.user));
     }
+    return response.data;
+  },
+
+  getRegisterCaptcha: async () => {
+    const response = await api.get('/auth/register-captcha');
     return response.data;
   },
 

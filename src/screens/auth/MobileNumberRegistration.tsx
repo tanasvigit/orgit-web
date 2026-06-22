@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { TopAppBar, Button } from '../../components/shared';
+import { SimpleCaptchaField } from '../../components/auth/SimpleCaptchaField';
 import { authService } from '../../services/authService';
 
 /** Name: 2-50 chars, letters/spaces/hyphens/apostrophes only, no HTML/script (XSS-safe). */
@@ -33,6 +34,10 @@ export const MobileNumberRegistration: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [captchaId, setCaptchaId] = useState('');
+  const [captchaCode, setCaptchaCode] = useState('');
+  const [captchaAnswer, setCaptchaAnswer] = useState('');
+  const [captchaError, setCaptchaError] = useState<string | null>(null);
 
   const {
     register,
@@ -51,37 +56,87 @@ export const MobileNumberRegistration: React.FC = () => {
     return cleaned.length === 10 ? `+91${cleaned}` : phone;
   };
 
+  const toErrorMessage = (input: unknown, fallback: string): string => {
+    if (typeof input === 'string') return input;
+    if (Array.isArray(input) && input.length > 0) {
+      const first = input[0] as any;
+      if (typeof first === 'string') return first;
+      if (first?.msg && typeof first.msg === 'string') return first.msg;
+      return fallback;
+    }
+    if (input && typeof input === 'object') {
+      const maybe = input as any;
+      if (typeof maybe.msg === 'string') return maybe.msg;
+      if (typeof maybe.error === 'string') return maybe.error;
+    }
+    return fallback;
+  };
+
+  const isCaptchaError = (message: string): boolean => {
+    const lower = String(message).toLowerCase();
+    return lower.includes('captcha') || lower.includes('security code');
+  };
+
   const onSubmit = async (data: MobileFormData) => {
     setIsLoading(true);
     setError(null);
+    setCaptchaError(null);
 
     try {
       const fullMobile = formatPhoneNumber(data.mobile);
       if (!data.password) {
-        setError("Password is required");
+        setError('Password is required');
         setIsLoading(false);
         return;
       }
 
-      // Use register directly like Mobile
+      if (!captchaId || !captchaAnswer.trim()) {
+        setCaptchaError('Please type the security code');
+        setIsLoading(false);
+        return;
+      }
+
+      if (captchaAnswer.trim().length < 5) {
+        setCaptchaError('Please enter complete security code');
+        setIsLoading(false);
+        return;
+      }
+
       const response = await authService.register({
         name: data.name,
         phone: fullMobile,
-        password: data.password
+        password: data.password,
+        captchaId,
+        captchaAnswer,
       });
 
       if (response.success) {
-        // Registration successful, token is set in authService.register
-        // Navigate to dashboard or whatever is next
-        // Mobile says: "Navigation will be handled by the navigator" which usually means going to Main/Home
-        // For Web, let's go to Dashboard
         navigate('/dashboard');
       } else {
-        setError(response.error || 'Registration failed');
+        const message = toErrorMessage(response.error, 'Registration failed');
+        if (isCaptchaError(message)) {
+          setCaptchaError(message);
+          setCaptchaId('');
+          setCaptchaCode('');
+          setCaptchaAnswer('');
+        } else {
+          setError(message);
+        }
       }
     } catch (err: any) {
       console.error('Register error:', err);
-      setError(err.response?.data?.error || err.message || 'Failed to create account');
+      const message = toErrorMessage(
+        err.response?.data?.error ?? err.response?.data?.errors ?? err.message,
+        'Failed to create account'
+      );
+      if (isCaptchaError(message)) {
+        setCaptchaError(message);
+        setCaptchaId('');
+        setCaptchaCode('');
+        setCaptchaAnswer('');
+      } else {
+        setError(message);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -148,7 +203,6 @@ export const MobileNumberRegistration: React.FC = () => {
             {errors.mobile && (
               <p className="text-red-500 text-sm mt-1">{errors.mobile.message}</p>
             )}
-            {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
           </label>
 
           {/* Password Field */}
@@ -182,10 +236,32 @@ export const MobileNumberRegistration: React.FC = () => {
             )}
           </label>
 
-          {/* Confirm Password Field REMOVED */}
+          <SimpleCaptchaField
+            captchaId={captchaId}
+            captchaCode={captchaCode}
+            value={captchaAnswer}
+            onChange={(next) => {
+              setCaptchaAnswer(next);
+              if (next.length > 0) {
+                setCaptchaError(null);
+                setError(null);
+              }
+            }}
+            onCaptchaLoaded={({ captchaId: nextId, code }) => {
+              setCaptchaId(nextId);
+              setCaptchaCode(code);
+              setCaptchaAnswer('');
+            }}
+            onRefresh={() => {
+              setCaptchaError(null);
+            }}
+            disabled={isLoading}
+            error={captchaError}
+          />
 
           {/* CTA Button */}
           <div className="px-0 pb-4 w-full mt-2">
+            {error ? <p className="text-red-500 text-sm mb-3">{error}</p> : null}
             <Button type="submit" fullWidth disabled={isLoading}>
               {isLoading ? 'Registering...' : 'Register'}
             </Button>

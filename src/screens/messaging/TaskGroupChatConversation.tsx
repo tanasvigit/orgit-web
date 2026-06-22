@@ -1371,7 +1371,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         const message =
           error?.response?.data?.error ||
           error?.message ||
-          'Failed to verify completion';
+          'Failed to approve completion';
         toast.error(message);
       },
     }
@@ -1534,19 +1534,6 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
         }
         const message = 'Your completion has been marked and sent for approval.';
         toast.success(message);
-
-        // Navigate back to dashboard and animate In Progress → Completed
-        // (Web expects the card to move to Completed immediately for the viewer once they mark complete.)
-        const dashboardPath = user?.role === 'admin' ? '/admin' : '/dashboard';
-        navigate(dashboardPath, {
-          state: {
-            animateTaskTransition: true,
-            taskId,
-            fromStatus: 'inprogress',
-            toStatus: 'completed',
-            taskSection: 'self',
-          },
-        });
       },
       onError: (error: any) => {
         toast.error(
@@ -1863,7 +1850,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
     });
     const memberName = member?.name || 'User';
     
-    toast.confirm(`Verify that ${memberName} has completed their part of the task?`, {
+    toast.confirm(`Approve that ${memberName} has completed their part of the task?`, {
       onConfirm: async () => {
         try {
           setVerifyingUserId(memberUserId);
@@ -1872,7 +1859,7 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
           setVerifyingUserId(null);
         }
       },
-      confirmLabel: 'Verify',
+      confirmLabel: 'Approve',
       cancelLabel: 'Cancel',
     });
   };
@@ -2736,12 +2723,12 @@ export const TaskGroupChatConversation: React.FC<TaskGroupChatConversationProps>
                       {verifyingUserId === assigneeId ? (
                         <>
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                          <span>Verifying...</span>
+                          <span>Approving...</span>
                         </>
                       ) : (
                         <>
-                          <span className="material-symbols-outlined text-base">verified</span>
-                          <span>Verify</span>
+                          <span className="material-symbols-outlined text-base">check_circle</span>
+                          <span>Approve</span>
                         </>
                       )}
                     </button>

@@ -17,7 +17,7 @@ import { BulkAssignUsersModal } from '../../components/tasks/BulkAssignUsersModa
 import { BulkTaskActionsMenu } from '../../components/tasks/BulkTaskActionsMenu';
 import { taskBulkService } from '../../services/taskBulkService';
 import { isTaskDeleted } from '../../utils/taskUtils';
-import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
+import { getTaskDashboardFilterStatus, TaskStatusCategory } from '../../utils/taskStatus';
 import { formatFrequencyLabel } from '../../utils/taskPeriod';
 import { parseDueSoonDays } from '../../utils/dueSoonDays';
 import { getLastTasksDueSoonDays } from '../../services/taskService';
@@ -634,7 +634,7 @@ export const TaskDashboardScreen: React.FC = () => {
   const getTaskStatusForFilter = (task: any): TaskDashboardStatus | null => {
     if (!task) return null;
     const currentUserId = user?.id || (user as any)?.userId;
-    return getTaskStatusCategoryFromTask(task, dueSoonDays, currentUserId);
+    return getTaskDashboardFilterStatus(task, dueSoonDays, currentUserId);
   };
 
   // Set "fetched since mount" when loading has finished and we have data (so we never render stale cache first).

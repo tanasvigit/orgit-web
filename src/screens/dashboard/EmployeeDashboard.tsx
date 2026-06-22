@@ -16,7 +16,7 @@ import { resolveTaskUnitCardFields } from '../../utils/taskUnitDisplay';
 import { isTaskDeleted } from '../../utils/taskUtils';
 import { useTaskTransitionAnimation } from '../../hooks/useTaskTransitionAnimation';
 import { TaskTransitionAnimation } from '../../components/dashboard/TaskTransitionAnimation';
-import { getTaskStatusCategoryFromTask, TaskStatusCategory } from '../../utils/taskStatus';
+import { getTaskDashboardFilterStatus, TaskStatusCategory } from '../../utils/taskStatus';
 import { parseDueSoonDays } from '../../utils/dueSoonDays';
 import { waitForSocketConnection } from '../../services/socketService';
 import { getTaskCreationUserConfig, taskCreationUserConfigQueryKey } from '../../services/userTaskCreationConfigService';
@@ -419,7 +419,7 @@ export const EmployeeDashboard: React.FC = () => {
       flattenedSelfTasksForUser.forEach((task: any) => {
         const full = taskDetails[task.id];
         const merged = full ? { ...task, ...full } : task;
-        const bucket = (getTaskStatusCategoryFromTask(merged, dueSoonDays, currentUserId) || 'todo') as TaskStatusCategory;
+        const bucket = (getTaskDashboardFilterStatus(merged, dueSoonDays, currentUserId) || 'todo') as TaskStatusCategory;
         counts[bucket] = (counts[bucket] ?? 0) + 1;
       });
 
@@ -443,7 +443,7 @@ export const EmployeeDashboard: React.FC = () => {
     flattenedAssignedTasksForUser.forEach((task: any) => {
       const full = taskDetails[task.id];
       const merged = full ? { ...task, ...full } : task;
-      const bucket = (getTaskStatusCategoryFromTask(merged, dueSoonDays, currentUserId) || 'todo') as TaskStatusCategory;
+      const bucket = (getTaskDashboardFilterStatus(merged, dueSoonDays, currentUserId) || 'todo') as TaskStatusCategory;
       counts[bucket] = (counts[bucket] ?? 0) + 1;
     });
     return counts;
@@ -540,7 +540,7 @@ export const EmployeeDashboard: React.FC = () => {
     status: 'todo' | 'scheduled' | 'overdue' | 'duesoon' | 'inprogress' | 'completed',
     view: 'self' | 'assigned'
   ) => {
-    // Use per-user lifecycle buckets from getTaskStatusCategoryFromTask (match mobile).
+    // Use per-user lifecycle buckets from getTaskDashboardFilterStatus (match mobile).
     if (view === 'self') {
       return selfUserStatusCounts[status] ?? 0;
     }
@@ -570,7 +570,7 @@ export const EmployeeDashboard: React.FC = () => {
         {tasks.map((task) => {
           const full = taskDetails[task.id];
           const merged = mergeTaskWithFinancial(full ? { ...task, ...full, id: task.id || full.id } : task);
-          const derived = (getTaskStatusCategoryFromTask(merged, dueSoonDays, currentUserId) || 'todo') as TaskStatusCategory;
+          const derived = (getTaskDashboardFilterStatus(merged, dueSoonDays, currentUserId) || 'todo') as TaskStatusCategory;
           const assignees = Array.isArray(merged?.assignees) ? merged.assignees : [];
           const totalMembers = assignees.length;
           const verifiedCompleted = assignees.filter((a: any) => !!a?.verified_at).length;

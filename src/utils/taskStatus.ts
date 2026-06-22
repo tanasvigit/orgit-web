@@ -112,7 +112,7 @@ export const resolveUserLifecycleCategory = (input: {
 
   const fromStatus = normalizeLifecycleStatus(rawAssigneeStatus);
   if (fromStatus === 'completed') {
-    return 'completed';
+    return 'inprogress';
   }
 
   if (startMs != null && todayMs != null && todayMs < startMs) {
@@ -150,6 +150,73 @@ export const resolveUserLifecycleCategory = (input: {
   return 'todo';
 };
 
+function getAssigneeId(assignee: any): string | null {
+  const id = assignee?.id || assignee?.user_id || assignee?.userId;
+  return id != null ? String(id) : null;
+}
+
+function isPendingVerificationAssignee(assignee: any): boolean {
+  return !!(assignee?.completed_at && !assignee?.verified_at);
+}
+
+/** Whether current user may verify the target assignee's completion (matches task chat rules). */
+export function canUserVerifyAssigneeCompletion(
+  task: any,
+  currentUserId: string,
+  targetAssigneeId: string
+): boolean {
+  const creatorId = task?.created_by ?? task?.creator_id;
+  const reportingMemberId = task?.reporting_member_id;
+  const isCreator = creatorId != null && String(creatorId) === String(currentUserId);
+  const isReportingMember =
+    reportingMemberId != null && String(reportingMemberId) === String(currentUserId);
+  const isTargetCreator = creatorId != null && String(targetAssigneeId) === String(creatorId);
+  const isTargetReportingMember =
+    reportingMemberId != null && String(targetAssigneeId) === String(reportingMemberId);
+  const isTargetSelf = String(targetAssigneeId) === String(currentUserId);
+
+  if (isTargetSelf) return false;
+
+  if (isCreator) {
+    if (reportingMemberId) return isTargetReportingMember;
+    return !isTargetCreator;
+  }
+  if (isReportingMember) {
+    return !isTargetCreator && !isTargetReportingMember;
+  }
+  return false;
+}
+
+/** True when owner/reporting manager should see the task under Todo (pending verification work). */
+export function hasPendingVerificationsForVerifier(
+  task: any,
+  currentUserId?: string | null
+): boolean {
+  if (!task || !currentUserId) return false;
+  if (String(task.status || '').toLowerCase() === 'completed') return false;
+
+  const creatorId = task?.created_by ?? task?.creator_id;
+  const reportingMemberId = task?.reporting_member_id;
+  const isCreator = creatorId != null && String(creatorId) === String(currentUserId);
+  const isReportingMember =
+    reportingMemberId != null && String(reportingMemberId) === String(currentUserId);
+
+  if (!isCreator && !isReportingMember) return false;
+
+  const assignees = Array.isArray(task?.assignees) ? task.assignees : [];
+  return assignees.some((assignee: any) => {
+    const assigneeId = getAssigneeId(assignee);
+    if (!assigneeId || !isPendingVerificationAssignee(assignee)) return false;
+    if (String(assigneeId) === String(currentUserId)) return false;
+
+    if (isReportingMember) {
+      return canUserVerifyAssigneeCompletion(task, currentUserId, assigneeId);
+    }
+    // Task owner: surface when any other member awaits verification on the task.
+    return isCreator;
+  });
+}
+
 export function getTaskStatusCategoryFromTask(
   task: any,
   dueSoonDays?: number,
@@ -174,6 +241,20 @@ export function getTaskStatusCategoryFromTask(
     dueDate: task.due_date ?? task.dueDate,
     dueSoonDays: resolvedDueSoonDays,
   });
+}
+
+/** Dashboard/filter status: surfaces tasks needing verification under Todo for owner & reporting manager. */
+export function getTaskDashboardFilterStatus(
+  task: any,
+  dueSoonDays?: number,
+  currentUserId?: string | null
+): TaskStatusCategory | null {
+  const category = getTaskStatusCategoryFromTask(task, dueSoonDays, currentUserId);
+  if (!category || category === 'completed' || category === 'scheduled') return category;
+  if (hasPendingVerificationsForVerifier(task, currentUserId)) {
+    return 'todo';
+  }
+  return category;
 }
 
 /** Assignees are auto-accepted unless they explicitly rejected the task. */

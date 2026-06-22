@@ -287,46 +287,48 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
   const getMemberStats = () => {
     if (!normalizedTask?.assignees || !Array.isArray(normalizedTask.assignees)) return null;
     const total = normalizedTask.assignees.length;
-    const completed = normalizedTask.assignees.filter((a: any) => 
-      a.completed_at || a.completion_status === 'completed' || a.status === 'completed'
-    ).length;
+    const completed = normalizedTask.assignees.filter((a: any) => !!a.verified_at).length;
     return { total, completed, progress: total > 0 ? Math.round((completed / total) * 100) : 0 };
   };
 
   const memberStats = getMemberStats();
 
-  // EXACT mobile logic: getMemberStatusLabel shows "Completed" if completed_at exists
   const getMemberStatusLabel = (member: any) => {
+    if (member.verified_at) return 'Completed';
+    if (member.completed_at && !member.verified_at) {
+      const lane = normalizeLifecycleStatus(member?.assignee_status);
+      if (displayTask?.is_before_start_date === true || isBeforeStartDate(displayTask)) return 'Scheduled';
+      if (lane === 'scheduled') return 'Scheduled';
+      if (lane === 'overdue') return 'Overdue';
+      if (lane === 'duesoon') return 'Due Soon';
+      if (lane === 'todo') return 'TODO';
+      return 'In Progress';
+    }
     const lane = normalizeLifecycleStatus(member?.assignee_status);
     const daysUntilDue = getDaysUntilDue(displayTask);
     if (displayTask?.is_before_start_date === true || isBeforeStartDate(displayTask)) return 'Scheduled';
     if (lane === 'scheduled') return 'Scheduled';
-    if (lane === 'completed') return 'Completed';
+    if (lane === 'completed') return member.verified_at ? 'Completed' : 'In Progress';
     if (lane === 'overdue') return 'Overdue';
     if (lane === 'duesoon') return 'Due Soon';
     if (lane === 'inprogress') return 'In Progress';
     if (lane === 'todo') return 'TODO';
-    if (member.completed_at || member.completion_status === 'completed' || member.status === 'completed') {
-      return 'Completed';
-    }
     return 'TODO';
   };
 
-  // EXACT mobile logic: getMemberStatusColor shows green if completed_at exists
   const getMemberStatusColor = (member: any) => {
+    if (member.verified_at) return '#2E7D32';
+    if (member.completed_at && !member.verified_at) return '#F57C00';
     const lane = normalizeLifecycleStatus(member?.assignee_status);
     const daysUntilDue = getDaysUntilDue(displayTask);
     if (displayTask?.is_before_start_date === true || isBeforeStartDate(displayTask)) return '#6366F1';
     if (lane === 'scheduled') return '#6366F1';
-    if (lane === 'completed') return '#2E7D32';
+    if (lane === 'completed') return member.verified_at ? '#2E7D32' : '#F57C00';
     if (lane === 'overdue') return '#DC2626';
     if (lane === 'duesoon') return '#F59E0B';
     if (lane === 'inprogress') return '#F57C00';
     if (lane === 'todo') return '#9CA3AF';
-    if (member.completed_at || member.completion_status === 'completed' || member.status === 'completed') {
-      return '#2E7D32'; // Green for completed
-    }
-    return '#9CA3AF'; // Gray for pending
+    return '#9CA3AF';
   };
 
   const isReportingMember =
@@ -357,23 +359,21 @@ export const TaskDetailsScreen: React.FC<TaskDetailsScreenProps> = ({ embedded =
 
         const message = data?.taskCompleted
           ? 'Task completed. The entire task has been marked as completed.'
-          : 'Your completion has been marked.';
+          : 'Your completion has been marked and sent for approval.';
         toast.success(message);
 
-        // Always go back to dashboard and animate lifecycle movement.
-        // Even when verification is pending, the viewer's assignee status becomes "completed"
-        // and the card should move to Completed in the dashboard.
-        const dashboardPath = isAdmin ? '/admin' : '/dashboard';
-
-        navigate(dashboardPath, {
-          state: {
-            animateTaskTransition: true,
-            taskId,
-            fromStatus: 'inprogress',
-            toStatus: 'completed',
-            taskSection: 'self',
-          },
-        });
+        if (data?.taskCompleted) {
+          const dashboardPath = isAdmin ? '/admin' : '/dashboard';
+          navigate(dashboardPath, {
+            state: {
+              animateTaskTransition: true,
+              taskId,
+              fromStatus: 'inprogress',
+              toStatus: 'completed',
+              taskSection: 'self',
+            },
+          });
+        }
       },
       onError: (error: any) => {
         const message =
