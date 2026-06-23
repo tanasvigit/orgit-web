@@ -1,3 +1,5 @@
+import { getAvatarUrl } from './profilePhotoUrl';
+
 export type TaskCardMember = {
   id: string;
   name: string;
@@ -26,7 +28,7 @@ export function normalizeTaskCardAssignees(task: unknown): TaskCardMember[] {
       return {
         id: String(id),
         name: String(assignee?.name || assignee?.full_name || 'User'),
-        photoUrl: assignee?.photoUrl || assignee?.profile_photo_url || assignee?.profile_photo || null,
+        photoUrl: getAvatarUrl(assignee),
       };
     })
     .filter(Boolean) as TaskCardMember[];
@@ -52,7 +54,10 @@ export function resolveTaskCardOwner(
   return {
     id: idStr,
     name: String(row.creator_name || row.creatorName || 'Owner').trim() || 'Owner',
-    photoUrl: row.creator_photo || row.creatorPhoto || null,
+    photoUrl: getAvatarUrl({
+      profile_photo: row.creator_photo || row.creatorPhoto,
+      profile_photo_url: row.creator_photo || row.creatorPhoto,
+    }),
   };
 }
 

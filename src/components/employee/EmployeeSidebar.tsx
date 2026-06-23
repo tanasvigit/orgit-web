@@ -383,13 +383,12 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
                 : 'text-gray-400 hover:text-primary hover:bg-secondary/50 dark:hover:bg-primary/10'
             }`}
           >
-            <button
-              type="button"
+            <Link
+              to="/settings"
               onClick={() => {
-                navigate('/settings');
                 if (window.innerWidth < 768) setIsMobileOpen(false);
               }}
-              className={`flex items-center gap-3 min-w-0 flex-1 text-left ${
+              className={`flex items-center gap-3 min-w-0 flex-1 select-none cursor-pointer ${
                 isCollapsed ? 'justify-center flex-col gap-0.5' : ''
               }`}
               title={isCollapsed ? 'Settings' : ''}
@@ -406,21 +405,23 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onToggleRef })
               ) : (
                 <span className="font-medium text-sm whitespace-nowrap flex-1 max-[1366px]:text-xs">Settings</span>
               )}
-            </button>
+            </Link>
             {!isCollapsed && (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   setIsSettingsOpen(!isSettingsOpen);
+                  e.currentTarget.blur();
                 }}
-                className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors shrink-0"
+                className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors shrink-0 select-none cursor-pointer"
                 aria-label="Toggle settings menu"
               >
                 <span
-                  className={`material-icons-outlined text-lg shrink-0 transition-transform ${
+                  className={`material-icons-outlined text-lg shrink-0 transition-transform select-none pointer-events-none ${
                     isSettingsOpen ? 'rotate-180' : ''
                   }`}
+                  aria-hidden="true"
                 >
                   expand_more
                 </span>

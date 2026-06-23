@@ -424,14 +424,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
                 : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
             }`}
           >
-            <button
-              type="button"
+            <Link
+              to="/admin/settings"
               onClick={() => {
                 setIsSettingsOpen(true);
-                navigate('/admin/settings');
                 if (window.innerWidth < 768) setIsMobileOpen(false);
               }}
-              className={`flex min-w-0 flex-1 overflow-hidden text-left ${
+              className={`flex min-w-0 flex-1 overflow-hidden select-none cursor-pointer ${
                 isCollapsed ? 'flex-col items-center justify-center gap-0.5' : 'items-center gap-2'
               }`}
               title={isCollapsed ? collapsedLabelMap.Settings : 'Settings'}
@@ -448,18 +447,22 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ onToggleRef }) => {
               ) : (
                 <span className="min-w-0 flex-1 truncate font-medium text-sm max-[1366px]:text-xs">Settings</span>
               )}
-            </button>
+            </Link>
             {!isCollapsed && (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   setIsSettingsOpen(!isSettingsOpen);
+                  e.currentTarget.blur();
                 }}
-                className="p-1 rounded hover:bg-slate-200/50 transition-colors shrink-0"
+                className="p-1 rounded hover:bg-slate-200/50 transition-colors shrink-0 select-none cursor-pointer"
                 aria-label="Toggle settings menu"
               >
-                <span className={`material-symbols-outlined text-lg shrink-0 transition-transform ${isSettingsOpen ? 'rotate-180' : ''}`}>
+                <span
+                  className={`material-symbols-outlined text-lg shrink-0 transition-transform select-none pointer-events-none ${isSettingsOpen ? 'rotate-180' : ''}`}
+                  aria-hidden="true"
+                >
                   expand_more
                 </span>
               </button>
