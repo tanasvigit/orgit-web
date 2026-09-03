@@ -31,6 +31,8 @@ export interface Conversation {
   other_members?: Array<{ id: string; name: string; profile_photo_url?: string; profile_photo?: string; phone?: string }>;
   isTaskGroup?: boolean;
   is_task_group?: boolean;
+  taskId?: string | null;
+  task_id?: string | null;
   role?: string;
   createdAt?: string;
   created_at?: string;
@@ -112,7 +114,7 @@ export const conversationService = {
       return {
         conversationId: conv.id || conv.conversationId,
         id: conv.id || conv.conversationId,
-        type: conv.is_group ? 'group' : 'direct',
+        type: (conv.is_group ? 'group' : 'direct') as 'direct' | 'group',
         is_group: conv.is_group,
         name: conversationName,
         photoUrl: conv.group_photo || conv.photoUrl || (otherMembers.length > 0 ? (otherMembers[0]?.profile_photo_url || otherMembers[0]?.profile_photo || otherMembers[0]?.profilePhotoUrl) : ''),
@@ -140,6 +142,8 @@ export const conversationService = {
         other_members: otherMembers,
         isTaskGroup: conv.is_task_group ?? conv.isTaskGroup ?? false,
         is_task_group: conv.is_task_group ?? conv.isTaskGroup ?? false,
+        taskId: conv.task_id ?? conv.taskId ?? null,
+        task_id: conv.task_id ?? conv.taskId ?? null,
         role: conv.role,
         createdAt: conv.created_at || conv.createdAt,
         created_at: conv.created_at || conv.createdAt,

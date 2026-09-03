@@ -193,12 +193,16 @@ export const SettingsScreen: React.FC = () => {
                 services, clients, employees, and tasks.
               </p>
             </div>
-            {isAdmin && (
-              <div className="flex shrink-0 self-start sm:self-center">
-                <BulkMasterUploadPanel />
-              </div>
-            )}
           </div>
+          {isAdmin && (
+            <div className="mb-8">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-1 h-8 bg-gradient-to-b from-primary to-primary/60 rounded-full" />
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Master bulk upload</h2>
+              </div>
+              <BulkMasterUploadPanel />
+            </div>
+          )}
         </div>
 
         {/* Settings List with AnimatedList */}

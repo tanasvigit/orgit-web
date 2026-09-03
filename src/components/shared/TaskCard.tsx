@@ -156,22 +156,23 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         </span>
       ) : null}
 
-      <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5">
         {display.title ? (
-          <div className="col-span-2 min-w-0">
+          <div className="min-w-0">
             <h4
-              className={`text-[19px] font-bold leading-6 text-gray-900 dark:text-white ${
+              className={`text-[19px] font-bold leading-6 text-gray-900 dark:text-white whitespace-nowrap ${
                 status === 'completed' ? 'text-gray-500 dark:text-gray-400' : ''
               }`}
+              title={displayTitle}
             >
-              <span className="line-clamp-1">{displayTitle}</span>
+              <span>{displayTitle}</span>
             </h4>
           </div>
         ) : (
-          <div className="col-span-2" />
+          <div />
         )}
 
-        <div className="flex items-start justify-end">
+        <div className="flex shrink-0 items-start justify-end">
           {showStatusIcon ? (
             statusAppIcon ? (
               <AppIcon name={statusAppIcon} variant="inline" />
@@ -186,15 +187,15 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         {showSecondRow ? (
           <>
             {showTagRow ? (
-              <p className="col-span-2 min-w-0 text-sm leading-[21px] text-gray-500 dark:text-gray-400">
-                <span className="line-clamp-1">{tagOrClient}</span>
+              <p className="min-w-0 text-sm leading-[21px] text-gray-500 dark:text-gray-400 whitespace-nowrap" title={tagOrClient}>
+                <span>{tagOrClient}</span>
               </p>
             ) : (
-              <div className="col-span-2" />
+              <div />
             )}
             {showDue ? (
-              <p className="text-right text-sm leading-[21px] text-gray-500 dark:text-gray-400">
-                <span className="line-clamp-1">{dueText}</span>
+              <p className="shrink-0 text-right text-sm leading-[21px] text-gray-500 dark:text-gray-400">
+                <span className="whitespace-nowrap">{dueText}</span>
               </p>
             ) : (
               <div />
@@ -203,22 +204,20 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         ) : null}
 
         {showThirdRow ? (
-          <>
+          <div className="col-span-2 flex min-w-0 items-baseline justify-between gap-2">
             {showFrequency ? (
-              <p className="min-w-0 text-sm leading-[21px] text-gray-500 dark:text-gray-400">
-                <span className="line-clamp-1">{frequencyText}</span>
+              <p className="shrink-0 text-sm leading-[21px] text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                <span>{frequencyText}</span>
               </p>
             ) : (
-              <div />
+              <span />
             )}
             {showUnit ? (
-              <p className="col-span-2 min-w-0 text-right text-sm leading-[21px] text-gray-500 dark:text-gray-400">
-                <span className="line-clamp-1">{unitText}</span>
+              <p className="min-w-0 text-right text-sm leading-[21px] text-gray-500 dark:text-gray-400 truncate" title={unitText}>
+                <span>{unitText}</span>
               </p>
-            ) : (
-              <div className="col-span-2" />
-            )}
-          </>
+            ) : null}
+          </div>
         ) : null}
       </div>
       {overduePill ? (

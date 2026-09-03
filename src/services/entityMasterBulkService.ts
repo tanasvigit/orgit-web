@@ -21,6 +21,16 @@ export interface EntityMasterBulkStatusResponse {
   status: string;
   processedCount: number;
   failedCount: number;
+  totalRows?: number;
+  uploadType?: string;
+  filename?: string;
+  phase?: string;
+  tasksProgress?: {
+    scanned: number;
+    created: number;
+    errors: number;
+    maxRow: number;
+  };
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
@@ -37,7 +47,24 @@ export interface EntityMasterBulkStatusResponse {
   errors?: Array<{ sheet?: string; row?: number; message: string }>;
 }
 
+export interface EntityMasterBulkUploadListItem {
+  id: string;
+  filename: string;
+  status: string;
+  uploadType: string;
+  totalRows: number;
+  processedCount: number;
+  failedCount: number;
+  errorCount: number;
+  phase?: string;
+  summary?: EntityMasterBulkStatusResponse['summary'];
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
 export const MASTER_BULK_FILENAME = 'OrgIt_Master_Bulk.xlsx';
+export const ACTIVE_UPLOAD_STORAGE_KEY = 'orgit_master_bulk_upload_id';
 
 export const entityMasterBulkService = {
   /** Download unified OrgIt Master Bulk workbook. */
@@ -71,6 +98,13 @@ export const entityMasterBulkService = {
   getStatus: (uploadId: string) => {
     return api.get<{ success: boolean; data: EntityMasterBulkStatusResponse }>(
       `/admin/entity-master/status/${uploadId}`
+    );
+  },
+
+  listUploads: (limit = 20) => {
+    return api.get<{ success: boolean; data: { uploads: EntityMasterBulkUploadListItem[] } }>(
+      `/admin/entity-master/uploads`,
+      { params: { limit } }
     );
   },
 

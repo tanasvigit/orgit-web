@@ -104,8 +104,13 @@ function TaskDashboardCardBody({
   const showThirdRow = showFreq || showUnit;
 
   return (
-    <div className="w-full">
-      <div className="grid w-full grid-cols-[minmax(0,2fr)_auto] gap-x-2 gap-y-1">
+    <div className="w-full min-w-0">
+      {/*
+        Left column must stay flexible (1fr). Keep the right column short-only (icon / due).
+        Long unit labels used to live in `auto` and inflate that column, which squeezed the
+        title and forced wraps like "GSTR 9C -" / "2026" while leaving empty space by the icon.
+      */}
+      <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1">
       {showHeaderRow ? (
         <>
           {display.title || showOwner ? (
@@ -115,8 +120,9 @@ function TaskDashboardCardBody({
                 <h4
                   className={
                     titleClassName ||
-                    'min-w-0 flex-1 text-xs font-bold text-gray-900 dark:text-white truncate'
+                    'min-w-0 flex-1 text-xs font-bold leading-snug text-gray-900 dark:text-white whitespace-nowrap'
                   }
+                  title={displayTitle}
                 >
                   {displayTitle}
                 </h4>
@@ -127,7 +133,7 @@ function TaskDashboardCardBody({
           ) : (
             <div />
           )}
-          <div className="flex justify-end">
+          <div className="flex shrink-0 justify-end self-start">
             {showStatusIcon && taskStatusCategory ? (
               <TaskStatusIcon category={taskStatusCategory} />
             ) : null}
@@ -144,12 +150,14 @@ function TaskDashboardCardBody({
       {showSecondRow ? (
         <>
           {showTag ? (
-            <p className="min-w-0 text-[11px] text-gray-700 dark:text-gray-300 truncate">{taskTagOrClient}</p>
+            <p className="min-w-0 text-[11px] leading-snug text-gray-700 dark:text-gray-300 whitespace-nowrap" title={taskTagOrClient}>
+              {taskTagOrClient}
+            </p>
           ) : (
             <div />
           )}
           {showDue ? (
-            <p className="text-[11px] text-right text-gray-500 dark:text-gray-400 truncate">{taskDueLabel}</p>
+            <p className="shrink-0 text-[11px] text-right text-gray-500 dark:text-gray-400 whitespace-nowrap">{taskDueLabel}</p>
           ) : (
             <div />
           )}
@@ -157,18 +165,18 @@ function TaskDashboardCardBody({
       ) : null}
 
       {showThirdRow ? (
-        <>
+        <div className="col-span-2 flex min-w-0 items-baseline justify-between gap-2">
           {showFreq ? (
-            <p className="min-w-0 text-[11px] text-gray-500 dark:text-gray-400 truncate">{taskFrequencyLabel}</p>
+            <p className="shrink-0 text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">{taskFrequencyLabel}</p>
           ) : (
-            <div />
+            <span />
           )}
           {showUnit ? (
-            <p className="text-[11px] text-right text-gray-500 dark:text-gray-400 truncate">{taskUnitLabel}</p>
-          ) : (
-            <div />
-          )}
-        </>
+            <p className="min-w-0 text-[11px] text-right text-gray-500 dark:text-gray-400 truncate" title={taskUnitLabel || undefined}>
+              {taskUnitLabel}
+            </p>
+          ) : null}
+        </div>
       ) : null}
       </div>
     </div>
@@ -592,28 +600,28 @@ export const TaskDashboardScreen: React.FC = () => {
     return ids;
   }, [dashboardData, viewFilter]);
 
-  // Fetch task conversations only.
-  // refetchOnMount: "always" + staleTime: 0 so we never render stale cached data on mount; fresh fetch runs first.
-  const { data: conversations = [], isLoading: isConversationsLoading, isFetching: isConversationsFetching } = useQuery(
+  // Fetch task conversations. Keep previous data during background refresh so the list
+  // does not flash empty/skeleton every poll cycle.
+  const { data: conversations = [], isLoading: isConversationsLoading } = useQuery(
     ['conversations', 'task'],
     () => conversationService.getConversations('task'),
     {
-      refetchInterval: 30000, // Refetch every 30 seconds
-      refetchOnMount: 'always',
-      staleTime: 0,
-      keepPreviousData: false,
+      refetchInterval: 60000,
+      refetchOnMount: true,
+      staleTime: 30000,
+      keepPreviousData: true,
     }
   );
 
-  // Fetch tasks directly (to show newly assigned tasks that might not have conversations yet).
-  // refetchOnMount + staleTime: 0 so Pending Tasks never show stale cache (e.g. completed tasks).
-  const { data: directTasks = [], isLoading: isDirectTasksLoading, isFetching: isDirectTasksFetching } = useQuery(
+  // Fetch tasks directly (covers newly assigned tasks that might not have conversations yet).
+  const { data: directTasks = [], isLoading: isDirectTasksLoading } = useQuery(
     'tasks',
     () => taskService.getTasks(),
     {
-      refetchInterval: 30000, // Refetch every 30 seconds
-      refetchOnMount: 'always',
-      staleTime: 0,
+      refetchInterval: 60000,
+      refetchOnMount: true,
+      staleTime: 30000,
+      keepPreviousData: true,
     }
   );
 
@@ -657,43 +665,83 @@ export const TaskDashboardScreen: React.FC = () => {
     return conversations.filter(conv => conv.isTaskGroup || conv.is_task_group);
   }, [conversations, hasConversationsFetchedSinceMount]);
 
-  // Fetch conversation details for each task group to get taskId (from task details page)
+  // Prefer list payloads (conversations.task_id + getTasks) so we avoid N+1 detail GETs.
+  const directTasksById = useMemo(() => {
+    const map: Record<string, any> = {};
+    (Array.isArray(directTasks) ? directTasks : []).forEach((task: any) => {
+      if (task?.id) map[String(task.id)] = task;
+    });
+    return map;
+  }, [directTasks]);
+
+  const taskIdFromDirectByConvId = useMemo(() => {
+    const map: Record<string, string> = {};
+    (Array.isArray(directTasks) ? directTasks : []).forEach((task: any) => {
+      const convId = task?.conversation_id || task?.conversationId;
+      if (task?.id && convId) map[String(convId)] = String(task.id);
+    });
+    return map;
+  }, [directTasks]);
+
+  const convIdsNeedingDetails = useMemo(() => {
+    return taskGroups
+      .map((conv: any) => {
+        const convId = conv.id || conv.conversationId;
+        if (!convId) return null;
+        const key = String(convId);
+        if (conv.taskId || conv.task_id) return null;
+        if (taskIdFromDirectByConvId[key]) return null;
+        return key;
+      })
+      .filter(Boolean) as string[];
+  }, [taskGroups, taskIdFromDirectByConvId]);
+
   const detailsResults = useQueries(
-    taskGroups.map((conv) => ({
-      queryKey: ['conversation-details', conv.id || conv.conversationId],
-      queryFn: () => conversationService.getConversationDetails(conv.id || conv.conversationId),
-      enabled: !!(conv.id || conv.conversationId),
+    convIdsNeedingDetails.map((convId) => ({
+      queryKey: ['conversation-details', convId],
+      queryFn: () => conversationService.getConversationDetails(convId),
+      enabled: !!convId,
+      staleTime: 60_000,
     }))
   );
 
-  // Build convId -> taskId from details
   const taskIdByConvId = useMemo(() => {
     const map: Record<string, string> = {};
-    taskGroups.forEach((conv, i) => {
+    const detailsByConvId: Record<string, any> = {};
+    convIdsNeedingDetails.forEach((convId, i) => {
+      detailsByConvId[convId] = detailsResults[i]?.data;
+    });
+
+    taskGroups.forEach((conv: any) => {
       const convId = conv.id || conv.conversationId;
-      const details = detailsResults[i]?.data as any;
-      const taskId = details?.taskId || details?.task_id;
-      if (convId && taskId) map[convId] = taskId;
+      if (!convId) return;
+      const key = String(convId);
+      const fromList = conv.taskId || conv.task_id;
+      const fromDirect = taskIdFromDirectByConvId[key];
+      const details = detailsByConvId[key];
+      const fromDetails = details?.taskId || details?.task_id;
+      const taskId = fromList || fromDirect || fromDetails;
+      if (taskId) map[key] = String(taskId);
     });
     return map;
-  }, [taskGroups, detailsResults]);
+  }, [taskGroups, taskIdFromDirectByConvId, convIdsNeedingDetails, detailsResults]);
 
-  // Fetch full task rows for both task-group cards and direct task cards so
-  // fields like Excel-uploaded `task_unit` are available everywhere.
+  // Only fetch individual task rows missing from the list API (rare).
   const taskDetailIds = useMemo(() => {
-    const conversationTaskIds = Object.values(taskIdByConvId).filter(Boolean).map(String);
-    const directTaskIds = (Array.isArray(directTasks) ? directTasks : [])
-      .map((task: any) => String(task?.id || '').trim())
-      .filter(Boolean);
-    return [...new Set([...conversationTaskIds, ...directTaskIds])];
-  }, [taskIdByConvId, directTasks]);
+    const needed = new Set<string>();
+    Object.values(taskIdByConvId).forEach((taskId) => {
+      const id = String(taskId || '').trim();
+      if (id && !directTasksById[id]) needed.add(id);
+    });
+    return [...needed];
+  }, [taskIdByConvId, directTasksById]);
 
-  // Fetch task details for each task (status comes from task details). Do not retry 404 (deleted task).
   const taskDetailsQueries = useQueries(
     taskDetailIds.map((taskId) => ({
       queryKey: ['task', taskId],
       queryFn: () => taskService.getTask(taskId),
       enabled: !!taskId,
+      staleTime: 60_000,
       retry: (failureCount: number, error: any) => {
         const status = error?.response?.status;
         if (status === 404) return false;
@@ -702,41 +750,16 @@ export const TaskDashboardScreen: React.FC = () => {
     }))
   );
 
-  // Loading flags to control initial UI and prevent flicker.
-  // Require "fetched since mount" so we never render stale cache on first paint (React Query can return cache before refetch starts).
-  const isTaskDetailsLoading = taskDetailsQueries.some((q) => q.isLoading);
-  const isTaskDetailsFetching = taskDetailsQueries.some((q) => q.isFetching);
+  // Skeletons only on true initial load — never on background refetch.
   const isConversationDetailsLoading = detailsResults.some((q) => q.isLoading);
-  const isConversationDetailsFetching = detailsResults.some((q) => q.isFetching);
   const isTaskGroupsLoading =
     !hasConversationsFetchedSinceMount ||
-    (isConversationsLoading || isConversationsFetching) ||
-    (isConversationDetailsLoading || isConversationDetailsFetching) ||
-    (isTaskDetailsLoading || isTaskDetailsFetching);
+    (isConversationsLoading && (!conversations || conversations.length === 0)) ||
+    (convIdsNeedingDetails.length > 0 &&
+      isConversationDetailsLoading &&
+      Object.keys(taskIdByConvId).length === 0);
   const isPendingTasksLoading =
-    !hasTasksFetchedSinceMount || isDirectTasksLoading || isDirectTasksFetching;
-
-  // Map convId -> task (from task details). Use string keys so lookups work whether conv.id is number or string.
-  const taskByConvId = useMemo(() => {
-    const taskByTaskId: Record<string, any> = {};
-    taskDetailIds.forEach((taskId, i) => {
-      const data = taskDetailsQueries[i]?.data;
-      if (data) taskByTaskId[String(taskId)] = data;
-    });
-    const map: Record<string, any> = {};
-    Object.entries(taskIdByConvId).forEach(([convId, taskId]) => {
-      if (taskByTaskId[String(taskId)]) map[String(convId)] = taskByTaskId[String(taskId)];
-    });
-    return map;
-  }, [taskIdByConvId, taskDetailIds, taskDetailsQueries]);
-
-  useEffect(() => {
-    taskIdByConvIdRef.current = taskIdByConvId;
-  }, [taskIdByConvId]);
-
-  useEffect(() => {
-    taskByConvIdRef.current = taskByConvId;
-  }, [taskByConvId]);
+    !hasTasksFetchedSinceMount || (isDirectTasksLoading && (!directTasks || directTasks.length === 0));
 
   const taskDetailsById = useMemo(() => {
     const map: Record<string, any> = {};
@@ -746,6 +769,28 @@ export const TaskDashboardScreen: React.FC = () => {
     });
     return map;
   }, [taskDetailIds, taskDetailsQueries]);
+
+  // Map convId -> task from list first, then sparse detail fetches.
+  const taskByConvId = useMemo(() => {
+    const map: Record<string, any> = {};
+    Object.entries(taskIdByConvId).forEach(([convId, taskId]) => {
+      const fromList = directTasksById[String(taskId)];
+      const fromDetail = taskDetailsById[String(taskId)];
+      const task = fromDetail
+        ? { ...(fromList || {}), ...fromDetail, id: fromList?.id || fromDetail.id || taskId }
+        : fromList;
+      if (task) map[String(convId)] = task;
+    });
+    return map;
+  }, [taskIdByConvId, directTasksById, taskDetailsById]);
+
+  useEffect(() => {
+    taskIdByConvIdRef.current = taskIdByConvId;
+  }, [taskIdByConvId]);
+
+  useEffect(() => {
+    taskByConvIdRef.current = taskByConvId;
+  }, [taskByConvId]);
 
   const mergeTaskWithDetails = (task: any) => {
     if (!task?.id) return task;
@@ -895,17 +940,9 @@ export const TaskDashboardScreen: React.FC = () => {
   );
 
   // Filter task groups by search and by status (using task details). Hide deleted tasks and convs whose task no longer exists (404).
-  // Guard: do not run until a fetch has completed since mount and all dependent queries are done; avoids stale cache on reload.
+  // Keep showing previous results during background refetch — do not blank the list while isFetching.
   const filteredTaskGroups = useMemo(() => {
-    if (
-      !hasConversationsFetchedSinceMount ||
-      isConversationsLoading ||
-      isConversationsFetching ||
-      isConversationDetailsLoading ||
-      isConversationDetailsFetching ||
-      isTaskDetailsLoading ||
-      isTaskDetailsFetching
-    ) {
+    if (!hasConversationsFetchedSinceMount || isConversationsLoading) {
       return [];
     }
       let filtered = taskGroups.filter(conv => {
@@ -913,6 +950,16 @@ export const TaskDashboardScreen: React.FC = () => {
       const key = convId != null ? String(convId) : '';
       const taskId = key ? taskIdByConvId[key] : undefined;
       if (taskId && failedTaskIds.has(taskId)) return false;
+      // After tasks list has loaded, hide task-group convs whose task is no longer in the user's list
+      // (deleted / unassigned) unless a sparse detail fetch still has it.
+      if (
+        taskId &&
+        hasTasksFetchedSinceMount &&
+        !directTasksById[String(taskId)] &&
+        !taskDetailsById[String(taskId)]
+      ) {
+        return false;
+      }
       const task = key ? taskByConvId[key] : undefined;
       if (task && isTaskDeleted(task)) return false;
 
@@ -993,12 +1040,10 @@ export const TaskDashboardScreen: React.FC = () => {
     failedTaskIds,
     dashboardTaskIdsForView,
     hasConversationsFetchedSinceMount,
+    hasTasksFetchedSinceMount,
     isConversationsLoading,
-    isConversationsFetching,
-    isConversationDetailsLoading,
-    isConversationDetailsFetching,
-    isTaskDetailsLoading,
-    isTaskDetailsFetching,
+    directTasksById,
+    taskDetailsById,
     viewFilter,
     selectedTeamMemberIds,
     activityBumpTick,
@@ -1718,13 +1763,13 @@ export const TaskDashboardScreen: React.FC = () => {
                   <button
                     key={key}
                     onClick={() => setStatusFilterAndUrl(key as StatusFilter)}
-                    className={`shrink-0 flex items-center px-2 py-1 rounded-full text-[9px] font-semibold border transition-all duration-200 hover:scale-105 active:scale-95 ${
+                    className={`shrink-0 whitespace-nowrap flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold border transition-all duration-200 hover:scale-105 active:scale-95 ${
                       isActive
                         ? `${colorClasses[color]} shadow-lg`
                         : `${colorClasses[color]} hover:shadow-md`
                     }`}
                   >
-                    <span>{label}</span>
+                    <span className="whitespace-nowrap">{label}</span>
                   </button>
                 );
               })}
@@ -1919,7 +1964,7 @@ export const TaskDashboardScreen: React.FC = () => {
                             taskUnitLabel={taskUnitLabel}
                             owner={taskOwner}
                             assignees={taskAssignees}
-                            titleClassName="min-w-0 text-xs font-bold text-gray-900 dark:text-white truncate group-hover:text-primary dark:group-hover:text-primary/80 transition-colors"
+                            titleClassName="min-w-0 flex-1 text-xs font-bold leading-snug text-gray-900 dark:text-white whitespace-nowrap group-hover:text-primary dark:group-hover:text-primary/80 transition-colors"
                           />
                         </div>
                       </div>
