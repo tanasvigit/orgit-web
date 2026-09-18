@@ -152,11 +152,15 @@ export const BulkMasterUploadPanel: React.FC<BulkMasterUploadPanelProps> = ({
 
       if (status.status === 'completed') {
         const s = status.summary;
-        const summaryLine = s
-          ? `Structure:${s.organization_structure_nodes ?? 0}, Services:${s.task_services ?? 0}, Clients:${s.client_entities ?? 0}, Employees:${s.employees ?? 0}, Tasks:${s.tasks ?? 0}`
-          : null;
+        const sheetLine = s?.sheetStats?.length
+          ? s.sheetStats
+              .map((x) => `${x.sheet}: ${x.success}/${x.totalRows} ok, ${x.failed} failed`)
+              .join(' · ')
+          : s
+            ? `Structure:${s.organization_structure_nodes ?? 0}, Services:${s.task_services ?? 0}, Clients:${s.client_entities ?? 0}, Employees:${s.employees ?? 0}, Tasks:${s.tasks ?? 0}`
+            : null;
         toast.success(
-          summaryLine ? `Master bulk upload completed. ${summaryLine}` : 'Master bulk upload completed.'
+          sheetLine ? `Master bulk upload completed. ${sheetLine}` : 'Master bulk upload completed.'
         );
       } else {
         toast.info('Bulk upload finished with errors.');
@@ -371,21 +375,22 @@ export const BulkMasterUploadPanel: React.FC<BulkMasterUploadPanelProps> = ({
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
             <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2 py-2">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500">Processed</p>
-              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                {liveStatus?.processedCount ?? 0}
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">Success</p>
+              <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                {liveStatus?.summary?.rowTotals?.success ?? liveStatus?.processedCount ?? 0}
               </p>
             </div>
             <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2 py-2">
               <p className="text-[11px] uppercase tracking-wide text-slate-500">Failed</p>
-              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                {liveStatus?.failedCount ?? 0}
+              <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">
+                {liveStatus?.summary?.rowTotals?.failed ?? liveStatus?.failedCount ?? 0}
               </p>
             </div>
             <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2 py-2">
               <p className="text-[11px] uppercase tracking-wide text-slate-500">Total rows</p>
               <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                {liveStatus?.totalRows && liveStatus.totalRows > 0 ? liveStatus.totalRows : '—'}
+                {liveStatus?.summary?.rowTotals?.totalRows ??
+                  (liveStatus?.totalRows && liveStatus.totalRows > 0 ? liveStatus.totalRows : '—')}
               </p>
             </div>
             <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-2 py-2">
@@ -396,7 +401,38 @@ export const BulkMasterUploadPanel: React.FC<BulkMasterUploadPanelProps> = ({
             </div>
           </div>
 
-          {liveStatus?.summary && (
+          {!!liveStatus?.summary?.sheetStats?.length && (
+            <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+              <table className="min-w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-700 text-[11px] uppercase tracking-wide text-slate-500">
+                    <th className="px-3 py-2 font-semibold">Sheet</th>
+                    <th className="px-3 py-2 font-semibold">Rows</th>
+                    <th className="px-3 py-2 font-semibold">Success</th>
+                    <th className="px-3 py-2 font-semibold">Failed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {liveStatus.summary.sheetStats.map((s) => (
+                    <tr
+                      key={s.sheet}
+                      className="border-b border-slate-100 dark:border-slate-800 last:border-0"
+                    >
+                      <td className="px-3 py-2 font-medium text-slate-800 dark:text-slate-100">{s.sheet}</td>
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{s.totalRows}</td>
+                      <td className="px-3 py-2 text-emerald-700 dark:text-emerald-300">{s.success}</td>
+                      <td className="px-3 py-2 text-rose-700 dark:text-rose-300">{s.failed}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="px-3 py-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                Empty rows are excluded from these counts.
+              </p>
+            </div>
+          )}
+
+          {liveStatus?.summary && !liveStatus.summary.sheetStats?.length && (
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               {(
                 [
@@ -504,8 +540,9 @@ export const BulkMasterUploadPanel: React.FC<BulkMasterUploadPanelProps> = ({
                           </span>
                         </td>
                         <td className="py-2.5 pr-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                          {u.processedCount} ok / {u.failedCount} fail
-                          {u.totalRows > 0 ? ` of ${u.totalRows}` : ''}
+                          {u.summary?.rowTotals
+                            ? `${u.summary.rowTotals.success} ok / ${u.summary.rowTotals.failed} fail of ${u.summary.rowTotals.totalRows}`
+                            : `${u.processedCount} ok / ${u.failedCount} fail${u.totalRows > 0 ? ` of ${u.totalRows}` : ''}`}
                         </td>
                         <td className="py-2.5 pr-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">
                           {formatDuration(u.createdAt, u.completedAt)}
@@ -523,7 +560,31 @@ export const BulkMasterUploadPanel: React.FC<BulkMasterUploadPanelProps> = ({
                       {expanded && (
                         <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/30">
                           <td colSpan={6} className="py-3 px-2">
-                            {u.summary ? (
+                            {u.summary?.sheetStats?.length ? (
+                              <div className="overflow-x-auto mb-2">
+                                <table className="min-w-full text-left text-xs">
+                                  <thead>
+                                    <tr className="text-slate-500">
+                                      <th className="pr-3 py-1 font-semibold">Sheet</th>
+                                      <th className="pr-3 py-1 font-semibold">Rows</th>
+                                      <th className="pr-3 py-1 font-semibold">Success</th>
+                                      <th className="py-1 font-semibold">Failed</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {u.summary.sheetStats.map((s) => (
+                                      <tr key={s.sheet}>
+                                        <td className="pr-3 py-1 text-slate-700 dark:text-slate-200">{s.sheet}</td>
+                                        <td className="pr-3 py-1">{s.totalRows}</td>
+                                        <td className="pr-3 py-1 text-emerald-700 dark:text-emerald-300">{s.success}</td>
+                                        <td className="py-1 text-rose-700 dark:text-rose-300">{s.failed}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                                <p className="text-[11px] text-slate-500 mt-1">Empty rows are excluded.</p>
+                              </div>
+                            ) : u.summary ? (
                               <div className="flex flex-wrap gap-3 mb-2 text-xs text-slate-600 dark:text-slate-300">
                                 <span>Structure: {u.summary.organization_structure_nodes ?? 0}</span>
                                 <span>Services: {u.summary.task_services ?? 0}</span>

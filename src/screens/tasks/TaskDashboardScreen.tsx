@@ -18,6 +18,7 @@ import { BulkTaskActionsMenu } from '../../components/tasks/BulkTaskActionsMenu'
 import { taskBulkService } from '../../services/taskBulkService';
 import { isTaskDeleted } from '../../utils/taskUtils';
 import { getTaskDashboardFilterStatus, TaskStatusCategory } from '../../utils/taskStatus';
+import { taskMatchesViewFilter } from '../../utils/taskViewFilter';
 import { formatFrequencyLabel } from '../../utils/taskPeriod';
 import { parseDueSoonDays } from '../../utils/dueSoonDays';
 import { getLastTasksDueSoonDays } from '../../services/taskService';
@@ -42,7 +43,6 @@ import {
 } from '../../utils/taskDashboardSort';
 import {
   bumpTaskDashboardActivity,
-  isTaskRecentlyActiveForFilter,
   type TaskActivityBumpMap,
 } from '../../utils/taskDashboardActivity';
 import { normalizeConvId } from '../../utils/notificationConvId';
@@ -574,32 +574,6 @@ export const TaskDashboardScreen: React.FC = () => {
     showTeamMemberFilter
   );
 
-  const dashboardTaskIdsForView = useMemo(() => {
-    if (!dashboardData?.data) return null;
-    if (viewFilter === 'all') return null;
-
-    const sectionKey = viewFilter === 'self' ? 'selfTasks' : 'assignedTasks';
-    const section = (dashboardData.data as any)[sectionKey];
-    if (!section) return null;
-
-    const ids = new Set<string>();
-
-    Object.values(section).forEach((categoryGroup: any) => {
-      if (!categoryGroup) return;
-      // Collect every task id from the selected view section, independent of status bucket.
-      // Status is applied later using getTaskStatusForFilter(task) so it matches Task Details.
-      Object.values(categoryGroup).forEach((bucket: any) => {
-        if (Array.isArray(bucket)) {
-          bucket.forEach((t: any) => {
-            if (t?.id) ids.add(String(t.id));
-          });
-        }
-      });
-    });
-
-    return ids;
-  }, [dashboardData, viewFilter]);
-
   // Fetch task conversations. Keep previous data during background refresh so the list
   // does not flash empty/skeleton every poll cycle.
   const { data: conversations = [], isLoading: isConversationsLoading } = useQuery(
@@ -845,6 +819,19 @@ export const TaskDashboardScreen: React.FC = () => {
     return selectedTeamMemberIds.some((id) => memberIds.has(id));
   };
 
+  const currentUserId = user?.id || (user as any)?.userId;
+
+  /** Combined All/Self/Assigned + status filters (AND). Both filters are strict. */
+  const taskMatchesActiveFilters = (task: any): boolean => {
+    if (!task) return false;
+    if (!taskMatchesViewFilter(task, viewFilter, currentUserId)) return false;
+    if (viewFilter === 'assigned' && selectedTeamMemberIds.length > 0) {
+      if (!taskMatchesSelectedMembers(task)) return false;
+    }
+    if (statusFilter === 'all') return true;
+    return getTaskStatusForFilter(task) === statusFilter;
+  };
+
   // Get task IDs that already have conversations
   const tasksWithConversations = useMemo(() => {
     return new Set(Object.values(taskIdByConvId).filter(Boolean));
@@ -889,33 +876,8 @@ export const TaskDashboardScreen: React.FC = () => {
       });
     }
 
-    // Assigned view: filter by selected team members (multi-select).
-    if (viewFilter === 'assigned' && selectedTeamMemberIds.length > 0) {
-      filtered = filtered.filter((task: any) => taskMatchesSelectedMembers(task));
-    }
-
-    const activityBumpMap = activityBumpRef.current;
-
-    // Status filter: always use per-user lifecycle categorization (same as Task Details).
-    // Recently active tasks stay visible briefly when status changes (e.g. todo → in progress).
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter((task: any) => {
-        const category = getTaskStatusForFilter(task);
-        if (category !== statusFilter && !isTaskRecentlyActiveForFilter(activityBumpMap, task?.id)) {
-          return false;
-        }
-        if (dashboardTaskIdsForView && dashboardTaskIdsForView.size > 0) {
-          if (task?.id && dashboardTaskIdsForView.has(String(task.id))) return true;
-          return isTaskRecentlyActiveForFilter(activityBumpMap, task?.id);
-        }
-        return true;
-      });
-    } else if (dashboardTaskIdsForView && dashboardTaskIdsForView.size > 0) {
-      filtered = filtered.filter((task: any) => {
-        if (task?.id && dashboardTaskIdsForView.has(String(task.id))) return true;
-        return isTaskRecentlyActiveForFilter(activityBumpMap, task?.id);
-      });
-    }
+    // All / Self / Assigned + status (AND). Empty rows/tasks already excluded above.
+    filtered = filtered.filter((task: any) => taskMatchesActiveFilters(task));
 
     return filtered;
   }, [
@@ -928,7 +890,7 @@ export const TaskDashboardScreen: React.FC = () => {
     viewFilter,
     selectedTeamMemberIds,
     activityBumpTick,
-    dashboardTaskIdsForView,
+    dueSoonDays,
   ]);
 
   // Task IDs that failed to load (e.g. 404 = deleted) — exclude those convs from list
@@ -963,26 +925,12 @@ export const TaskDashboardScreen: React.FC = () => {
       const task = key ? taskByConvId[key] : undefined;
       if (task && isTaskDeleted(task)) return false;
 
-      const activityBumpMap = activityBumpRef.current;
-
-      // Align with dashboard metric selection (Self / Assigned + status),
-      // but keep recently active tasks visible when filters would hide them.
-      if (dashboardTaskIdsForView && dashboardTaskIdsForView.size > 0) {
-        const inView =
-          !!(task?.id && dashboardTaskIdsForView.has(String(task.id))) ||
-          isTaskRecentlyActiveForFilter(activityBumpMap, task?.id);
-        if (!inView) return false;
-        if (statusFilter !== 'all') {
-          const category = getTaskStatusForFilter(task);
-          return (
-            category === statusFilter ||
-            isTaskRecentlyActiveForFilter(activityBumpMap, task?.id)
-          );
-        }
-        return true;
+      // Require task payload to evaluate Self/Assigned + status. Without it, hide when a view/status filter is active.
+      if (!task) {
+        return viewFilter === 'all' && statusFilter === 'all';
       }
 
-      return true;
+      return taskMatchesActiveFilters(task);
     });
 
     // Apply search filter
@@ -1003,50 +951,26 @@ export const TaskDashboardScreen: React.FC = () => {
       });
     }
 
-    // Assigned view: filter by selected team members (multi-select).
-    if (viewFilter === 'assigned' && selectedTeamMemberIds.length > 0) {
-      filtered = filtered.filter((conv: any) => {
-        const convId = conv.id ?? conv.conversationId;
-        const key = convId != null ? String(convId) : '';
-        const task = key ? taskByConvId[key] : undefined;
-        return taskMatchesSelectedMembers(task);
-      });
-    }
-
-    // When not driven by a dashboard metric, apply local status categorization
     const activityBumpMap = activityBumpRef.current;
-    if (!dashboardTaskIdsForView || dashboardTaskIdsForView.size === 0) {
-      if (statusFilter !== 'all') {
-        filtered = filtered.filter(conv => {
-          const convId = conv.id ?? conv.conversationId;
-          const key = convId != null ? String(convId) : '';
-          const task = key ? taskByConvId[key] : undefined;
-          const category = getTaskStatusForFilter(task);
-          return (
-            category === statusFilter ||
-            isTaskRecentlyActiveForFilter(activityBumpMap, task?.id)
-          );
-        });
-      }
-    }
-
     return sortConversationsByRecentActivity(filtered, taskByConvId, activityBumpMap);
   }, [
     taskGroups,
     searchQuery,
     statusFilter,
+    viewFilter,
+    selectedTeamMemberIds,
     taskByConvId,
     taskIdByConvId,
     failedTaskIds,
-    dashboardTaskIdsForView,
     hasConversationsFetchedSinceMount,
     hasTasksFetchedSinceMount,
     isConversationsLoading,
     directTasksById,
     taskDetailsById,
-    viewFilter,
-    selectedTeamMemberIds,
     activityBumpTick,
+    dueSoonDays,
+    user,
+    currentUserId,
   ]);
 
   const unreadCountByConversationId = useMemo(() => {
@@ -1087,8 +1011,6 @@ export const TaskDashboardScreen: React.FC = () => {
 
     return sortTaskDashboardCards(entries, activityBumpRef.current);
   }, [filteredTaskGroups, tasksWithoutConversations, taskByConvId, activityBumpTick]);
-
-  const currentUserId = user?.id || (user as any)?.userId;
 
   const canBulkSelectTask = useCallback(
     (task: any): boolean => {
