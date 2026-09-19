@@ -58,9 +58,13 @@ export function EmployeeMasterFormSections({
   showPassword,
 }: Props) {
   const workLocationOptions = useMemo(() => {
-    return getActiveNodesUnderRoot(tree)
-      .filter((n) => n.status === 'active' && n.name)
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const underRoot = getActiveNodesUnderRoot(tree).filter((n) => n.status !== 'archived' && n.name);
+    if (underRoot.length > 0) {
+      return underRoot.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    // Root-only structure: allow root as work location too
+    const root = tree?.rootNode;
+    return root?.id && root.status !== 'archived' ? [root] : [];
   }, [tree]);
 
   const individualModules = MODULE_ACCESS_OPTIONS.filter((m) => m !== 'All');

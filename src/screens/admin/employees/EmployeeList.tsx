@@ -24,7 +24,6 @@ import {
   deriveOrgNodeByLevelFromPrimary,
   extractOrgNodeByLevel,
   formatOrgNodeByLevelSummary,
-  getActiveNodesUnderRoot,
   getAssignmentSectionsFromTree,
   getDeepestSelectedNodeId,
   normalizeOrgNodeByLevel,
@@ -669,10 +668,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ employee, employees, onSave
       : masterForm.orgNodeByLevel;
 
     const primaryOrgNodeId = getDeepestSelectedNodeId(orgNodeByLevel, levelsFromL2);
-    const assignableNodes = getActiveNodesUnderRoot(orgStructureTreeData).filter(
-      (n) => n.status === 'active'
-    );
-    if (assignableNodes.length > 0 && !primaryOrgNodeId) {
+    const hasOrgStructure = !!(orgStructureTreeData?.rootNode?.id || orgStructureTreeData?.summary?.hasRootNode);
+    if (hasOrgStructure && !primaryOrgNodeId) {
       toast.error('Please select at least one org unit in Org unit mapping');
       return;
     }

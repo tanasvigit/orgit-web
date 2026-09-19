@@ -30,11 +30,29 @@ export function getActiveNodesUnderRoot(
 ): OrganizationStructureNode[] {
   const rootNodeId = tree?.rootNode?.id;
   if (!tree || !rootNodeId) return [];
+
+  const byId = new Map((tree.nodes ?? []).map((n) => [n.id, n]));
+
+  const isUnderRoot = (node: OrganizationStructureNode): boolean => {
+    if (!node?.id || node.id === rootNodeId) return false;
+    const pathIds = node.pathIds || [];
+    if (pathIds.includes(rootNodeId)) return true;
+
+    // Fallback when pathIds is missing/stale: walk parent links.
+    let cur: OrganizationStructureNode | undefined = node;
+    const seen = new Set<string>();
+    while (cur?.parentNodeId) {
+      if (String(cur.parentNodeId) === String(rootNodeId)) return true;
+      if (seen.has(cur.id)) break;
+      seen.add(cur.id);
+      cur = byId.get(cur.parentNodeId);
+    }
+    return false;
+  };
+
   return (tree.nodes ?? []).filter((n) => {
     if (!n?.id || n.status === 'archived') return false;
-    if (n.id === rootNodeId || !n.parentNodeId) return false;
-    const pathIds = n.pathIds || [];
-    return pathIds.includes(rootNodeId);
+    return isUnderRoot(n);
   });
 }
 
@@ -136,13 +154,30 @@ export function getNodesForSection(
 ): OrganizationStructureNode[] {
   if (!rootNodeId) return [];
   const normalizedSection = sectionLabel.trim().toLowerCase();
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+
+  const isUnderRoot = (n: OrganizationStructureNode): boolean => {
+    if (n.id === rootNodeId) return false;
+    const pathIds = n.pathIds || [];
+    if (pathIds.includes(rootNodeId)) return true;
+    let cur: OrganizationStructureNode | undefined = n;
+    const seen = new Set<string>();
+    while (cur?.parentNodeId) {
+      if (String(cur.parentNodeId) === String(rootNodeId)) return true;
+      if (seen.has(cur.id)) break;
+      seen.add(cur.id);
+      cur = byId.get(cur.parentNodeId);
+    }
+    return false;
+  };
 
   return nodes
     .filter((n) => {
-      if (n.status === 'archived' || n.status === 'inactive') return false;
+      if (n.status === 'archived') return false;
       if ((n.levelLabel || '').trim().toLowerCase() !== normalizedSection) return false;
-      const pathIds = n.pathIds || [];
-      return pathIds.includes(rootNodeId);
+      // Include root when assigning at the root section label
+      if (n.id === rootNodeId) return true;
+      return isUnderRoot(n);
     })
     .sort((a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name));
 }
@@ -155,21 +190,30 @@ export function deriveOrgNodeByLevelFromPrimary(
   const node = tree.nodes.find((n) => n.id === primaryNodeId);
   if (!node) return {};
 
+  const rootId = tree.rootNode?.id;
   const levelByNumber = new Map(tree.levels.map((l) => [l.levelNumber, l]));
   const out: OrgNodeByLevel = {};
 
+  const sectionKeyFor = (
+    levelNumber: number,
+    levelLabel?: string | null
+  ): string => {
+    const level = levelByNumber.get(levelNumber);
+    if (level) return getSectionStorageKey(level);
+    const label = (levelLabel || '').trim();
+    if (label) return label;
+    return String(levelNumber || 'Unit');
+  };
+
   for (const item of node.path || []) {
-    if (item.levelNumber > 1) {
-      const level = levelByNumber.get(item.levelNumber);
-      const key = level ? getSectionStorageKey(level) : String(item.levelNumber);
-      out[key] = item.id;
-    }
+    // Keep root out of the level map when a deeper unit is primary (root still
+    // appears checked via pathIds). Include root when it IS the primary.
+    if (rootId && item.id === rootId && primaryNodeId !== rootId) continue;
+    out[sectionKeyFor(item.levelNumber, item.levelLabel)] = item.id;
   }
-  if (node.levelNumber > 1) {
-    const level = levelByNumber.get(node.levelNumber);
-    const key = level ? getSectionStorageKey(level) : String(node.levelNumber);
-    out[key] = node.id;
-  }
+
+  // Always record the primary node itself (including root / level 1).
+  out[sectionKeyFor(node.levelNumber, node.levelLabel)] = node.id;
   return out;
 }
 
@@ -192,12 +236,17 @@ export function getDeepestSelectedNodeId(
   orgNodeByLevel: OrgNodeByLevel,
   levelsFromL2: OrganizationStructureLevel[]
 ): string | null {
-  if (levelsFromL2.length === 0) return null;
+  if (levelsFromL2.length === 0) {
+    const ids = Object.values(orgNodeByLevel).filter((id) => !!id?.trim());
+    return ids.length > 0 ? ids[ids.length - 1] : null;
+  }
   for (let i = levelsFromL2.length - 1; i >= 0; i -= 1) {
     const id = lookupOrgNodeId(orgNodeByLevel, levelsFromL2[i]);
     if (id) return id;
   }
-  return null;
+  // Fallback if keys don't match section labels exactly
+  const ids = Object.values(orgNodeByLevel).filter((id) => !!id?.trim());
+  return ids.length > 0 ? ids[ids.length - 1] : null;
 }
 
 export function buildEmployeeOrgFieldValuesPayload(
@@ -345,10 +394,15 @@ export function pickPrimaryOrgNodeId(
   if (!tree) return null;
   const rootId = tree.rootNode?.id;
   let best: OrganizationStructureNode | null = null;
+  let rootSelected: OrganizationStructureNode | null = null;
 
   for (const id of selectedIds) {
     const node = tree.nodes.find((n) => n.id === id);
-    if (!node || node.status === 'archived' || node.id === rootId) continue;
+    if (!node || node.status === 'archived') continue;
+    if (rootId && node.id === rootId) {
+      rootSelected = node;
+      continue;
+    }
     if (!best) {
       best = node;
       continue;
@@ -362,7 +416,8 @@ export function pickPrimaryOrgNodeId(
       best = node;
     }
   }
-  return best?.id ?? null;
+  // Prefer deepest non-root unit; allow root when it is the only selection.
+  return best?.id ?? rootSelected?.id ?? null;
 }
 
 export function syncOrgMappingFromSelectedIds(
@@ -384,7 +439,9 @@ export function syncOrgMappingFromSelectedIds(
   const secondaryOrgNodeIds: string[] = [];
 
   for (const id of selected) {
-    if (!id || id === primaryId || id === rootId) continue;
+    if (!id || id === primaryId) continue;
+    // Root is implied by path when a deeper primary exists; keep it if it IS primary.
+    if (rootId && id === rootId && primaryId !== rootId) continue;
     if (primaryPath.has(id)) continue;
     const node = tree.nodes.find((n) => n.id === id);
     if (node && node.status !== 'archived') {

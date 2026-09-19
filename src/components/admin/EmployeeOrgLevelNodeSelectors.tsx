@@ -38,11 +38,45 @@ export function EmployeeOrgLevelNodeSelectors({ tree, value, onChange, disabled 
     );
   }
 
+  // Root-only org: allow selecting the root node as the assignment unit.
+  if (levels.length === 0 && tree.rootNode) {
+    const root = tree.rootNode;
+    const rootKey = (root.levelLabel || 'Root').trim() || 'Root';
+    const selectedId = normalizedValue[rootKey] || '';
+    return (
+      <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-700 dark:bg-slate-900/30">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          Organisation assignment
+        </p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Only the root unit exists. You can assign employees to it, or add child nodes in Org Definition.
+        </p>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-text-main">{rootKey} *</label>
+          <select
+            required
+            disabled={disabled}
+            value={selectedId}
+            onChange={(e) => {
+              const next: OrgNodeByLevel = { ...normalizedValue };
+              if (e.target.value) next[rootKey] = e.target.value;
+              else delete next[rootKey];
+              onChange(next);
+            }}
+            className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-text-main disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800"
+          >
+            <option value="">Select {rootKey}</option>
+            <option value={root.id}>{formatOrgNodeOptionLabel(tree, root) || root.name}</option>
+          </select>
+        </div>
+      </div>
+    );
+  }
+
   if (levels.length === 0) {
     return (
       <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-        No org units below the root yet. In Org Definition, add child nodes (e.g. Location, Project) under your
-        root, then assign employees here.
+        No organisation structure nodes found. Complete Org Definition first.
       </p>
     );
   }

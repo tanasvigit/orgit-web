@@ -48,7 +48,7 @@ function TreeNodeRow({
   const hasChildren = children.length > 0;
   const isExpanded = expandedIds.has(node.id);
   const isRoot = node.id === tree.rootNode?.id;
-  const isCheckable = !isRoot && node.status === 'active';
+  const isCheckable = node.status !== 'archived';
   const isChecked = checkedIds.has(node.id);
 
   return (
@@ -198,17 +198,9 @@ export function OrgStructureCheckboxTreeSelect({
     );
   }
 
-  const hasAssignableChildren =
-    (tree.rootNode && (childrenByParentId.get(tree.rootNode.id)?.length ?? 0) > 0) ||
-    rootTreeNodes.some((n) => n.id !== tree.rootNode?.id);
-
-  if (!hasAssignableChildren) {
-    return (
-      <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-        No org units below the root yet. In Org Definition, add child nodes, then assign employees here.
-      </p>
-    );
-  }
+  const childCount =
+    (tree.rootNode && (childrenByParentId.get(tree.rootNode.id)?.length ?? 0)) ||
+    rootTreeNodes.reduce((sum, n) => sum + (childrenByParentId.get(n.id)?.length ?? 0), 0);
 
   return (
     <div ref={panelRef} className="relative">
@@ -234,8 +226,9 @@ export function OrgStructureCheckboxTreeSelect({
       {open ? (
         <div className="absolute z-20 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-600 dark:bg-slate-900">
           <p className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500 dark:border-slate-700">
-            Expand sections like your org chart. Checking a unit also selects its parent path. Primary
-            assignment uses the deepest selected unit.
+            {childCount > 0
+              ? 'Expand sections like your org chart. Checking a unit also selects its parent path. Primary assignment uses the deepest selected unit.'
+              : 'Only the root unit exists — select it to assign this employee. Add child nodes in Org Definition later if needed.'}
           </p>
           <div className="max-h-64 overflow-y-auto p-2">
             {rootTreeNodes.map((node) => (
